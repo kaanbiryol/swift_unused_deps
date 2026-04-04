@@ -1,0 +1,4 @@
+build:unused-deps --aspects=//tools/swift_unused_deps/aspect:deps_info.bzl%swift_deps_aspect
+build:unused-deps --output_groups=swift_deps_report
+build:unused-deps --@build_bazel_rules_swift//swift:copt=-emit-loaded-module-trace
+build:unused-deps --spawn_strategy=local
