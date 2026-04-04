@@ -1,0 +1,16 @@
+load("@build_bazel_rules_swift//swift:swift.bzl", "swift_library")
+
+# MULTIPLE UNUSED - Analytics, DesignSystem, and ImageLoader are never imported
+swift_library(
+    name = "Checkout",
+    srcs = ["CheckoutView.swift"],
+    module_name = "Checkout",
+    deps = [
+        "//example/Core/Networking",
+        "//example/Core/Models",
+        "//example/Core/Analytics",      # Unused
+        "//example/Core/DesignSystem",   # Unused
+        "//example/Core/ImageLoader",    # Unused
+    ],
+    visibility = ["//example:__subpackages__"],
+)

@@ -1,0 +1,9 @@
+load("@build_bazel_rules_swift//swift:swift.bzl", "swift_library")
+
+swift_library(
+    name = "Networking",
+    srcs = ["APIClient.swift"],
+    module_name = "Networking",
+    deps = ["//example/Core/Models"],
+    visibility = ["//example:__subpackages__"],
+)
