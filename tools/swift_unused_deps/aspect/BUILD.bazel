@@ -1,0 +1,4 @@
+exports_files([
+    "deps_info.bzl",
+    "providers.bzl",
+])
