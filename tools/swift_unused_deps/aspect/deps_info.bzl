@@ -87,12 +87,27 @@ def _create_trace_action(ctx, module_name, swiftmodule_file):
     ctx.actions.run_shell(
         inputs = [swiftmodule_file],
         outputs = [trace_output],
-        command = "if [ -f '{root}' ]; then cp '{root}' '{dst}'; elif [ -f '{beside}' ]; then cp '{beside}' '{dst}'; else echo 'WARNING: No module trace found for {module} (cached build). Run bazel clean to regenerate.' >&2; echo '{{}}' > '{dst}'; fi".format(
-            root = trace_at_root,
-            beside = trace_beside_module,
-            dst = trace_output.path,
-            module = module_name,
-        ),
+        arguments = [
+            trace_at_root,
+            trace_beside_module,
+            trace_output.path,
+            module_name,
+        ],
+        command = """
+root="$1"
+beside="$2"
+dst="$3"
+module="$4"
+
+if [ -f "$root" ]; then
+    cp "$root" "$dst"
+elif [ -f "$beside" ]; then
+    cp "$beside" "$dst"
+else
+    echo "WARNING: No module trace found for $module (cached build). Run bazel clean to regenerate." >&2
+    echo '{}' > "$dst"
+fi
+""",
         mnemonic = "SwiftDepsTrace",
         progress_message = "Collecting module trace for %s" % module_name,
         execution_requirements = {"no-sandbox": "1"},
@@ -133,11 +148,6 @@ def _swift_deps_aspect_impl(target, ctx):
 
     swiftmodule_file = _get_swiftmodule_file(target)
 
-    # Action 1: Copy trace file.
-    trace_file = None
-    if swiftmodule_file:
-        trace_file = _create_trace_action(ctx, module_name, swiftmodule_file)
-
     # Build transitive module tuples.
     self_module_tuple = "{}={}".format(module_name, str(ctx.label))
     transitive_sets = [depset([self_module_tuple])]
@@ -174,7 +184,8 @@ def _swift_deps_aspect_impl(target, ctx):
     if hasattr(ctx.rule.attr, "srcs"):
         for src in ctx.rule.attr.srcs:
             for f in src.files.to_list():
-                srcs.append(f.basename)
+                if f.extension == "swift":
+                    srcs.append(f.basename)
 
     # Action 2: Write metadata JSON.
     metadata = {
@@ -188,36 +199,31 @@ def _swift_deps_aspect_impl(target, ctx):
         },
         "declared_deps": declared_deps + declared_private_deps,
         "transitive_module_map": transitive_map,
-        "trace_file": trace_file.short_path if trace_file else "",
+        "trace_file": "",
     }
 
     metadata_file = ctx.actions.declare_file(
         "{}.swift_deps_info.json".format(ctx.label.name),
     )
-    ctx.actions.write(
-        output = metadata_file,
-        content = json.encode(metadata),
-    )
+    metadata_json = json.encode(metadata)
 
-    # Action 3: Run analyzer.
-    report_file = None
-    if trace_file:
-        report_file = _create_analysis_action(
-            ctx,
-            ctx.executable._analyzer,
-            metadata_file,
-            trace_file,
-            module_name,
+    # Use run_shell with swiftmodule as input to ensure compilation runs
+    # (needed so the index store gets populated as a side effect).
+    if swiftmodule_file:
+        ctx.actions.run_shell(
+            inputs = [swiftmodule_file],
+            outputs = [metadata_file],
+            command = "cat > '{}' << 'METADATA_EOF'\n{}\nMETADATA_EOF".format(
+                metadata_file.path, metadata_json,
+            ),
+            mnemonic = "SwiftDepsMetadata",
+            progress_message = "Collecting deps metadata for %s" % module_name,
         )
-
-    # Output groups.
-    info_outputs = [metadata_file]
-    if trace_file:
-        info_outputs.append(trace_file)
-
-    report_outputs = []
-    if report_file:
-        report_outputs.append(report_file)
+    else:
+        ctx.actions.write(
+            output = metadata_file,
+            content = metadata_json,
+        )
 
     return [
         SwiftDepsInfo(
@@ -227,8 +233,8 @@ def _swift_deps_aspect_impl(target, ctx):
             transitive_modules = transitive_modules,
         ),
         OutputGroupInfo(
-            swift_deps_info = depset(info_outputs),
-            swift_deps_report = depset(report_outputs),
+            swift_deps_info = depset([metadata_file]),
+            swift_deps_report = depset([metadata_file]),
         ),
     ]
 

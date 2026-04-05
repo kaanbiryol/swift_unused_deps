@@ -32,6 +32,15 @@ public enum BatchAnalyzer {
 
         var metadataFiles: [URL] = []
         var traceFileMap: [String: URL] = [:]
+        var warnings: [String] = []
+
+        var isDirectory: ObjCBool = false
+        if !fm.fileExists(atPath: baseURL.path, isDirectory: &isDirectory) || !isDirectory.boolValue {
+            return Output(
+                results: [],
+                warnings: ["Metadata root does not exist or is not a directory: \(baseURL.path)"]
+            )
+        }
 
         if let enumerator = fm.enumerator(at: baseURL, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles]) {
             for case let url as URL in enumerator {
@@ -52,13 +61,13 @@ public enum BatchAnalyzer {
                 indexStoreUsage = try IndexStoreReader.readModuleUsage(storePath: storePath)
             } catch {
                 indexStoreUsage = []
+                warnings.append("Failed to read index store at '\(storePath)': \(error)")
             }
         } else {
             indexStoreUsage = []
         }
 
         var results: [AnalysisResult] = []
-        var warnings: [String] = []
 
         for metaFile in metadataFiles {
             let metadata: TargetMetadata
@@ -77,39 +86,20 @@ public enum BatchAnalyzer {
                 if !targetClean.hasPrefix(prefix) { continue }
             }
 
-            var traceURL = traceFileMap[metadata.target.moduleName]
-            if traceURL == nil && !metadata.traceFile.isEmpty {
-                let candidate = URL(fileURLWithPath: options.bazelBin).appendingPathComponent(metadata.traceFile)
-                if fm.fileExists(atPath: candidate.path) {
-                    traceURL = candidate
-                }
-            }
-
-            guard let traceFile = traceURL else {
-                warnings.append(
-                    "No trace file for \(metadata.target.label) (module: \(metadata.target.moduleName)). "
-                    + "Was --config=unused-deps used during build?"
-                )
-                continue
-            }
-
             let loadedModules: [LoadedModule]
-            do {
-                loadedModules = try TraceParser.parseTraceFile(at: traceFile, forModule: metadata.target.moduleName)
-            } catch {
-                warnings.append("Failed to parse trace for \(metadata.target.label): \(error)")
+
+            // Prefer index store (no compiler flags needed). Fall back to traces.
+            let targetUsage = indexStoreUsage.filter { $0.moduleName == metadata.target.moduleName }
+            if !targetUsage.isEmpty {
+                loadedModules = deriveLoadedModules(from: targetUsage)
+            } else if let traceModules = loadTraceModules(
+                metadata: metadata, traceFileMap: traceFileMap,
+                bazelBin: options.bazelBin, fm: fm, warnings: &warnings
+            ) {
+                loadedModules = traceModules
+            } else {
                 continue
             }
-
-            if loadedModules.isEmpty && !metadata.declaredDeps.isEmpty {
-                continue
-            }
-
-            let effectiveModules = ImportRefiner.refine(
-                loadedModules: loadedModules,
-                targetModuleName: metadata.target.moduleName,
-                indexStoreUsage: indexStoreUsage
-            )
 
             let resolver = ModuleResolver(
                 transitiveModuleMap: metadata.transitiveModuleMap,
@@ -117,12 +107,62 @@ public enum BatchAnalyzer {
             )
             let result = Analyzer.analyze(
                 metadata: metadata,
-                loadedModules: effectiveModules,
+                loadedModules: loadedModules,
                 resolver: resolver
             )
             results.append(result)
         }
 
         return Output(results: results, warnings: warnings)
+    }
+
+    /// Derive LoadedModule list from index store data.
+    /// Filters out modules that are directly imported but have no symbol references.
+    private static func deriveLoadedModules(from targetUsage: [SourceFileModuleUsage]) -> [LoadedModule] {
+        var allDirectImports = Set<String>()
+        var allReferenced = Set<String>()
+        var allKnownModules = Set<String>()
+
+        for usage in targetUsage {
+            allKnownModules.formUnion(usage.loadedModules)
+            allKnownModules.formUnion(usage.directImports)
+            allKnownModules.formUnion(usage.referencedModules)
+            allDirectImports.formUnion(usage.directImports)
+            allReferenced.formUnion(usage.referencedModules)
+        }
+
+        return allKnownModules.compactMap { moduleName in
+            let isDirectlyImported = allDirectImports.contains(moduleName)
+            if isDirectlyImported && !allReferenced.contains(moduleName) {
+                return nil
+            }
+            return LoadedModule(name: moduleName, isImportedDirectly: isDirectlyImported)
+        }
+    }
+
+    /// Fall back to trace-based module loading.
+    private static func loadTraceModules(
+        metadata: TargetMetadata,
+        traceFileMap: [String: URL],
+        bazelBin: String,
+        fm: FileManager,
+        warnings: inout [String]
+    ) -> [LoadedModule]? {
+        var traceURL = traceFileMap[metadata.target.moduleName]
+        if traceURL == nil && !metadata.traceFile.isEmpty {
+            let candidate = URL(fileURLWithPath: bazelBin).appendingPathComponent(metadata.traceFile)
+            if fm.fileExists(atPath: candidate.path) {
+                traceURL = candidate
+            }
+        }
+
+        guard let traceFile = traceURL else { return nil }
+
+        do {
+            return try TraceParser.parseTraceFile(at: traceFile, forModule: metadata.target.moduleName)
+        } catch {
+            warnings.append("Failed to parse trace for \(metadata.target.label): \(error)")
+            return nil
+        }
     }
 }

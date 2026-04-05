@@ -6,7 +6,6 @@ swift_library(
         "Sources/Analyzer.swift",
         "Sources/BatchAnalyzer.swift",
         "Sources/Buildozer.swift",
-        "Sources/ImportRefiner.swift",
         "Sources/IndexStoreReader.swift",
         "Sources/Models.swift",
         "Sources/ModuleResolver.swift",

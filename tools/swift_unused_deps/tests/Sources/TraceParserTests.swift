@@ -93,6 +93,16 @@ final class TraceParserTests: XCTestCase {
         XCTAssertTrue(modules.isEmpty)
     }
 
+    func testInvalidSingleTraceThrows() {
+        let json = """
+        {"name":"Broken"
+        """.data(using: .utf8)!
+
+        XCTAssertThrowsError(try TraceParser.parseTraceData(json)) { error in
+            XCTAssertTrue("\(error)".contains("not valid loaded-module trace JSON"))
+        }
+    }
+
     // MARK: - JSONL (multi-trace) tests
 
     func testJSONLFiltersByModuleName() throws {
@@ -102,7 +112,7 @@ final class TraceParserTests: XCTestCase {
         let line2 = """
         {"version":2,"name":"TargetB","arch":"arm64","swiftmodulesDetailedInfo":[{"name":"DepB","path":"/b.swiftmodule","isImportedDirectly":true}]}
         """
-        let url = writeTempFile(content: line1 + "\n" + line2)
+        let url = try writeTempFile(content: line1 + "\n" + line2)
         defer { try? FileManager.default.removeItem(at: url) }
 
         let modules = try TraceParser.parseTraceFile(at: url, forModule: "TargetA")
@@ -111,27 +121,25 @@ final class TraceParserTests: XCTestCase {
         XCTAssertEqual(modules[0].name, "DepA")
     }
 
-    func testJSONLFallsBackToLastTrace() throws {
+    func testJSONLMissingRequestedModuleThrows() throws {
         let line1 = """
         {"version":2,"name":"TargetA","arch":"arm64","swiftmodulesDetailedInfo":[{"name":"DepA","path":"/a.swiftmodule","isImportedDirectly":true}]}
         """
         let line2 = """
         {"version":2,"name":"TargetB","arch":"arm64","swiftmodulesDetailedInfo":[{"name":"DepB","path":"/b.swiftmodule","isImportedDirectly":false}]}
         """
-        let url = writeTempFile(content: line1 + "\n" + line2)
+        let url = try writeTempFile(content: line1 + "\n" + line2)
         defer { try? FileManager.default.removeItem(at: url) }
 
-        let modules = try TraceParser.parseTraceFile(at: url, forModule: "NonExistent")
-
-        XCTAssertEqual(modules.count, 1)
-        XCTAssertEqual(modules[0].name, "DepB")
-        XCTAssertFalse(modules[0].isImportedDirectly)
+        XCTAssertThrowsError(try TraceParser.parseTraceFile(at: url, forModule: "NonExistent")) { error in
+            XCTAssertTrue("\(error)".contains("does not contain an entry for module 'NonExistent'"))
+        }
     }
 
-    private func writeTempFile(content: String) -> URL {
+    private func writeTempFile(content: String) throws -> URL {
         let url = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString + ".trace.json")
-        try! content.write(to: url, atomically: true, encoding: .utf8)
+        try content.write(to: url, atomically: true, encoding: .utf8)
         return url
     }
 }

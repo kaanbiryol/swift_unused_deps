@@ -2,6 +2,29 @@ import Foundation
 
 public enum TraceParser {
 
+    public enum Error: Swift.Error, CustomStringConvertible {
+        case emptyTraceFile(path: String?)
+        case invalidTraceFile(path: String?, underlying: Swift.Error)
+        case missingTraceForModule(requestedModule: String, path: String)
+
+        public var description: String {
+            switch self {
+            case .emptyTraceFile(let path):
+                if let path {
+                    return "Trace file '\(path)' is empty."
+                }
+                return "Trace data is empty."
+            case .invalidTraceFile(let path, let underlying):
+                if let path {
+                    return "Trace file '\(path)' is not valid loaded-module trace JSON: \(underlying)"
+                }
+                return "Trace data is not valid loaded-module trace JSON: \(underlying)"
+            case .missingTraceForModule(let requestedModule, let path):
+                return "Trace file '\(path)' does not contain an entry for module '\(requestedModule)'."
+            }
+        }
+    }
+
     /// Extract the Swift module name from a .swiftmodule file path.
     ///
     /// Handles multiple layouts:
@@ -33,17 +56,22 @@ public enum TraceParser {
     /// whose `name` matches `forModule`. If nil, returns the last trace.
     public static func parseTraceFile(at url: URL, forModule moduleName: String? = nil) throws -> [LoadedModule] {
         let data = try Data(contentsOf: url)
-        let content = String(data: data, encoding: .utf8) ?? ""
+        let content = try decodeTraceContent(data, path: url.path)
         let lines = content.split(separator: "\n", omittingEmptySubsequences: true)
 
         if lines.count <= 1 {
-            return try parseTraceData(data)
+            return try parseTraceData(data, path: url.path)
         }
 
         var allTraces: [(name: String, modules: [LoadedModule])] = []
         for line in lines {
-            guard let lineData = line.data(using: .utf8) else { continue }
-            let trace = try JSONDecoder().decode(ModuleTrace.self, from: lineData)
+            guard let lineData = line.data(using: .utf8) else {
+                throw Error.invalidTraceFile(
+                    path: url.path,
+                    underlying: CocoaError(.fileReadCorruptFile)
+                )
+            }
+            let trace = try decodeTrace(lineData, path: url.path)
             let modules = extractModules(from: trace)
             allTraces.append((trace.name, modules))
         }
@@ -52,6 +80,7 @@ public enum TraceParser {
             if let match = allTraces.first(where: { $0.name == target }) {
                 return match.modules
             }
+            throw Error.missingTraceForModule(requestedModule: target, path: url.path)
         }
 
         // Otherwise return the last trace (typically the top-level target).
@@ -59,12 +88,26 @@ public enum TraceParser {
     }
 
     /// Parse loaded module trace from raw JSON data (single trace).
-    /// Returns an empty array for empty or invalid traces.
-    public static func parseTraceData(_ data: Data) throws -> [LoadedModule] {
-        guard let trace = try? JSONDecoder().decode(ModuleTrace.self, from: data) else {
-            return []
-        }
+    public static func parseTraceData(_ data: Data, path: String? = nil) throws -> [LoadedModule] {
+        _ = try decodeTraceContent(data, path: path)
+        let trace = try decodeTrace(data, path: path)
         return extractModules(from: trace)
+    }
+
+    private static func decodeTraceContent(_ data: Data, path: String?) throws -> String {
+        let content = String(data: data, encoding: .utf8) ?? ""
+        if content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            throw Error.emptyTraceFile(path: path)
+        }
+        return content
+    }
+
+    private static func decodeTrace(_ data: Data, path: String?) throws -> ModuleTrace {
+        do {
+            return try JSONDecoder().decode(ModuleTrace.self, from: data)
+        } catch {
+            throw Error.invalidTraceFile(path: path, underlying: error)
+        }
     }
 
     private static func extractModules(from trace: ModuleTrace) -> [LoadedModule] {

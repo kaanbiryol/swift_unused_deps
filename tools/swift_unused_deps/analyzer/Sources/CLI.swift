@@ -41,22 +41,37 @@ struct SwiftUnusedDeps: ParsableCommand {
     var indexStorePath: String?
 
     func validate() throws {
-        let hasSingleMode = metadataFile != nil
+        let hasSingleMode = metadataFile != nil || traceFile != nil || output != nil
         let hasBatchMode = bazelBin != nil || metadataDir != nil
 
+        if metadataFile == nil && traceFile != nil {
+            throw ValidationError("--trace-file requires --metadata-file.")
+        }
+        if metadataFile == nil && output != nil {
+            throw ValidationError("--output requires --metadata-file.")
+        }
+        if bazelBin != nil && metadataDir != nil {
+            throw ValidationError("Cannot combine --bazel-bin with --metadata-dir.")
+        }
+        if fix && json {
+            throw ValidationError("--fix cannot be combined with --json.")
+        }
+        if fix && metadataFile != nil {
+            throw ValidationError("--fix is only supported in batch mode.")
+        }
         if !hasSingleMode && !hasBatchMode {
             throw ValidationError(
                 "Provide --metadata-file + --trace-file (single target) "
                 + "or --bazel-bin / --metadata-dir (batch)."
             )
         }
-        if hasSingleMode && hasBatchMode {
+        if metadataFile != nil && hasBatchMode {
             throw ValidationError("Cannot combine --metadata-file with --bazel-bin or --metadata-dir.")
         }
-        if hasSingleMode && traceFile == nil {
+        if metadataFile != nil && traceFile == nil {
             throw ValidationError("--trace-file is required with --metadata-file.")
         }
-        if hasSingleMode && output == nil {
+        if metadataFile != nil && output == nil {
             throw ValidationError("--output is required with --metadata-file.")
         }
     }

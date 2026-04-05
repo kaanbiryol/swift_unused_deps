@@ -8,18 +8,29 @@ public enum Buildozer {
         public let output: String
     }
 
-    public static var binaryPath: String {
-        if let path = findInRunfiles() {
-            return path
-        }
-        fatalError("buildozer not found in runfiles. This binary must be run via 'bazel run'.")
-    }
-
     public static func runBatch(
         commands: [BuildozerCommand],
         workingDirectory: URL? = nil
     ) -> FixResult {
-        let path = binaryPath
+        for command in commands {
+            do {
+                try command.validateForBatchExecution()
+            } catch {
+                return FixResult(
+                    command: "buildozer -f -",
+                    success: false,
+                    output: "Refusing to execute invalid buildozer command '\(command.displayString)': \(error)"
+                )
+            }
+        }
+
+        guard let path = findInRunfiles() else {
+            return FixResult(
+                command: "buildozer -f -",
+                success: false,
+                output: "buildozer not found in runfiles. Run this binary via 'bazel run' or ensure buildozer is available in runfiles."
+            )
+        }
 
         for cmd in commands {
             printErr("  \(cmd.displayString)")

@@ -23,7 +23,14 @@ enum ReportMain {
                 indexStorePath = args[i]
             } else if args[i].hasPrefix("--index-store-path=") {
                 indexStorePath = String(args[i].dropFirst("--index-store-path=".count))
+            } else if args[i].hasPrefix("-") {
+                printErr("ERROR: Unknown option '\(args[i])'.")
+                exit(2)
             } else {
+                if filter != nil {
+                    printErr("ERROR: Only one target filter may be provided.")
+                    exit(2)
+                }
                 filter = args[i]
             }
             i += 1
