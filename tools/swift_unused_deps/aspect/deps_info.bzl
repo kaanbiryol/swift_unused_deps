@@ -18,9 +18,6 @@ Usage:
 load("@build_bazel_rules_swift//swift:providers.bzl", "SwiftInfo")
 load(":providers.bzl", "SwiftDepsInfo")
 
-def _empty_trace(name):
-    return '{"version":2,"name":"' + name + '","arch":"unknown","swiftmodules":[],"swiftmodulesDetailedInfo":[]}'
-
 def _get_module_name(target):
     """Get the Swift module name from SwiftInfo."""
     for module in target[SwiftInfo].direct_modules:
@@ -84,18 +81,17 @@ def _create_trace_action(ctx, module_name, swiftmodule_file):
         "{}.trace.json".format(module_name),
     )
 
-    empty_trace = _empty_trace(module_name)
     trace_beside_module = swiftmodule_file.path[:swiftmodule_file.path.rfind(".swiftmodule")] + ".trace.json"
     trace_at_root = module_name + ".trace.json"
 
     ctx.actions.run_shell(
         inputs = [swiftmodule_file],
         outputs = [trace_output],
-        command = "if [ -f '{root}' ]; then cp '{root}' '{dst}'; elif [ -f '{beside}' ]; then cp '{beside}' '{dst}'; else echo '{fallback}' > '{dst}'; fi".format(
+        command = "if [ -f '{root}' ]; then cp '{root}' '{dst}'; elif [ -f '{beside}' ]; then cp '{beside}' '{dst}'; else echo 'ERROR: No module trace found for {module}. Ensure --spawn_strategy=local is set (or use --config=unused-deps).' >&2; exit 1; fi".format(
             root = trace_at_root,
             beside = trace_beside_module,
             dst = trace_output.path,
-            fallback = empty_trace,
+            module = module_name,
         ),
         mnemonic = "SwiftDepsTrace",
         progress_message = "Collecting module trace for %s" % module_name,
