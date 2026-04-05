@@ -2,8 +2,6 @@ import Foundation
 
 public enum Report {
 
-    // MARK: - Text output
-
     public static func formatText(results: [AnalysisResult], minConfidence: Confidence) -> String {
         var lines: [String] = []
         lines.append("swift_unused_deps v0.1.0")
@@ -64,7 +62,7 @@ public enum Report {
 
         if totalHigh > 0 {
             lines.append("")
-            lines.append("Run with --fix to generate a fix script.")
+            lines.append("Run with --fix to automatically apply fixes.")
         }
 
         return lines.joined(separator: "\n")
@@ -108,8 +106,6 @@ public enum Report {
 
         return lines
     }
-
-    // MARK: - JSON output
 
     public static func formatJSON(results: [AnalysisResult], minConfidence: Confidence) -> String {
         var output: [String: Any] = [

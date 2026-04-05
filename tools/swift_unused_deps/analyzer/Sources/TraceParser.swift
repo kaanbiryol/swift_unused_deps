@@ -44,7 +44,6 @@ public enum TraceParser {
             return try parseTraceData(data)
         }
 
-        // Multiple JSON lines (JSONL). Parse each and find the one we want.
         var allTraces: [(name: String, modules: [LoadedModule])] = []
         for line in lines {
             guard let lineData = line.data(using: .utf8) else { continue }

@@ -3,8 +3,6 @@ import XCTest
 
 final class TraceParserTests: XCTestCase {
 
-    // MARK: - extractModuleName
-
     func testFlatSwiftmodule() {
         XCTAssertEqual(TraceParser.extractModuleName(from: "/path/to/Foo.swiftmodule"), "Foo")
     }
@@ -44,8 +42,6 @@ final class TraceParserTests: XCTestCase {
     func testOnlyArchSlugReturnsNil() {
         XCTAssertNil(TraceParser.extractModuleName(from: "/arm64-apple-ios.swiftmodule"))
     }
-
-    // MARK: - parseTraceData
 
     func testVersion2WithDirectImports() throws {
         let json = """

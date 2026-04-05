@@ -4,6 +4,7 @@ swift_library(
     name = "SwiftUnusedDepsLib",
     srcs = [
         "Sources/Analyzer.swift",
+        "Sources/Buildozer.swift",
         "Sources/Models.swift",
         "Sources/ModuleResolver.swift",
         "Sources/Report.swift",
@@ -16,6 +17,7 @@ swift_library(
 swift_binary(
     name = "cli",
     srcs = ["Sources/CLI.swift"],
+    data = ["@buildozer_binary//:buildozer.exe"],
     deps = [
         ":SwiftUnusedDepsLib",
         "@swift_argument_parser//:ArgumentParser",
@@ -26,6 +28,7 @@ swift_binary(
 swift_binary(
     name = "swift_unused_deps",
     srcs = ["Sources/ReportCLI.swift"],
+    data = ["@buildozer_binary//:buildozer.exe"],
     deps = [":SwiftUnusedDepsLib"],
     visibility = ["//visibility:public"],
 )

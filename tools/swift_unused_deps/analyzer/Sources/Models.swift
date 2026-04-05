@@ -1,13 +1,9 @@
 import Foundation
 
-// MARK: - Dep Kind
-
 public enum DepKind: String, Codable {
     case dep
     case privateDep = "private_dep"
 }
-
-// MARK: - Issue Classification
 
 public enum IssueKind: String, Codable {
     case unusedDep = "unused_dep"
@@ -40,8 +36,6 @@ public enum SuggestedAction: String, Codable {
     case moveToPrivateDeps = "move_to_private_deps"
     case investigate
 }
-
-// MARK: - Aspect Metadata (Input)
 
 public struct TargetInfo: Codable {
     public let label: String
@@ -94,8 +88,6 @@ public struct TargetMetadata: Codable {
         case traceFile = "trace_file"
     }
 }
-
-// MARK: - Swift Module Trace (Input)
 
 public struct TraceEntry: Codable {
     public let path: String
@@ -151,8 +143,6 @@ public struct LoadedModule {
         self.isImportedDirectly = isImportedDirectly
     }
 }
-
-// MARK: - Analysis Result (Output)
 
 public struct Issue {
     public let kind: IssueKind

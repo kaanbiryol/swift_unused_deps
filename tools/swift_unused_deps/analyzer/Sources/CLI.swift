@@ -10,8 +10,6 @@ struct SwiftUnusedDeps: ParsableCommand {
         abstract: "Detect unused and missing direct Bazel deps for Swift targets."
     )
 
-    // MARK: - Single-target mode (used by aspect action)
-
     @Option(help: "Path to a single target metadata JSON file.")
     var metadataFile: String?
 
@@ -20,8 +18,6 @@ struct SwiftUnusedDeps: ParsableCommand {
 
     @Option(help: "Path to write the analysis report.")
     var output: String?
-
-    // MARK: - Batch mode (used by CLI)
 
     @Option(help: "Path to bazel-bin. Auto-discovers aspect outputs and trace files.")
     var bazelBin: String?
@@ -32,15 +28,13 @@ struct SwiftUnusedDeps: ParsableCommand {
     @Option(help: "Directory containing Swift loaded module trace JSON files.")
     var traceDir: String?
 
-    // MARK: - Common options
-
     @Flag(help: "Output JSON.")
     var json = false
 
     @Option(help: "Minimum confidence level to report: low, medium, high.")
     var minConfidence: String = "low"
 
-    @Flag(help: "Show buildozer fix commands.")
+    @Flag(help: "Run buildozer to fix high-confidence issues.")
     var fix = false
 
     @Option(help: "Comma-separated extra module names to treat as system modules.")
@@ -86,8 +80,6 @@ struct SwiftUnusedDeps: ParsableCommand {
         }
     }
 
-    // MARK: - Single-target mode
-
     private func runSingleTarget(confidence: Confidence, extraSystem: Set<String>) throws {
         let metaURL = URL(fileURLWithPath: metadataFile!)
         let traceURL = URL(fileURLWithPath: traceFile!)
@@ -123,8 +115,6 @@ struct SwiftUnusedDeps: ParsableCommand {
         // In single-target mode (Bazel action), always exit 0.
         // The report file is the output - issues are findings, not errors.
     }
-
-    // MARK: - Batch mode
 
     private func runBatch(confidence: Confidence, extraSystem: Set<String>) throws {
         let metadataFiles: [URL]
@@ -212,7 +202,7 @@ struct SwiftUnusedDeps: ParsableCommand {
         }
 
         if fix && !json {
-            printFixCommands(results: results)
+            try runFixes(results: results)
         }
 
         let hasIssues = results.contains { result in
@@ -226,9 +216,7 @@ struct SwiftUnusedDeps: ParsableCommand {
         }
     }
 
-    // MARK: - Helpers
-
-    private func printFixCommands(results: [AnalysisResult]) {
+    private func runFixes(results: [AnalysisResult]) throws {
         var commands: [String] = []
         for result in results {
             for issue in result.issues {
@@ -236,13 +224,19 @@ struct SwiftUnusedDeps: ParsableCommand {
                 commands.append(cmd)
             }
         }
-        guard !commands.isEmpty else { return }
+        guard !commands.isEmpty else {
+            printErr("No high-confidence fixes to apply.")
+            return
+        }
 
         printErr("")
-        printErr("--- Suggested fixes (dry-run) ---")
+        printErr("Applying \(commands.count) fix(es)...")
         printErr("")
-        for cmd in commands {
-            printErr("  \(cmd)")
+        let (succeeded, failed) = Buildozer.runAll(commands: commands)
+        printErr("")
+        printErr("Done: \(succeeded) succeeded, \(failed) failed.")
+        if failed > 0 {
+            throw ExitCode(1)
         }
     }
 

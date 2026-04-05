@@ -37,7 +37,15 @@ enum ReportMain {
             exit(2)
         }
 
-        let filter = CommandLine.arguments.count > 1 ? CommandLine.arguments[1] : nil
+        var fixMode = false
+        var filter: String? = nil
+        for arg in CommandLine.arguments.dropFirst() {
+            if arg == "--fix" {
+                fixMode = true
+            } else {
+                filter = arg
+            }
+        }
 
         let baseURL = URL(fileURLWithPath: bazelBin, isDirectory: true)
         let fm = FileManager.default
@@ -63,6 +71,7 @@ enum ReportMain {
 
         var totalTargets = 0
         var totalIssues = 0
+        var fixCommands: [String] = []
 
         for file in reportFiles {
             let data = try Data(contentsOf: file)
@@ -104,6 +113,7 @@ enum ReportMain {
                     }
                     if let cmd = issue["buildozer_command"] as? String {
                         print("  Fix: \(cmd)")
+                        fixCommands.append(cmd)
                     }
                 }
                 print()
@@ -111,6 +121,23 @@ enum ReportMain {
         }
 
         print("\(totalIssues) unused dep(s) found across \(totalTargets) targets.")
+
+        if fixMode && !fixCommands.isEmpty {
+            let workDir: URL?
+            if let env = ProcessInfo.processInfo.environment["BUILD_WORKSPACE_DIRECTORY"] {
+                workDir = URL(fileURLWithPath: env)
+            } else {
+                workDir = nil
+            }
+
+            printErr("")
+            printErr("Applying \(fixCommands.count) fix(es)...")
+            printErr("")
+            let (succeeded, failed) = Buildozer.runAll(commands: fixCommands, workingDirectory: workDir)
+            printErr("")
+            printErr("Done: \(succeeded) succeeded, \(failed) failed.")
+            exit(failed > 0 ? 1 : 0)
+        }
 
         if totalIssues > 0 {
             exit(1)

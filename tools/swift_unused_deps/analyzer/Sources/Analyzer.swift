@@ -20,13 +20,11 @@ public enum Analyzer {
             ))
         }
 
-        // Step 1: Index declared deps by module name.
         var declaredByModule: [String: DeclaredDep] = [:]
         for dep in metadata.declaredDeps {
             declaredByModule[dep.moduleName] = dep
         }
 
-        // Step 2: Resolve loaded modules, filtering system modules.
         var usedModules: [String: (label: String, isImportedDirectly: Bool)] = [:]
 
         for loaded in loadedModules {
@@ -52,7 +50,6 @@ public enum Analyzer {
             }
         }
 
-        // Step 3: Detect unused deps.
         let usedModuleNames = Set(usedModules.keys)
         for (moduleName, dep) in declaredByModule.sorted(by: { $0.key < $1.key }) {
             if !usedModuleNames.contains(moduleName) {
@@ -72,7 +69,6 @@ public enum Analyzer {
             }
         }
 
-        // Step 4: Detect missing direct deps.
         let declaredModuleNames = Set(declaredByModule.keys)
         for (moduleName, info) in usedModules.sorted(by: { $0.key < $1.key }) {
             if declaredModuleNames.contains(moduleName) { continue }
@@ -95,7 +91,6 @@ public enum Analyzer {
             ))
         }
 
-        // Step 5: Detect private_deps candidates.
         for (moduleName, dep) in declaredByModule.sorted(by: { $0.key < $1.key }) {
             guard dep.kind == .dep else { continue }
             guard let info = usedModules[moduleName] else { continue }

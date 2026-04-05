@@ -35,8 +35,6 @@ public struct ModuleResolver {
         systemModules.contains(name)
     }
 
-    // MARK: - System modules
-
     public static let defaultSystemModules: Set<String> = {
         let stdlib = [
             "Swift", "SwiftOnoneSupport", "SwiftShims",

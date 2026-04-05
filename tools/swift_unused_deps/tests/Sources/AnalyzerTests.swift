@@ -3,8 +3,6 @@ import XCTest
 
 final class AnalyzerTests: XCTestCase {
 
-    // MARK: - Helpers
-
     private func makeMetadata(
         label: String,
         moduleName: String,
@@ -25,8 +23,6 @@ final class AnalyzerTests: XCTestCase {
     private func makeModules(_ modules: [(name: String, direct: Bool)]) -> [LoadedModule] {
         modules.map { LoadedModule(name: $0.name, isImportedDirectly: $0.direct) }
     }
-
-    // MARK: - Test Matrix
 
     func testCleanTarget() {
         let metadata = makeMetadata(
