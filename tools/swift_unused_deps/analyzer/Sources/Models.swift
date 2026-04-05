@@ -162,6 +162,17 @@ public struct BuildozerCommand {
     public var batchLine: String {
         "\(action)|\(target)"
     }
+
+    public static func parse(_ displayString: String) -> BuildozerCommand? {
+        guard displayString.hasPrefix("buildozer '") else { return nil }
+        let afterPrefix = displayString.dropFirst("buildozer '".count)
+        guard let closeQuote = afterPrefix.firstIndex(of: "'") else { return nil }
+        let action = String(afterPrefix[afterPrefix.startIndex..<closeQuote])
+        let rest = afterPrefix[afterPrefix.index(after: closeQuote)...]
+            .trimmingCharacters(in: .whitespaces)
+        guard !action.isEmpty, !rest.isEmpty else { return nil }
+        return BuildozerCommand(action: action, target: rest)
+    }
 }
 
 // MARK: - Analysis Result (Output)

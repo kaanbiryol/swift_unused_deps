@@ -71,7 +71,7 @@ enum ReportMain {
 
         var totalTargets = 0
         var totalIssues = 0
-        var fixCommands: [String] = []
+        var fixCommands: [BuildozerCommand] = []
 
         for file in reportFiles {
             let data = try Data(contentsOf: file)
@@ -117,9 +117,11 @@ enum ReportMain {
                     } else {
                         print("  \(label): \(dep)")
                     }
-                    if let cmd = issue["buildozer_command"] as? String {
-                        print("  Fix: \(cmd)")
-                        fixCommands.append(cmd)
+                    if let cmdStr = issue["buildozer_command"] as? String {
+                        print("  Fix: \(cmdStr)")
+                        if let cmd = BuildozerCommand.parse(cmdStr) {
+                            fixCommands.append(cmd)
+                        }
                     }
                 }
                 print()
@@ -139,10 +141,14 @@ enum ReportMain {
             printErr("")
             printErr("Applying \(fixCommands.count) fix(es)...")
             printErr("")
-            let (succeeded, failed) = Buildozer.runAll(commands: fixCommands, workingDirectory: workDir)
-            printErr("")
-            printErr("Done: \(succeeded) succeeded, \(failed) failed.")
-            exit(failed > 0 ? 1 : 0)
+            let result = Buildozer.runBatch(commands: fixCommands, workingDirectory: workDir)
+            if result.success {
+                printErr("Done: \(fixCommands.count) fix(es) applied.")
+                exit(0)
+            } else {
+                printErr("FAILED: \(result.output)")
+                exit(1)
+            }
         }
 
         if totalIssues > 0 {

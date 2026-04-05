@@ -92,4 +92,46 @@ final class TraceParserTests: XCTestCase {
         let modules = try TraceParser.parseTraceData(json)
         XCTAssertTrue(modules.isEmpty)
     }
+
+    // MARK: - JSONL (multi-trace) tests
+
+    func testJSONLFiltersByModuleName() throws {
+        let line1 = """
+        {"version":2,"name":"TargetA","arch":"arm64","swiftmodulesDetailedInfo":[{"name":"DepA","path":"/a.swiftmodule","isImportedDirectly":true}]}
+        """
+        let line2 = """
+        {"version":2,"name":"TargetB","arch":"arm64","swiftmodulesDetailedInfo":[{"name":"DepB","path":"/b.swiftmodule","isImportedDirectly":true}]}
+        """
+        let url = writeTempFile(content: line1 + "\n" + line2)
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        let modules = try TraceParser.parseTraceFile(at: url, forModule: "TargetA")
+
+        XCTAssertEqual(modules.count, 1)
+        XCTAssertEqual(modules[0].name, "DepA")
+    }
+
+    func testJSONLFallsBackToLastTrace() throws {
+        let line1 = """
+        {"version":2,"name":"TargetA","arch":"arm64","swiftmodulesDetailedInfo":[{"name":"DepA","path":"/a.swiftmodule","isImportedDirectly":true}]}
+        """
+        let line2 = """
+        {"version":2,"name":"TargetB","arch":"arm64","swiftmodulesDetailedInfo":[{"name":"DepB","path":"/b.swiftmodule","isImportedDirectly":false}]}
+        """
+        let url = writeTempFile(content: line1 + "\n" + line2)
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        let modules = try TraceParser.parseTraceFile(at: url, forModule: "NonExistent")
+
+        XCTAssertEqual(modules.count, 1)
+        XCTAssertEqual(modules[0].name, "DepB")
+        XCTAssertFalse(modules[0].isImportedDirectly)
+    }
+
+    private func writeTempFile(content: String) -> URL {
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString + ".trace.json")
+        try! content.write(to: url, atomically: true, encoding: .utf8)
+        return url
+    }
 }

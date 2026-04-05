@@ -183,6 +183,22 @@ final class AnalyzerTests: XCTestCase {
         XCTAssertEqual(candidates.count, 0)
     }
 
+    // MARK: - BuildozerCommand
+
+    func testBuildozerCommandParseRoundTrip() {
+        let cmd = BuildozerCommand(action: "remove deps //Lib:B", target: "//App:Main")
+        let parsed = BuildozerCommand.parse(cmd.displayString)
+        XCTAssertEqual(parsed?.action, cmd.action)
+        XCTAssertEqual(parsed?.target, cmd.target)
+    }
+
+    func testBuildozerCommandParseInvalidInput() {
+        XCTAssertNil(BuildozerCommand.parse("not a buildozer command"))
+        XCTAssertNil(BuildozerCommand.parse("buildozer missing quotes"))
+        XCTAssertNil(BuildozerCommand.parse("buildozer '' //target"))
+        XCTAssertNil(BuildozerCommand.parse(""))
+    }
+
     func testMissingDepIndirectLowConfidence() {
         let metadata = makeMetadata(
             label: "//Lib:A", moduleName: "A",
