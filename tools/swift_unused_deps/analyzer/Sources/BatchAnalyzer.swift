@@ -2,6 +2,11 @@ import Foundation
 
 public enum BatchAnalyzer {
 
+    private struct ArtifactCatalog {
+        let metadataFiles: [URL]
+        let traceFileMap: [String: URL]
+    }
+
     public struct Options {
         public var bazelBin: String
         public var indexStorePath: String?
@@ -29,20 +34,52 @@ public enum BatchAnalyzer {
     public static func analyze(options: Options) -> Output {
         let baseURL = URL(fileURLWithPath: options.bazelBin, isDirectory: true)
         let fm = FileManager.default
-
-        var metadataFiles: [URL] = []
-        var traceFileMap: [String: URL] = [:]
         var warnings: [String] = []
 
-        var isDirectory: ObjCBool = false
-        if !fm.fileExists(atPath: baseURL.path, isDirectory: &isDirectory) || !isDirectory.boolValue {
+        guard directoryExists(at: baseURL, fileManager: fm) else {
             return Output(
                 results: [],
                 warnings: ["Metadata root does not exist or is not a directory: \(baseURL.path)"]
             )
         }
 
-        if let enumerator = fm.enumerator(at: baseURL, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles]) {
+        let artifacts = discoverArtifacts(in: baseURL, fileManager: fm)
+        let filter = options.filter.map(TargetFilter.init)
+        let indexStoreUsageByModule = loadIndexStoreUsage(
+            storePath: options.indexStorePath,
+            warnings: &warnings
+        )
+
+        let results = artifacts.metadataFiles.compactMap { metadataFile in
+            analyzeTarget(
+                metadataFile: metadataFile,
+                artifacts: artifacts,
+                bazelBin: options.bazelBin,
+                fileManager: fm,
+                extraSystemModules: options.extraSystemModules,
+                filter: filter,
+                indexStoreUsageByModule: indexStoreUsageByModule,
+                warnings: &warnings
+            )
+        }
+
+        return Output(results: results, warnings: warnings)
+    }
+
+    private static func directoryExists(at url: URL, fileManager: FileManager) -> Bool {
+        var isDirectory: ObjCBool = false
+        return fileManager.fileExists(atPath: url.path, isDirectory: &isDirectory) && isDirectory.boolValue
+    }
+
+    private static func discoverArtifacts(in baseURL: URL, fileManager: FileManager) -> ArtifactCatalog {
+        var metadataFiles: [URL] = []
+        var traceFileMap: [String: URL] = [:]
+
+        if let enumerator = fileManager.enumerator(
+            at: baseURL,
+            includingPropertiesForKeys: nil,
+            options: [.skipsHiddenFiles]
+        ) {
             for case let url as URL in enumerator {
                 let name = url.lastPathComponent
                 if name.hasSuffix(".swift_deps_info.json") {
@@ -53,67 +90,97 @@ public enum BatchAnalyzer {
                 }
             }
         }
+
         metadataFiles.sort { $0.path < $1.path }
+        return ArtifactCatalog(metadataFiles: metadataFiles, traceFileMap: traceFileMap)
+    }
 
-        let indexStoreUsage: [SourceFileModuleUsage]
-        if let storePath = options.indexStorePath {
-            do {
-                indexStoreUsage = try IndexStoreReader.readModuleUsage(storePath: storePath)
-            } catch {
-                indexStoreUsage = []
-                warnings.append("Failed to read index store at '\(storePath)': \(error)")
-            }
-        } else {
-            indexStoreUsage = []
+    private static func loadIndexStoreUsage(
+        storePath: String?,
+        warnings: inout [String]
+    ) -> [String: [SourceFileModuleUsage]] {
+        guard let storePath else { return [:] }
+
+        do {
+            let usage = try IndexStoreReader.readModuleUsage(storePath: storePath)
+            return Dictionary(grouping: usage, by: \.moduleName)
+        } catch {
+            warnings.append("Failed to read index store at '\(storePath)': \(error)")
+            return [:]
+        }
+    }
+
+    private static func analyzeTarget(
+        metadataFile: URL,
+        artifacts: ArtifactCatalog,
+        bazelBin: String,
+        fileManager: FileManager,
+        extraSystemModules: Set<String>,
+        filter: TargetFilter?,
+        indexStoreUsageByModule: [String: [SourceFileModuleUsage]],
+        warnings: inout [String]
+    ) -> AnalysisResult? {
+        guard let metadata = loadMetadata(from: metadataFile, warnings: &warnings) else {
+            return nil
+        }
+        if let filter, !filter.matches(label: metadata.target.label) {
+            return nil
         }
 
-        var results: [AnalysisResult] = []
-
-        for metaFile in metadataFiles {
-            let metadata: TargetMetadata
-            do {
-                let data = try Data(contentsOf: metaFile)
-                metadata = try JSONDecoder().decode(TargetMetadata.self, from: data)
-            } catch {
-                warnings.append("Failed to parse \(metaFile.path): \(error)")
-                continue
-            }
-
-            if let pattern = options.filter {
-                let prefix = pattern.replacingOccurrences(of: "...", with: "")
-                    .replacingOccurrences(of: "@@", with: "")
-                let targetClean = metadata.target.label.replacingOccurrences(of: "@@", with: "")
-                if !targetClean.hasPrefix(prefix) { continue }
-            }
-
-            let loadedModules: [LoadedModule]
-
-            // Prefer index store (no compiler flags needed). Fall back to traces.
-            let targetUsage = indexStoreUsage.filter { $0.moduleName == metadata.target.moduleName }
-            if !targetUsage.isEmpty {
-                loadedModules = deriveLoadedModules(from: targetUsage)
-            } else if let traceModules = loadTraceModules(
-                metadata: metadata, traceFileMap: traceFileMap,
-                bazelBin: options.bazelBin, fm: fm, warnings: &warnings
-            ) {
-                loadedModules = traceModules
-            } else {
-                continue
-            }
-
-            let resolver = ModuleResolver(
-                transitiveModuleMap: metadata.transitiveModuleMap,
-                extraSystemModules: options.extraSystemModules
-            )
-            let result = Analyzer.analyze(
-                metadata: metadata,
-                loadedModules: loadedModules,
-                resolver: resolver
-            )
-            results.append(result)
+        guard let loadedModules = loadModules(
+            for: metadata,
+            artifacts: artifacts,
+            bazelBin: bazelBin,
+            fileManager: fileManager,
+            indexStoreUsageByModule: indexStoreUsageByModule,
+            warnings: &warnings
+        ) else {
+            return nil
         }
 
-        return Output(results: results, warnings: warnings)
+        let resolver = ModuleResolver(
+            transitiveModuleMap: metadata.transitiveModuleMap,
+            extraSystemModules: extraSystemModules
+        )
+        return Analyzer.analyze(
+            metadata: metadata,
+            loadedModules: loadedModules,
+            resolver: resolver
+        )
+    }
+
+    private static func loadMetadata(
+        from metadataFile: URL,
+        warnings: inout [String]
+    ) -> TargetMetadata? {
+        do {
+            let data = try Data(contentsOf: metadataFile)
+            return try JSONDecoder().decode(TargetMetadata.self, from: data)
+        } catch {
+            warnings.append("Failed to parse \(metadataFile.path): \(error)")
+            return nil
+        }
+    }
+
+    private static func loadModules(
+        for metadata: TargetMetadata,
+        artifacts: ArtifactCatalog,
+        bazelBin: String,
+        fileManager: FileManager,
+        indexStoreUsageByModule: [String: [SourceFileModuleUsage]],
+        warnings: inout [String]
+    ) -> [LoadedModule]? {
+        if let targetUsage = indexStoreUsageByModule[metadata.target.moduleName], !targetUsage.isEmpty {
+            return deriveLoadedModules(from: targetUsage)
+        }
+
+        return loadTraceModules(
+            metadata: metadata,
+            traceFileMap: artifacts.traceFileMap,
+            bazelBin: bazelBin,
+            fm: fileManager,
+            warnings: &warnings
+        )
     }
 
     /// Derive LoadedModule list from index store data.
@@ -138,6 +205,7 @@ public enum BatchAnalyzer {
             }
             return LoadedModule(name: moduleName, isImportedDirectly: isDirectlyImported)
         }
+        .sorted { $0.name < $1.name }
     }
 
     /// Fall back to trace-based module loading.

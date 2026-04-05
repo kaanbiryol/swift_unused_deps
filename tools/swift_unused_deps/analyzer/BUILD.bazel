@@ -3,34 +3,38 @@ load("@build_bazel_rules_swift//swift:swift.bzl", "swift_binary", "swift_library
 swift_library(
     name = "SwiftUnusedDepsLib",
     srcs = [
+        "Sources/AnalysisModels.swift",
         "Sources/Analyzer.swift",
         "Sources/BatchAnalyzer.swift",
         "Sources/Buildozer.swift",
         "Sources/IndexStoreReader.swift",
-        "Sources/Models.swift",
+        "Sources/MetadataModels.swift",
         "Sources/ModuleResolver.swift",
         "Sources/Report.swift",
+        "Sources/SwiftUnusedDepsCommand.swift",
+        "Sources/TargetFilter.swift",
         "Sources/TraceParser.swift",
+        "Sources/TraceModels.swift",
     ],
     module_name = "SwiftUnusedDepsLib",
     visibility = ["//tools/swift_unused_deps:__subpackages__"],
-    deps = ["@swift-index-store//:IndexStore"],
+    deps = [
+        "@swift-index-store//:IndexStore",
+        "@swift_argument_parser//:ArgumentParser",
+    ],
 )
 
 swift_binary(
     name = "cli",
-    srcs = ["Sources/CLI.swift"],
+    srcs = ["Sources/Main.swift"],
     data = ["@buildozer_binary//:buildozer.exe"],
-    deps = [
-        ":SwiftUnusedDepsLib",
-        "@swift_argument_parser//:ArgumentParser",
-    ],
+    deps = [":SwiftUnusedDepsLib"],
     visibility = ["//visibility:public"],
 )
 
 swift_binary(
     name = "swift_unused_deps",
-    srcs = ["Sources/ReportCLI.swift"],
+    srcs = ["Sources/Main.swift"],
     data = ["@buildozer_binary//:buildozer.exe"],
     deps = [":SwiftUnusedDepsLib"],
     visibility = ["//visibility:public"],

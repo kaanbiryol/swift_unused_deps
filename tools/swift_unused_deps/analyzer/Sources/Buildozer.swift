@@ -1,5 +1,57 @@
 import Foundation
 
+public struct BuildozerCommand {
+    public enum ValidationError: Swift.Error, CustomStringConvertible {
+        case unsafeBatchField(field: String)
+
+        public var description: String {
+            switch self {
+            case .unsafeBatchField(let field):
+                return "Buildozer command \(field) contains a reserved batch-file separator."
+            }
+        }
+    }
+
+    public let action: String
+    public let target: String
+
+    public init(action: String, target: String) {
+        self.action = action
+        self.target = target
+    }
+
+    public var displayString: String {
+        "buildozer '\(action)' \(target)"
+    }
+
+    public var batchLine: String {
+        "\(action)|\(target)"
+    }
+
+    public func validateForBatchExecution() throws {
+        try validateBatchField(action, name: "action")
+        try validateBatchField(target, name: "target")
+    }
+
+    public static func parse(_ displayString: String) -> BuildozerCommand? {
+        guard displayString.hasPrefix("buildozer '") else { return nil }
+        let afterPrefix = displayString.dropFirst("buildozer '".count)
+        guard let closeQuote = afterPrefix.firstIndex(of: "'") else { return nil }
+        let action = String(afterPrefix[afterPrefix.startIndex..<closeQuote])
+        let rest = afterPrefix[afterPrefix.index(after: closeQuote)...]
+            .trimmingCharacters(in: .whitespaces)
+        guard !action.isEmpty, !rest.isEmpty else { return nil }
+        return BuildozerCommand(action: action, target: rest)
+    }
+
+    private func validateBatchField(_ value: String, name: String) throws {
+        let forbiddenCharacters = CharacterSet(charactersIn: "\n\r|\u{0}")
+        if value.rangeOfCharacter(from: forbiddenCharacters) != nil {
+            throw ValidationError.unsafeBatchField(field: name)
+        }
+    }
+}
+
 public enum Buildozer {
 
     public struct FixResult {

@@ -11,7 +11,7 @@ public enum Report {
         var totalHigh = 0, totalMedium = 0, totalLow = 0
 
         for result in results {
-            let filtered = result.issues.filter { $0.confidence >= minConfidence }
+            let filtered = filteredIssues(in: result, minConfidence: minConfidence)
 
             if filtered.isEmpty {
                 lines.append(result.target)
@@ -21,7 +21,7 @@ public enum Report {
                     lines.append("  Declared deps: \(depCount)")
                 }
                 let systemSkipped = result.skippedModules
-                    .filter { $0.reason == "system_module" }
+                    .filter { $0.reason == .systemModule }
                     .map(\.name)
                     .sorted()
                 if !systemSkipped.isEmpty {
@@ -68,6 +68,13 @@ public enum Report {
         return lines.joined(separator: "\n")
     }
 
+    private static func filteredIssues(
+        in result: AnalysisResult,
+        minConfidence: Confidence
+    ) -> [Issue] {
+        result.issues.filter { $0.confidence >= minConfidence }
+    }
+
     private static func formatIssue(_ issue: Issue) -> [String] {
         var lines: [String] = []
         let conf = issue.confidence.rawValue.uppercased()
@@ -108,59 +115,134 @@ public enum Report {
     }
 
     public static func formatJSON(results: [AnalysisResult], minConfidence: Confidence) -> String {
-        var output: [String: Any] = [
-            "schema_version": 1,
-            "analyzed_at": ISO8601DateFormatter().string(from: Date()),
-        ]
+        let jsonResults = results.map { result -> JSONResult in
+            let filtered = filteredIssues(in: result, minConfidence: minConfidence)
+            let issues = filtered.map { JSONIssue(issue: $0) }
+            let cleanDeps = result.cleanDeps.map { JSONCleanDep(dep: $0) }
+            let skippedModules = result.skippedModules.map { JSONSkippedModule(skippedModule: $0) }
 
-        var resultDicts: [[String: Any]] = []
-        for result in results {
-            let filtered = result.issues.filter { $0.confidence >= minConfidence }
-
-            let dict: [String: Any] = [
-                "target": result.target,
-                "module_name": result.moduleName,
-                "status": filtered.isEmpty ? "clean" : "issues_found",
-                "issues": filtered.map(issueToDict),
-                "clean_deps": result.cleanDeps.map { dep in
-                    [
-                        "label": dep.label,
-                        "module_name": dep.moduleName,
-                        "classification": "correctly_declared_\(dep.kind.rawValue)",
-                    ] as [String: String]
-                },
-                "skipped_modules": result.skippedModules.map { mod in
-                    ["module_name": mod.name, "reason": mod.reason] as [String: String]
-                },
-            ]
-            resultDicts.append(dict)
+            return JSONResult(
+                target: result.target,
+                moduleName: result.moduleName,
+                status: filtered.isEmpty ? "clean" : "issues_found",
+                issues: issues,
+                cleanDeps: cleanDeps,
+                skippedModules: skippedModules
+            )
         }
 
-        output["results"] = resultDicts
+        let output = JSONReport(
+            analyzedAt: ISO8601DateFormatter().string(from: Date()),
+            results: jsonResults
+        )
 
-        guard let data = try? JSONSerialization.data(
-            withJSONObject: output,
-            options: [.prettyPrinted, .sortedKeys]
-        ) else {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+
+        guard let data = try? encoder.encode(output) else {
             return "{}"
         }
-        return String(data: data, encoding: .utf8) ?? "{}"
+        return String(decoding: data, as: UTF8.self)
     }
 
-    private static func issueToDict(_ issue: Issue) -> [String: Any] {
-        var dict: [String: Any] = [
-            "kind": issue.kind.rawValue,
-            "confidence": issue.confidence.rawValue,
-            "reason": issue.reason,
-            "suggested_action": issue.suggestedAction.rawValue,
-        ]
-        if let v = issue.depLabel { dict["dep_label"] = v }
-        if let v = issue.depModule { dict["dep_module"] = v }
-        if let v = issue.depKind { dict["dep_kind"] = v.rawValue }
-        if !issue.currentlyReachableVia.isEmpty {
-            dict["currently_reachable_via"] = issue.currentlyReachableVia
+    private struct JSONReport: Encodable {
+        let schemaVersion = 1
+        let analyzedAt: String
+        let results: [JSONResult]
+
+        enum CodingKeys: String, CodingKey {
+            case schemaVersion = "schema_version"
+            case analyzedAt = "analyzed_at"
+            case results
         }
-        if let v = issue.buildozerCommand { dict["buildozer_command"] = v.displayString }
-        return dict
+    }
+
+    private struct JSONResult: Encodable {
+        let target: String
+        let moduleName: String
+        let status: String
+        let issues: [JSONIssue]
+        let cleanDeps: [JSONCleanDep]
+        let skippedModules: [JSONSkippedModule]
+
+        enum CodingKeys: String, CodingKey {
+            case target
+            case moduleName = "module_name"
+            case status
+            case issues
+            case cleanDeps = "clean_deps"
+            case skippedModules = "skipped_modules"
+        }
+    }
+
+    private struct JSONCleanDep: Encodable {
+        let label: String
+        let moduleName: String
+        let classification: String
+
+        init(dep: DeclaredDep) {
+            label = dep.label
+            moduleName = dep.moduleName
+            classification = "correctly_declared_\(dep.kind.rawValue)"
+        }
+
+        enum CodingKeys: String, CodingKey {
+            case label
+            case moduleName = "module_name"
+            case classification
+        }
+    }
+
+    private struct JSONSkippedModule: Encodable {
+        let moduleName: String
+        let reason: String
+
+        init(skippedModule: SkippedModule) {
+            moduleName = skippedModule.name
+            reason = skippedModule.reason.rawValue
+        }
+
+        enum CodingKeys: String, CodingKey {
+            case moduleName = "module_name"
+            case reason
+        }
+    }
+
+    private struct JSONIssue: Encodable {
+        let kind: String
+        let confidence: String
+        let reason: String
+        let suggestedAction: String
+        let depLabel: String?
+        let depModule: String?
+        let depKind: String?
+        let currentlyReachableVia: [String]?
+        let buildozerCommand: String?
+
+        init(issue: Issue) {
+            kind = issue.kind.rawValue
+            confidence = issue.confidence.rawValue
+            reason = issue.reason
+            suggestedAction = issue.suggestedAction.rawValue
+            depLabel = issue.depLabel
+            depModule = issue.depModule
+            depKind = issue.depKind?.rawValue
+            currentlyReachableVia = issue.currentlyReachableVia.isEmpty
+                ? nil
+                : issue.currentlyReachableVia
+            buildozerCommand = issue.buildozerCommand?.displayString
+        }
+
+        enum CodingKeys: String, CodingKey {
+            case kind
+            case confidence
+            case reason
+            case suggestedAction = "suggested_action"
+            case depLabel = "dep_label"
+            case depModule = "dep_module"
+            case depKind = "dep_kind"
+            case currentlyReachableVia = "currently_reachable_via"
+            case buildozerCommand = "buildozer_command"
+        }
     }
 }

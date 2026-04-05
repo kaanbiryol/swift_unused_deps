@@ -104,7 +104,7 @@ final class AnalyzerTests: XCTestCase {
         let result = Analyzer.analyze(metadata: metadata, loadedModules: modules, resolver: resolver)
 
         XCTAssertTrue(result.isClean)
-        let system = result.skippedModules.filter { $0.reason == "system_module" }
+        let system = result.skippedModules.filter { $0.reason == .systemModule }
         XCTAssertEqual(system.count, 3)
     }
 
