@@ -41,17 +41,28 @@ public struct TargetInfo: Codable {
     public let label: String
     public let moduleName: String
     public let isMixedSource: Bool
+    public let srcs: [String]
 
     enum CodingKeys: String, CodingKey {
         case label
         case moduleName = "module_name"
         case isMixedSource = "is_mixed_source"
+        case srcs
     }
 
-    public init(label: String, moduleName: String, isMixedSource: Bool = false) {
+    public init(label: String, moduleName: String, isMixedSource: Bool = false, srcs: [String] = []) {
         self.label = label
         self.moduleName = moduleName
         self.isMixedSource = isMixedSource
+        self.srcs = srcs
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        label = try container.decode(String.self, forKey: .label)
+        moduleName = try container.decode(String.self, forKey: .moduleName)
+        isMixedSource = try container.decodeIfPresent(Bool.self, forKey: .isMixedSource) ?? false
+        srcs = try container.decodeIfPresent([String].self, forKey: .srcs) ?? []
     }
 }
 

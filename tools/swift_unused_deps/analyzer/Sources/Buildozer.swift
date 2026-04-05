@@ -52,7 +52,7 @@ public enum Buildozer {
         let combinedOutput = [
             String(data: outPipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? "",
             String(data: errPipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? "",
-        ].joined().trimmingCharacters(in: .whitespacesAndNewlines)
+        ].joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
         // Exit code 3 means "no changes made" - treat as success.
         let success = proc.terminationStatus == 0 || proc.terminationStatus == 3
         return FixResult(command: "buildozer -f -", success: success, output: combinedOutput)
@@ -100,6 +100,6 @@ public enum Buildozer {
     }
 }
 
-private func printErr(_ message: String) {
+public func printErr(_ message: String) {
     FileHandle.standardError.write(Data((message + "\n").utf8))
 }

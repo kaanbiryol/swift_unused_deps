@@ -87,7 +87,7 @@ def _create_trace_action(ctx, module_name, swiftmodule_file):
     ctx.actions.run_shell(
         inputs = [swiftmodule_file],
         outputs = [trace_output],
-        command = "if [ -f '{root}' ]; then cp '{root}' '{dst}'; elif [ -f '{beside}' ]; then cp '{beside}' '{dst}'; else echo 'ERROR: No module trace found for {module}. Ensure --spawn_strategy=local is set (or use --config=unused-deps).' >&2; exit 1; fi".format(
+        command = "if [ -f '{root}' ]; then cp '{root}' '{dst}'; elif [ -f '{beside}' ]; then cp '{beside}' '{dst}'; else echo 'WARNING: No module trace found for {module} (cached build). Run bazel clean to regenerate.' >&2; echo '{{}}' > '{dst}'; fi".format(
             root = trace_at_root,
             beside = trace_beside_module,
             dst = trace_output.path,

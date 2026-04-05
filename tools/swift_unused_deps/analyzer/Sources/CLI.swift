@@ -25,9 +25,6 @@ struct SwiftUnusedDeps: ParsableCommand {
     @Option(help: "Directory containing aspect metadata JSON files.")
     var metadataDir: String?
 
-    @Option(help: "Directory containing Swift loaded module trace JSON files.")
-    var traceDir: String?
-
     @Flag(help: "Output JSON.")
     var json = false
 
@@ -39,6 +36,9 @@ struct SwiftUnusedDeps: ParsableCommand {
 
     @Option(help: "Comma-separated extra module names to treat as system modules.")
     var extraSystemModules: String?
+
+    @Option(help: "Path to Swift index store for unused import detection (batch mode only).")
+    var indexStorePath: String?
 
     func validate() throws {
         let hasSingleMode = metadataFile != nil
@@ -112,87 +112,30 @@ struct SwiftUnusedDeps: ParsableCommand {
 
         try content.write(toFile: output!, atomically: true, encoding: .utf8)
 
-        // In single-target mode (Bazel action), always exit 0.
-        // The report file is the output - issues are findings, not errors.
     }
 
     private func runBatch(confidence: Confidence, extraSystem: Set<String>) throws {
-        let metadataFiles: [URL]
-        let traceFiles: [String: URL]
-
-        if let bazelBin = bazelBin {
-            let baseURL = URL(fileURLWithPath: bazelBin, isDirectory: true)
-            metadataFiles = discoverFiles(in: baseURL, suffix: ".swift_deps_info.json")
-            traceFiles = discoverTraceFiles(in: baseURL)
-        } else {
-            let metaURL = URL(fileURLWithPath: metadataDir!, isDirectory: true)
-            metadataFiles = discoverFiles(in: metaURL, suffix: ".json", excludeSuffix: ".trace.json")
-            if let td = traceDir {
-                traceFiles = discoverTraceFiles(in: URL(fileURLWithPath: td, isDirectory: true))
-            } else {
-                traceFiles = [:]
-            }
-        }
-
-        if metadataFiles.isEmpty {
-            printErr("ERROR: No metadata files found.")
-            printErr("Hint: run 'bazel build <targets> --aspects=//tools/swift_unused_deps/aspect:deps_info.bzl%swift_deps_aspect --output_groups=swift_deps_info' first.")
+        guard let bb = bazelBin ?? metadataDir else {
+            printErr("ERROR: No metadata source provided.")
             throw ExitCode(2)
         }
 
-        var results: [AnalysisResult] = []
-        var errors: [String] = []
+        let options = BatchAnalyzer.Options(
+            bazelBin: bb,
+            indexStorePath: indexStorePath,
+            extraSystemModules: extraSystem
+        )
+        let output = BatchAnalyzer.analyze(options: options)
 
-        for metadataFile in metadataFiles {
-            let metadata: TargetMetadata
-            do {
-                let data = try Data(contentsOf: metadataFile)
-                metadata = try JSONDecoder().decode(TargetMetadata.self, from: data)
-            } catch {
-                errors.append("Failed to parse \(metadataFile.path): \(error)")
-                continue
-            }
-
-            var traceFile = traceFiles[metadata.target.moduleName]
-            if traceFile == nil && !metadata.traceFile.isEmpty {
-                if let bb = bazelBin {
-                    let candidate = URL(fileURLWithPath: bb).appendingPathComponent(metadata.traceFile)
-                    if FileManager.default.fileExists(atPath: candidate.path) {
-                        traceFile = candidate
-                    }
-                }
-            }
-
-            guard let traceURL = traceFile else {
-                errors.append(
-                    "No trace file for \(metadata.target.label) (module: \(metadata.target.moduleName)). "
-                    + "Was --swiftcopt=-emit-loaded-module-trace passed during build?"
-                )
-                continue
-            }
-
-            let loadedModules: [LoadedModule]
-            do {
-                loadedModules = try TraceParser.parseTraceFile(at: traceURL, forModule: metadata.target.moduleName)
-            } catch {
-                errors.append("Failed to parse trace for \(metadata.target.label): \(error)")
-                continue
-            }
-
-            let resolver = ModuleResolver(
-                transitiveModuleMap: metadata.transitiveModuleMap,
-                extraSystemModules: extraSystem
-            )
-            let result = Analyzer.analyze(
-                metadata: metadata,
-                loadedModules: loadedModules,
-                resolver: resolver
-            )
-            results.append(result)
+        for warning in output.warnings {
+            printErr("WARNING: \(warning)")
         }
 
-        for err in errors {
-            printErr("WARNING: \(err)")
+        let results = output.results
+        if results.isEmpty && output.warnings.isEmpty {
+            printErr("ERROR: No metadata files found.")
+            printErr("Hint: run 'bazel build <targets> --config=unused-deps' first.")
+            throw ExitCode(2)
         }
 
         if json {
@@ -208,11 +151,11 @@ struct SwiftUnusedDeps: ParsableCommand {
         let hasIssues = results.contains { result in
             result.issues.contains { $0.confidence >= confidence }
         }
-        if !errors.isEmpty {
-            throw ExitCode(2)
-        }
         if hasIssues {
             throw ExitCode(1)
+        }
+        if !output.warnings.isEmpty {
+            throw ExitCode(2)
         }
     }
 
@@ -241,41 +184,4 @@ struct SwiftUnusedDeps: ParsableCommand {
         }
     }
 
-    private func discoverFiles(in directory: URL, suffix: String, excludeSuffix: String? = nil) -> [URL] {
-        let fm = FileManager.default
-        guard let enumerator = fm.enumerator(
-            at: directory, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles]
-        ) else { return [] }
-
-        var files: [URL] = []
-        for case let url as URL in enumerator {
-            let name = url.lastPathComponent
-            if name.hasSuffix(suffix) {
-                if let exclude = excludeSuffix, name.hasSuffix(exclude) { continue }
-                files.append(url)
-            }
-        }
-        return files.sorted { $0.path < $1.path }
-    }
-
-    private func discoverTraceFiles(in directory: URL) -> [String: URL] {
-        let fm = FileManager.default
-        guard let enumerator = fm.enumerator(
-            at: directory, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles]
-        ) else { return [:] }
-
-        var traces: [String: URL] = [:]
-        for case let url as URL in enumerator {
-            let name = url.lastPathComponent
-            if name.hasSuffix(".trace.json") {
-                let moduleName = String(name.dropLast(".trace.json".count))
-                traces[moduleName] = url
-            }
-        }
-        return traces
-    }
-}
-
-private func printErr(_ message: String) {
-    FileHandle.standardError.write(Data((message + "\n").utf8))
 }

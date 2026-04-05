@@ -4,7 +4,10 @@ swift_library(
     name = "SwiftUnusedDepsLib",
     srcs = [
         "Sources/Analyzer.swift",
+        "Sources/BatchAnalyzer.swift",
         "Sources/Buildozer.swift",
+        "Sources/ImportRefiner.swift",
+        "Sources/IndexStoreReader.swift",
         "Sources/Models.swift",
         "Sources/ModuleResolver.swift",
         "Sources/Report.swift",
@@ -12,6 +15,7 @@ swift_library(
     ],
     module_name = "SwiftUnusedDepsLib",
     visibility = ["//tools/swift_unused_deps:__subpackages__"],
+    deps = ["@swift-index-store//:IndexStore"],
 )
 
 swift_binary(

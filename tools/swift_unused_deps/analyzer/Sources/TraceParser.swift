@@ -13,11 +13,7 @@ public enum TraceParser {
     public static func extractModuleName(from path: String) -> String? {
         let components = path.split(separator: "/").map(String.init)
         for component in components.reversed() {
-            guard component.hasSuffix(".swiftmodule") else {
-                // Also handle .swiftinterface paths
-                if component.hasSuffix(".swiftinterface") { continue }
-                continue
-            }
+            guard component.hasSuffix(".swiftmodule") else { continue }
             let candidate = String(component.dropLast(".swiftmodule".count))
             // Skip architecture slugs like "arm64-apple-ios" or "arm64e-apple-macos"
             if candidate.contains("-") { continue }
@@ -63,8 +59,11 @@ public enum TraceParser {
     }
 
     /// Parse loaded module trace from raw JSON data (single trace).
+    /// Returns an empty array for empty or invalid traces.
     public static func parseTraceData(_ data: Data) throws -> [LoadedModule] {
-        let trace = try JSONDecoder().decode(ModuleTrace.self, from: data)
+        guard let trace = try? JSONDecoder().decode(ModuleTrace.self, from: data) else {
+            return []
+        }
         return extractModules(from: trace)
     }
 
