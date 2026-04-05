@@ -99,15 +99,16 @@ public enum Buildozer {
         guard let content = try? String(contentsOfFile: mappingPath, encoding: .utf8) else {
             return apparent
         }
+        var fallback: String?
         for line in content.components(separatedBy: "\n") {
             let parts = line.components(separatedBy: ",")
-            guard parts.count == 3 else { continue }
-            // Empty first field = main repo's mapping.
-            if parts[0].isEmpty && parts[1] == apparent {
-                return parts[2]
-            }
+            guard parts.count == 3, parts[1] == apparent else { continue }
+            // Prefer main repo's mapping (empty first field).
+            if parts[0].isEmpty { return parts[2] }
+            // Otherwise remember the first match from any repo.
+            if fallback == nil { fallback = parts[2] }
         }
-        return apparent
+        return fallback ?? apparent
     }
 }
 
