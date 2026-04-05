@@ -94,11 +94,11 @@ public enum Report {
         switch issue.suggestedAction {
         case .remove, .addDep:
             if let cmd = issue.buildozerCommand {
-                lines.append("         Fix: \(cmd)")
+                lines.append("         Fix: \(cmd.displayString)")
             }
         case .moveToPrivateDeps:
             if let cmd = issue.buildozerCommand {
-                lines.append("         Suggestion: \(cmd)")
+                lines.append("         Suggestion: \(cmd.displayString)")
             }
         case .investigate:
             lines.append("         Action: investigate manually.")
@@ -160,7 +160,7 @@ public enum Report {
         if !issue.currentlyReachableVia.isEmpty {
             dict["currently_reachable_via"] = issue.currentlyReachableVia
         }
-        if let v = issue.buildozerCommand { dict["buildozer_command"] = v }
+        if let v = issue.buildozerCommand { dict["buildozer_command"] = v.displayString }
         return dict
     }
 }

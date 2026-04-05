@@ -62,7 +62,7 @@ public enum Analyzer {
                     depLabel: dep.label,
                     depModule: moduleName,
                     depKind: dep.kind,
-                    buildozerCommand: "buildozer 'remove \(attrName) \(dep.label)' \(metadata.target.label)"
+                    buildozerCommand: BuildozerCommand(action: "remove \(attrName) \(dep.label)", target: metadata.target.label)
                 ))
             } else {
                 cleanDeps.append(dep)
@@ -86,7 +86,7 @@ public enum Analyzer {
                 depModule: moduleName,
                 currentlyReachableVia: reachableVia,
                 buildozerCommand: action == .addDep
-                    ? "buildozer 'add deps \(info.label)' \(metadata.target.label)"
+                    ? BuildozerCommand(action: "add deps \(info.label)", target: metadata.target.label)
                     : nil
             ))
         }
@@ -103,7 +103,7 @@ public enum Analyzer {
                     depLabel: dep.label,
                     depModule: moduleName,
                     depKind: dep.kind,
-                    buildozerCommand: "buildozer 'move deps private_deps \(dep.label)' \(metadata.target.label)"
+                    buildozerCommand: BuildozerCommand(action: "move deps private_deps \(dep.label)", target: metadata.target.label)
                 ))
             }
         }

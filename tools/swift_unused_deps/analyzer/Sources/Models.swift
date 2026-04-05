@@ -144,6 +144,28 @@ public struct LoadedModule {
     }
 }
 
+// MARK: - Buildozer Command
+
+public struct BuildozerCommand {
+    public let action: String
+    public let target: String
+
+    public init(action: String, target: String) {
+        self.action = action
+        self.target = target
+    }
+
+    public var displayString: String {
+        "buildozer '\(action)' \(target)"
+    }
+
+    public var batchLine: String {
+        "\(action)|\(target)"
+    }
+}
+
+// MARK: - Analysis Result (Output)
+
 public struct Issue {
     public let kind: IssueKind
     public let confidence: Confidence
@@ -153,7 +175,7 @@ public struct Issue {
     public var depModule: String?
     public var depKind: DepKind?
     public var currentlyReachableVia: [String] = []
-    public var buildozerCommand: String?
+    public var buildozerCommand: BuildozerCommand?
 }
 
 public struct AnalysisResult {

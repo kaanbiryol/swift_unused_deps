@@ -57,6 +57,7 @@ final class AnalyzerTests: XCTestCase {
         XCTAssertEqual(unused[0].confidence, .high)
         XCTAssertEqual(unused[0].suggestedAction, .remove)
         XCTAssertNotNil(unused[0].buildozerCommand)
+        XCTAssertEqual(unused[0].buildozerCommand?.batchLine, "remove deps //Lib:B|//Lib:A")
     }
 
     func testMissingDirectDep() {

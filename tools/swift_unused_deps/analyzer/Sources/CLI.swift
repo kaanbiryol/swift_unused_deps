@@ -217,7 +217,7 @@ struct SwiftUnusedDeps: ParsableCommand {
     }
 
     private func runFixes(results: [AnalysisResult]) throws {
-        var commands: [String] = []
+        var commands: [BuildozerCommand] = []
         for result in results {
             for issue in result.issues {
                 guard issue.confidence >= .high, let cmd = issue.buildozerCommand else { continue }
@@ -232,10 +232,11 @@ struct SwiftUnusedDeps: ParsableCommand {
         printErr("")
         printErr("Applying \(commands.count) fix(es)...")
         printErr("")
-        let (succeeded, failed) = Buildozer.runAll(commands: commands)
-        printErr("")
-        printErr("Done: \(succeeded) succeeded, \(failed) failed.")
-        if failed > 0 {
+        let result = Buildozer.runBatch(commands: commands)
+        if result.success {
+            printErr("Done: \(commands.count) fix(es) applied.")
+        } else {
+            printErr("FAILED: \(result.output)")
             throw ExitCode(1)
         }
     }
