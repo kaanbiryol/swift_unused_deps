@@ -106,10 +106,16 @@ enum ReportMain {
                     totalIssues += 1
                     let dep = issue["dep_label"] as? String ?? "?"
                     let module = issue["dep_module"] as? String ?? ""
+                    let label: String
+                    switch issue["kind"] as? String {
+                    case "unused_dep": label = "UNUSED"
+                    case "missing_direct_dep": label = "MISSING DEP"
+                    default: label = (issue["kind"] as? String ?? "ISSUE").uppercased()
+                    }
                     if !module.isEmpty && module != dep {
-                        print("  UNUSED: \(dep) (module: \(module))")
+                        print("  \(label): \(dep) (module: \(module))")
                     } else {
-                        print("  UNUSED: \(dep)")
+                        print("  \(label): \(dep)")
                     }
                     if let cmd = issue["buildozer_command"] as? String {
                         print("  Fix: \(cmd)")
@@ -120,7 +126,7 @@ enum ReportMain {
             }
         }
 
-        print("\(totalIssues) unused dep(s) found across \(totalTargets) targets.")
+        print("\(totalIssues) issue(s) found across \(totalTargets) targets.")
 
         if fixMode && !fixCommands.isEmpty {
             let workDir: URL?
