@@ -1,0 +1,12 @@
+load("@build_bazel_rules_swift//swift:swift.bzl", "swift_library")
+
+# UNRESOLVED MODULE - RegexBuilder is a Swift stdlib module but is not in the
+# tool's hardcoded system modules list, so it gets flagged as unresolved.
+# This is the expected low-confidence finding for modules the tool can't map
+# to a Bazel label.
+swift_library(
+    name = "Search",
+    srcs = ["SearchView.swift"],
+    deps = [],
+    visibility = ["//visibility:public"],
+)
