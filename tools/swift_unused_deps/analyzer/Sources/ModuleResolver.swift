@@ -43,11 +43,12 @@ public struct ModuleResolver {
             "_Backtracing", "_MatchingEngine",
             "_Builtin_float", "_FoundationCShims",
             "_DarwinFoundation1", "_DarwinFoundation2", "_DarwinFoundation3",
-            "Observation", "System", "Testing", "XPC",
+            "Observation", "Synchronization", "System", "Testing", "XPC",
         ]
 
         let sdk = [
-            "Accelerate", "Accessibility", "AVFoundation", "AVKit",
+            "Accelerate", "Accessibility", "AppTrackingTransparency",
+            "AVFoundation", "AVKit",
             "AuthenticationServices", "BackgroundTasks",
             "CFNetwork", "Combine", "Contacts", "ContactsUI",
             "CoreAnimation", "CoreBluetooth", "CoreData",
@@ -56,7 +57,7 @@ public struct ModuleResolver {
             "CoreML", "CoreMotion", "CoreServices", "CoreSpotlight",
             "CoreTelephony", "CoreText", "CoreVideo",
             "CryptoKit", "CryptoTokenKit",
-            "Darwin", "Dispatch",
+            "Darwin", "DeveloperToolsSupport", "Dispatch",
             "EventKit", "EventKitUI",
             "Foundation",
             "GameKit", "GameplayKit",
@@ -73,7 +74,7 @@ public struct ModuleResolver {
             "QuartzCore", "QuickLook",
             "RealityKit",
             "SafariServices", "SceneKit", "Security",
-            "Social", "SpriteKit", "StoreKit", "SwiftUI",
+            "Social", "SpriteKit", "StoreKit", "SwiftUI", "SwiftUICore",
             "SystemConfiguration",
             "UIKit", "UniformTypeIdentifiers",
             "UserNotifications", "UserNotificationsUI",
