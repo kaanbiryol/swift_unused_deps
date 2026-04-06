@@ -31,6 +31,12 @@ public struct LabelConverter {
     /// - `@@swift-syntax+//:Foo` -> `@swiftpkg_swift_syntax//:Foo`
     /// - Labels without `@@` prefix -> unchanged (WORKSPACE mode)
     public func convert(_ label: String, buildFileContent: String? = nil) -> String {
+        let apparent = convertCanonicalToApparent(label, buildFileContent: buildFileContent)
+        return Self.stripRSPMSuffix(apparent)
+    }
+
+    /// Core canonical-to-apparent conversion logic.
+    private func convertCanonicalToApparent(_ label: String, buildFileContent: String?) -> String {
         guard !isIdentity, label.hasPrefix("@@") else { return label }
 
         let withoutPrefix = String(label.dropFirst(2))
@@ -67,6 +73,17 @@ public struct LabelConverter {
         }
 
         return "@\(apparentNames[0])\(remainder)"
+    }
+
+    /// Strip the `.rspm` suffix from external labels.
+    ///
+    /// `rules_swift_package_manager` creates internal `swift_library` targets with
+    /// a `.rspm` suffix and public aliases without it. Bazel resolves aliases before
+    /// the aspect sees them, so we strip the suffix to produce labels that match
+    /// BUILD file text and have correct visibility.
+    private static func stripRSPMSuffix(_ label: String) -> String {
+        guard label.hasPrefix("@"), label.hasSuffix(".rspm") else { return label }
+        return String(label.dropLast(".rspm".count))
     }
 
     /// Load the repo mapping by running `bazel mod dump_repo_mapping ""`.

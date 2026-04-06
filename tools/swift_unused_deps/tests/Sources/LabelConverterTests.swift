@@ -104,6 +104,51 @@ final class LabelConverterTests: XCTestCase {
         )
     }
 
+    // MARK: - RSPM suffix stripping
+
+    func testExternalRSPMSuffixStripped() {
+        let converter = LabelConverter(canonicalToApparent: [
+            "swiftpkg_swift_http_types+": ["swiftpkg_swift_http_types"],
+        ])
+        XCTAssertEqual(
+            converter.convert("@@swiftpkg_swift_http_types+//:HTTPTypes.rspm"),
+            "@swiftpkg_swift_http_types//:HTTPTypes"
+        )
+    }
+
+    func testLocalLabelEndingInRSPMNotStripped() {
+        let converter = LabelConverter(canonicalToApparent: [:])
+        XCTAssertEqual(converter.convert("@@//pkg:Foo.rspm"), "//pkg:Foo.rspm")
+    }
+
+    func testIdentityConverterStillStripsRSPM() {
+        let converter = LabelConverter.identity
+        XCTAssertEqual(
+            converter.convert("@swiftpkg_swift_http_types//:HTTPTypes.rspm"),
+            "@swiftpkg_swift_http_types//:HTTPTypes"
+        )
+    }
+
+    func testNonRSPMExternalLabelUnchanged() {
+        let converter = LabelConverter(canonicalToApparent: [
+            "swift-syntax+": ["swiftpkg_swift_syntax"],
+        ])
+        XCTAssertEqual(
+            converter.convert("@@swift-syntax+//:SwiftSyntax"),
+            "@swiftpkg_swift_syntax//:SwiftSyntax"
+        )
+    }
+
+    func testRSPMSuffixOnlyStrippedAtEnd() {
+        let converter = LabelConverter(canonicalToApparent: [
+            "swiftpkg_foo+": ["swiftpkg_foo"],
+        ])
+        XCTAssertEqual(
+            converter.convert("@@swiftpkg_foo+//:rspm_helper"),
+            "@swiftpkg_foo//:rspm_helper"
+        )
+    }
+
     // MARK: - TargetMetadata label conversion
 
     func testMetadataConvertingLabels() {
@@ -209,6 +254,66 @@ final class LabelConverterTests: XCTestCase {
         XCTAssertEqual(
             unused[0].buildozerCommand?.displayString,
             "buildozer 'remove deps @swiftpkg_swift_syntax//:SwiftSyntax' //Lib:A"
+        )
+    }
+
+    func testRSPMLabelsProduceCorrectBuildozerCommands() {
+        let converter = LabelConverter(canonicalToApparent: [
+            "swiftpkg_swift_http_types+": ["swiftpkg_swift_http_types"],
+        ])
+
+        // Test unused dep with .rspm label
+        let metadata = TargetMetadata(
+            schemaVersion: 1,
+            target: TargetInfo(label: "@@//Lib:A", moduleName: "A"),
+            declaredDeps: [
+                DeclaredDep(
+                    label: "@@swiftpkg_swift_http_types+//:HTTPTypes.rspm",
+                    moduleName: "HTTPTypes",
+                    kind: .dep
+                ),
+            ],
+            transitiveModuleMap: [
+                "HTTPTypes": "@@swiftpkg_swift_http_types+//:HTTPTypes.rspm",
+            ],
+            traceFile: ""
+        )
+        let converted = metadata.convertingLabels(with: converter)
+
+        XCTAssertEqual(converted.declaredDeps[0].label, "@swiftpkg_swift_http_types//:HTTPTypes")
+        XCTAssertEqual(converted.transitiveModuleMap["HTTPTypes"], "@swiftpkg_swift_http_types//:HTTPTypes")
+
+        let resolver = ModuleResolver(transitiveModuleMap: converted.transitiveModuleMap)
+        let result = Analyzer.analyze(metadata: converted, loadedModules: [], resolver: resolver)
+
+        let unused = result.issues.filter { $0.kind == .unusedDep }
+        XCTAssertEqual(unused.count, 1)
+        XCTAssertEqual(
+            unused[0].buildozerCommand?.displayString,
+            "buildozer 'remove deps @swiftpkg_swift_http_types//:HTTPTypes' //Lib:A"
+        )
+
+        // Test missing dep with .rspm label
+        let missingMetadata = TargetMetadata(
+            schemaVersion: 1,
+            target: TargetInfo(label: "@@//Lib:A", moduleName: "A"),
+            declaredDeps: [],
+            transitiveModuleMap: [
+                "HTTPTypes": "@@swiftpkg_swift_http_types+//:HTTPTypes.rspm",
+            ],
+            traceFile: ""
+        ).convertingLabels(with: converter)
+        let missingResolver = ModuleResolver(transitiveModuleMap: missingMetadata.transitiveModuleMap)
+        let missingResult = Analyzer.analyze(
+            metadata: missingMetadata,
+            loadedModules: [LoadedModule(name: "HTTPTypes", isImportedDirectly: true)],
+            resolver: missingResolver
+        )
+        let missing = missingResult.issues.filter { $0.kind == .missingDirectDep }
+        XCTAssertEqual(missing.count, 1)
+        XCTAssertEqual(
+            missing[0].buildozerCommand?.displayString,
+            "buildozer 'add deps @swiftpkg_swift_http_types//:HTTPTypes' //Lib:A"
         )
     }
 }
