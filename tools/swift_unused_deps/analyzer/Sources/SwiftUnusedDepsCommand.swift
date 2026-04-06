@@ -37,7 +37,10 @@ public struct SwiftUnusedDepsCommand: ParsableCommand {
     @Option(help: "Path to Swift index store for unused import detection (batch mode only).")
     var indexStorePath: String?
 
-    @Argument(help: "Optional target filter when running in batch mode.")
+    @Flag(help: "Skip the automatic 'bazel build --config=unused-deps' step.")
+    var noBuild = false
+
+    @Argument(help: "Bazel target pattern to analyze (e.g. //libraries/...).")
     var filter: String?
 
     public init() {}
@@ -122,6 +125,12 @@ public struct SwiftUnusedDepsCommand: ParsableCommand {
     }
 
     private func runBatch(confidence: Confidence, extraSystem: Set<String>) throws {
+        // When a target pattern is provided and no explicit path is set,
+        // run `bazel build --config=unused-deps` automatically.
+        if let pattern = filter, !noBuild, bazelBin == nil, metadataDir == nil {
+            try runBazelBuild(pattern: pattern)
+        }
+
         let metadataRoot = bazelBin ?? metadataDir ?? Self.resolveDefaultMetadataRoot()
         guard !metadataRoot.isEmpty else {
             printErr("ERROR: Could not determine metadata root.")
@@ -242,11 +251,102 @@ public struct SwiftUnusedDepsCommand: ParsableCommand {
         return nil
     }
 
+    private func runBazelBuild(pattern: String) throws {
+        guard let workspace = Self.workspaceDirectory() else {
+            printErr("WARNING: BUILD_WORKSPACE_DIRECTORY not set, skipping automatic build.")
+            return
+        }
+
+        printErr("Building \(pattern) with --config=unused-deps ...")
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
+        process.arguments = ["bazel", "build", pattern, "--config=unused-deps"]
+        process.currentDirectoryURL = workspace
+        // Inherit stderr so the user sees build progress.
+        process.standardError = FileHandle.standardError
+        // Suppress stdout (build info lines).
+        process.standardOutput = FileHandle.nullDevice
+        try process.run()
+        process.waitUntilExit()
+        if process.terminationStatus != 0 {
+            printErr("ERROR: bazel build failed (exit \(process.terminationStatus)).")
+            throw ExitCode(2)
+        }
+    }
+
     private static func resolveDefaultMetadataRoot() -> String {
         let workspace = ProcessInfo.processInfo.environment["BUILD_WORKSPACE_DIRECTORY"]
             ?? FileManager.default.currentDirectoryPath
-        let bazelBin = URL(fileURLWithPath: workspace).appendingPathComponent("bazel-bin").path
-        return (try? FileManager.default.destinationOfSymbolicLink(atPath: bazelBin)) ?? bazelBin
+        let wsURL = URL(fileURLWithPath: workspace)
+        let fm = FileManager.default
+
+        // Try bazel-bin symlink first.
+        let bazelBin = wsURL.appendingPathComponent("bazel-bin").path
+        if let resolved = try? fm.destinationOfSymbolicLink(atPath: bazelBin),
+           hasMetadataFiles(in: resolved, fileManager: fm) {
+            return resolved
+        }
+
+        // bazel-bin points to a config with no metadata (common when
+        // `bazel run` changes the symlink). Scan bazel-out for the config
+        // that has aspect outputs from --config=unused-deps.
+        let bazelOut = wsURL.appendingPathComponent("bazel-out").path
+        let outPath = (try? fm.destinationOfSymbolicLink(atPath: bazelOut)) ?? bazelOut
+        if let best = bestConfigBin(in: outPath, fileManager: fm) {
+            printErr("Auto-detected metadata in: \(best)")
+            return best
+        }
+
+        return (try? fm.destinationOfSymbolicLink(atPath: bazelBin)) ?? bazelBin
+    }
+
+    /// Check if a directory contains any `.swift_deps_info.json` files.
+    private static func hasMetadataFiles(in path: String, fileManager: FileManager) -> Bool {
+        guard let enumerator = fileManager.enumerator(
+            at: URL(fileURLWithPath: path),
+            includingPropertiesForKeys: nil,
+            options: [.skipsHiddenFiles]
+        ) else { return false }
+        for case let url as URL in enumerator {
+            if url.lastPathComponent.hasSuffix(".swift_deps_info.json") {
+                return true
+            }
+        }
+        return false
+    }
+
+    /// Find the `<config>/bin/` directory under `bazel-out` that contains
+    /// aspect metadata files. Returns nil if none found.
+    private static func bestConfigBin(
+        in bazelOut: String,
+        fileManager fm: FileManager
+    ) -> String? {
+        guard let configs = try? fm.contentsOfDirectory(atPath: bazelOut) else { return nil }
+
+        var best: (path: String, count: Int)?
+        for config in configs {
+            let binDir = URL(fileURLWithPath: bazelOut)
+                .appendingPathComponent(config)
+                .appendingPathComponent("bin")
+            var isDir: ObjCBool = false
+            guard fm.fileExists(atPath: binDir.path, isDirectory: &isDir),
+                  isDir.boolValue else { continue }
+
+            var count = 0
+            if let enumerator = fm.enumerator(
+                at: binDir, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles]
+            ) {
+                for case let url as URL in enumerator {
+                    if url.lastPathComponent.hasSuffix(".swift_deps_info.json") {
+                        count += 1
+                    }
+                }
+            }
+            if count > 0 && (best == nil || count > best!.count) {
+                best = (binDir.path, count)
+            }
+        }
+        return best?.path
     }
 
     private static func workspaceDirectory() -> URL? {
