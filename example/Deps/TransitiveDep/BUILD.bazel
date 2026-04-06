@@ -1,0 +1,9 @@
+load("@build_bazel_rules_swift//swift:swift.bzl", "swift_library")
+
+# A leaf dependency used to test transitive dep detection.
+swift_library(
+    name = "TransitiveDep",
+    srcs = ["TransitiveDep.swift"],
+    module_name = "TransitiveDep",
+    visibility = ["//example:__subpackages__"],
+)

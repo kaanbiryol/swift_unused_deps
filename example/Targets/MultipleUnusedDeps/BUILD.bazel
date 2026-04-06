@@ -1,0 +1,16 @@
+load("@build_bazel_rules_swift//swift:swift.bzl", "swift_library")
+
+# MULTIPLE UNUSED - LibA, LibB, and LibC are never imported.
+swift_library(
+    name = "MultipleUnusedDeps",
+    srcs = ["MultipleUnusedDeps.swift"],
+    module_name = "MultipleUnusedDeps",
+    deps = [
+        "//example/Deps/DirectDepWithTransitive",
+        "//example/Deps/TransitiveDep",
+        "//example/Deps/LibA",    # Unused
+        "//example/Deps/LibB",    # Unused
+        "//example/Deps/LibC",    # Unused
+    ],
+    visibility = ["//example:__subpackages__"],
+)

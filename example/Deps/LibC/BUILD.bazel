@@ -1,0 +1,8 @@
+load("@build_bazel_rules_swift//swift:swift.bzl", "swift_library")
+
+swift_library(
+    name = "LibC",
+    srcs = ["LibC.swift"],
+    module_name = "LibC",
+    visibility = ["//example:__subpackages__"],
+)

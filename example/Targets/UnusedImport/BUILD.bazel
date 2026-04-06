@@ -1,0 +1,15 @@
+load("@build_bazel_rules_swift//swift:swift.bzl", "swift_library")
+
+# UNUSED IMPORT - LibA is imported in source but no symbols from it are
+# referenced. The trace-only analysis cannot detect this because the compiler
+# loads LibA.swiftmodule due to the import statement. Only index store
+# analysis can catch it by verifying no symbols from LibA are used.
+swift_library(
+    name = "UnusedImport",
+    srcs = ["UnusedImport.swift"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//example/Deps/LibA",    # Unused - imported but no symbols referenced (index store detects this)
+        "//example/Deps/LibB",
+    ],
+)
