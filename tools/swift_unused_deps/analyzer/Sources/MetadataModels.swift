@@ -66,4 +66,28 @@ public struct TargetMetadata: Codable {
         case transitiveModuleMap = "transitive_module_map"
         case traceFile = "trace_file"
     }
+
+    /// Returns a new instance with all Bazel labels converted from canonical to apparent form.
+    public func convertingLabels(with converter: LabelConverter) -> TargetMetadata {
+        TargetMetadata(
+            schemaVersion: schemaVersion,
+            target: TargetInfo(
+                label: converter.convert(target.label),
+                moduleName: target.moduleName,
+                isMixedSource: target.isMixedSource,
+                srcs: target.srcs
+            ),
+            declaredDeps: declaredDeps.map {
+                DeclaredDep(
+                    label: converter.convert($0.label),
+                    moduleName: $0.moduleName,
+                    kind: $0.kind
+                )
+            },
+            transitiveModuleMap: Dictionary(uniqueKeysWithValues:
+                transitiveModuleMap.map { ($0.key, converter.convert($0.value)) }
+            ),
+            traceFile: traceFile
+        )
+    }
 }

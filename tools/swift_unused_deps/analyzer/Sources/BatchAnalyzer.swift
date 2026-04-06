@@ -12,17 +12,20 @@ public enum BatchAnalyzer {
         public var indexStorePath: String?
         public var extraSystemModules: Set<String>
         public var filter: String?
+        public var labelConverter: LabelConverter
 
         public init(
             bazelBin: String,
             indexStorePath: String? = nil,
             extraSystemModules: Set<String> = [],
-            filter: String? = nil
+            filter: String? = nil,
+            labelConverter: LabelConverter = .identity
         ) {
             self.bazelBin = bazelBin
             self.indexStorePath = indexStorePath
             self.extraSystemModules = extraSystemModules
             self.filter = filter
+            self.labelConverter = labelConverter
         }
     }
 
@@ -58,6 +61,7 @@ public enum BatchAnalyzer {
                 fileManager: fm,
                 extraSystemModules: options.extraSystemModules,
                 filter: filter,
+                labelConverter: options.labelConverter,
                 indexStoreUsageByModule: indexStoreUsageByModule,
                 warnings: &warnings
             )
@@ -117,12 +121,14 @@ public enum BatchAnalyzer {
         fileManager: FileManager,
         extraSystemModules: Set<String>,
         filter: TargetFilter?,
+        labelConverter: LabelConverter,
         indexStoreUsageByModule: [String: [SourceFileModuleUsage]],
         warnings: inout [String]
     ) -> AnalysisResult? {
-        guard let metadata = loadMetadata(from: metadataFile, warnings: &warnings) else {
+        guard var metadata = loadMetadata(from: metadataFile, warnings: &warnings) else {
             return nil
         }
+        metadata = metadata.convertingLabels(with: labelConverter)
         if let filter, !filter.matches(label: metadata.target.label) {
             return nil
         }

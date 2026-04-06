@@ -57,6 +57,8 @@ public enum Buildozer {
     public struct FixResult {
         public let command: String
         public let success: Bool
+        /// True when buildozer exited with code 3 (no changes made).
+        public let noChanges: Bool
         public let output: String
     }
 
@@ -71,6 +73,7 @@ public enum Buildozer {
                 return FixResult(
                     command: "buildozer -f -",
                     success: false,
+                    noChanges: false,
                     output: "Refusing to execute invalid buildozer command '\(command.displayString)': \(error)"
                 )
             }
@@ -80,6 +83,7 @@ public enum Buildozer {
             return FixResult(
                 command: "buildozer -f -",
                 success: false,
+                noChanges: false,
                 output: "buildozer not found in runfiles. Run this binary via 'bazel run' or ensure buildozer is available in runfiles."
             )
         }
@@ -109,16 +113,18 @@ public enum Buildozer {
             inPipe.fileHandleForWriting.closeFile()
             proc.waitUntilExit()
         } catch {
-            return FixResult(command: "buildozer -f -", success: false, output: error.localizedDescription)
+            return FixResult(command: "buildozer -f -", success: false, noChanges: false, output: error.localizedDescription)
         }
 
         let combinedOutput = [
             String(data: outPipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? "",
             String(data: errPipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? "",
         ].joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
-        // Exit code 3 means "no changes made" - treat as success.
-        let success = proc.terminationStatus == 0 || proc.terminationStatus == 3
-        return FixResult(command: "buildozer -f -", success: success, output: combinedOutput)
+        let exitCode = proc.terminationStatus
+        // Exit code 3 means buildozer made no changes (label not found in BUILD file, etc.)
+        let success = exitCode == 0
+        let noChanges = exitCode == 3
+        return FixResult(command: "buildozer -f -", success: success, noChanges: noChanges, output: combinedOutput)
     }
 
     private static let apparentRepoName = "buildozer_binary"

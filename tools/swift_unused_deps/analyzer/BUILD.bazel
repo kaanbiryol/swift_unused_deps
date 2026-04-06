@@ -8,6 +8,7 @@ swift_library(
         "Sources/BatchAnalyzer.swift",
         "Sources/Buildozer.swift",
         "Sources/IndexStoreReader.swift",
+        "Sources/LabelConverter.swift",
         "Sources/MetadataModels.swift",
         "Sources/ModuleResolver.swift",
         "Sources/Report.swift",

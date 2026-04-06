@@ -103,7 +103,9 @@ public struct SwiftUnusedDepsCommand: ParsableCommand {
         let traceURL = URL(fileURLWithPath: traceFile)
 
         let data = try Data(contentsOf: metaURL)
-        let metadata = try JSONDecoder().decode(TargetMetadata.self, from: data)
+        let labelConverter = LabelConverter.loadFromBazel() ?? .identity
+        var metadata = try JSONDecoder().decode(TargetMetadata.self, from: data)
+        metadata = metadata.convertingLabels(with: labelConverter)
         let loadedModules = try TraceParser.parseTraceFile(
             at: traceURL,
             forModule: metadata.target.moduleName
@@ -126,11 +128,14 @@ public struct SwiftUnusedDepsCommand: ParsableCommand {
             throw ExitCode(2)
         }
 
+        let labelConverter = LabelConverter.loadFromBazel() ?? .identity
+
         let output = BatchAnalyzer.analyze(options: .init(
             bazelBin: metadataRoot,
             indexStorePath: resolvedIndexStorePath(),
             extraSystemModules: extraSystem,
-            filter: filter
+            filter: filter,
+            labelConverter: labelConverter
         ))
 
         for warning in output.warnings {
@@ -209,6 +214,9 @@ public struct SwiftUnusedDepsCommand: ParsableCommand {
         )
         if result.success {
             printErr("Done: \(commands.count) fix(es) applied.")
+        } else if result.noChanges {
+            printErr("WARNING: buildozer made no changes (\(commands.count) command(s) attempted).")
+            printErr("The labels in the commands may not match the label format in BUILD files.")
         } else {
             printErr("FAILED: \(result.output)")
             throw ExitCode(1)
