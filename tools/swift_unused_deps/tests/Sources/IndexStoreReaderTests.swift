@@ -16,10 +16,11 @@ final class IndexStoreReaderTests: XCTestCase {
         try FileManager.default.createDirectory(at: tmpDir, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: tmpDir) }
 
-        let results = try IndexStoreReader.readModuleUsage(
+        let result = try IndexStoreReader.readModuleUsage(
             storePath: tmpDir.path,
             filterModules: ["SomeModule"]
         )
-        XCTAssertTrue(results.isEmpty)
+        XCTAssertTrue(result.usage.isEmpty)
+        XCTAssertTrue(result.indexedModules.isEmpty)
     }
 }

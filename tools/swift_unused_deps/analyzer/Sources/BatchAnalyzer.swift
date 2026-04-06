@@ -48,7 +48,7 @@ public enum BatchAnalyzer {
 
         let artifacts = discoverArtifacts(in: baseURL, fileManager: fm)
         let filter = options.filter.map(TargetFilter.init)
-        let indexStoreUsageByModule = loadIndexStoreUsage(
+        let indexStore = loadIndexStoreData(
             storePath: options.indexStorePath,
             warnings: &warnings
         )
@@ -62,7 +62,8 @@ public enum BatchAnalyzer {
                 extraSystemModules: options.extraSystemModules,
                 filter: filter,
                 labelConverter: options.labelConverter,
-                indexStoreUsageByModule: indexStoreUsageByModule,
+                indexStoreUsageByModule: indexStore.usageByModule,
+                indexedModules: indexStore.indexedModules,
                 warnings: &warnings
             )
         }
@@ -99,18 +100,29 @@ public enum BatchAnalyzer {
         return ArtifactCatalog(metadataFiles: metadataFiles, traceFileMap: traceFileMap)
     }
 
-    private static func loadIndexStoreUsage(
+    private struct IndexStoreData {
+        let usageByModule: [String: [SourceFileModuleUsage]]
+        /// Module names that have defined symbols (records) in the index store.
+        let indexedModules: Set<String>
+
+        static let empty = IndexStoreData(usageByModule: [:], indexedModules: [])
+    }
+
+    private static func loadIndexStoreData(
         storePath: String?,
         warnings: inout [String]
-    ) -> [String: [SourceFileModuleUsage]] {
-        guard let storePath else { return [:] }
+    ) -> IndexStoreData {
+        guard let storePath else { return .empty }
 
         do {
-            let usage = try IndexStoreReader.readModuleUsage(storePath: storePath)
-            return Dictionary(grouping: usage, by: \.moduleName)
+            let result = try IndexStoreReader.readModuleUsage(storePath: storePath)
+            return IndexStoreData(
+                usageByModule: Dictionary(grouping: result.usage, by: \.moduleName),
+                indexedModules: result.indexedModules
+            )
         } catch {
             warnings.append("Failed to read index store at '\(storePath)': \(error)")
-            return [:]
+            return .empty
         }
     }
 
@@ -123,6 +135,7 @@ public enum BatchAnalyzer {
         filter: TargetFilter?,
         labelConverter: LabelConverter,
         indexStoreUsageByModule: [String: [SourceFileModuleUsage]],
+        indexedModules: Set<String>,
         warnings: inout [String]
     ) -> AnalysisResult? {
         guard var metadata = loadMetadata(from: metadataFile, warnings: &warnings) else {
@@ -140,6 +153,7 @@ public enum BatchAnalyzer {
             bazelBin: bazelBin,
             fileManager: fileManager,
             indexStoreUsageByModule: indexStoreUsageByModule,
+            indexedModules: indexedModules,
             warnings: &warnings
         ) else {
             return nil
@@ -175,10 +189,11 @@ public enum BatchAnalyzer {
         bazelBin: String,
         fileManager: FileManager,
         indexStoreUsageByModule: [String: [SourceFileModuleUsage]],
+        indexedModules: Set<String>,
         warnings: inout [String]
     ) -> [LoadedModule]? {
         if let targetUsage = indexStoreUsageByModule[metadata.target.moduleName], !targetUsage.isEmpty {
-            return deriveLoadedModules(from: targetUsage)
+            return deriveLoadedModules(from: targetUsage, indexedModules: indexedModules)
         }
 
         return loadTraceModules(
@@ -191,8 +206,15 @@ public enum BatchAnalyzer {
     }
 
     /// Derive LoadedModule list from index store data.
-    /// Filters out modules that are directly imported but have no symbol references.
-    private static func deriveLoadedModules(from targetUsage: [SourceFileModuleUsage]) -> [LoadedModule] {
+    ///
+    /// Filters out modules that are directly imported but have no symbol
+    /// references. The filter is only applied when the module's own records
+    /// exist in the index store (`indexedModules`), so we know the lack of
+    /// references is genuine rather than caused by missing index data.
+    private static func deriveLoadedModules(
+        from targetUsage: [SourceFileModuleUsage],
+        indexedModules: Set<String>
+    ) -> [LoadedModule] {
         var allDirectImports = Set<String>()
         var allReferenced = Set<String>()
         var allKnownModules = Set<String>()
@@ -207,7 +229,12 @@ public enum BatchAnalyzer {
 
         return allKnownModules.compactMap { moduleName in
             let isDirectlyImported = allDirectImports.contains(moduleName)
-            if isDirectlyImported && !allReferenced.contains(moduleName) {
+            // Only filter out an imported-but-unreferenced module when the
+            // index store actually has records for it. Without records we
+            // cannot verify symbol usage, so we conservatively keep it.
+            if isDirectlyImported
+                && !allReferenced.contains(moduleName)
+                && indexedModules.contains(moduleName) {
                 return nil
             }
             return LoadedModule(name: moduleName, isImportedDirectly: isDirectlyImported)

@@ -28,6 +28,12 @@ public struct SourceFileModuleUsage {
 
 public enum IndexStoreReader {
 
+    public struct Result {
+        public let usage: [SourceFileModuleUsage]
+        /// Module names that have defined symbols (records) in the index store.
+        public let indexedModules: Set<String>
+    }
+
     public enum Error: Swift.Error, CustomStringConvertible {
         case storeOpenFailed(path: String, underlying: Swift.Error)
 
@@ -42,7 +48,7 @@ public enum IndexStoreReader {
     public static func readModuleUsage(
         storePath: String,
         filterModules: Set<String>? = nil
-    ) throws -> [SourceFileModuleUsage] {
+    ) throws -> Result {
         let store: IndexStore
         do {
             store = try IndexStore(path: storePath)
@@ -128,6 +134,9 @@ public enum IndexStoreReader {
             ))
         }
 
-        return results
+        return Result(
+            usage: results,
+            indexedModules: Set(moduleDefinedUSRs.keys)
+        )
     }
 }

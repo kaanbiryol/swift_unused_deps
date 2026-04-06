@@ -53,18 +53,30 @@ def _get_dep_module_name(dep):
     return None
 
 def _collect_dep_info(dep, kind):
-    module_name = _get_dep_module_name(dep)
-    if module_name == None:
-        return None
-    return {
-        "label": str(dep.label),
-        "module_name": module_name,
-        "kind": kind,
-    }
+    """Collect declared dep info from a dependency.
 
-def _collect_transitive_modules(deps, private_deps):
+    Returns a list of dep info dicts. For normal swift_library targets this
+    is a single-element list. For aggregation targets like swift_library_group
+    (which have SwiftInfo but no direct module), the direct child modules
+    are used with the group's own label.
+    """
+    module_name = _get_dep_module_name(dep)
+    if module_name:
+        return [{"label": str(dep.label), "module_name": module_name, "kind": kind}]
+
+    # Target has no direct Swift module (e.g. swift_library_group).
+    # Use the group's direct child modules with the group's own label.
+    if SwiftDepsInfo in dep and dep[SwiftDepsInfo].direct_dep_modules:
+        result = []
+        for mod_name in dep[SwiftDepsInfo].direct_dep_modules:
+            result.append({"label": str(dep.label), "module_name": mod_name, "kind": kind})
+        return result
+
+    return []
+
+def _collect_transitive_modules(deps, private_deps, plugins = []):
     modules = {}
-    for dep in list(deps) + list(private_deps):
+    for dep in list(deps) + list(private_deps) + list(plugins):
         dep_module_name = _get_dep_module_name(dep)
         if dep_module_name:
             modules[dep_module_name] = str(dep.label)
@@ -138,45 +150,84 @@ def _create_analysis_action(ctx, analyzer, metadata_file, trace_file, module_nam
 
     return report_file
 
+def _collect_passthrough_transitive_modules(ctx):
+    """Collect transitive modules from deps of a non-Swift target.
+
+    This ensures the transitive module map is not broken when a non-Swift
+    target (e.g. objc_library, swift_library_group) sits between two Swift
+    targets. Also records which modules are directly provided by this
+    target's deps (vs deeply transitive ones).
+    """
+    transitive_sets = []
+    direct_dep_modules = []
+    for attr_name in ["deps", "private_deps", "plugins"]:
+        if hasattr(ctx.rule.attr, attr_name):
+            for dep in getattr(ctx.rule.attr, attr_name):
+                if SwiftDepsInfo in dep:
+                    transitive_sets.append(dep[SwiftDepsInfo].transitive_modules)
+                # Record direct module names from deps that have SwiftInfo.
+                if SwiftInfo in dep:
+                    for module in dep[SwiftInfo].direct_modules:
+                        if module.swift:
+                            direct_dep_modules.append(module.name)
+    if transitive_sets:
+        return [
+            SwiftDepsInfo(
+                target_label = ctx.label,
+                module_name = None,
+                metadata_file = None,
+                transitive_modules = depset(transitive = transitive_sets),
+                direct_dep_modules = direct_dep_modules,
+            ),
+        ]
+    return []
+
 def _swift_deps_aspect_impl(target, ctx):
     if SwiftInfo not in target:
-        return []
+        return _collect_passthrough_transitive_modules(ctx)
 
     module_name = _get_module_name(target)
     if module_name == None:
-        return []
+        # Target has SwiftInfo but no direct Swift module (e.g. swift_library_group).
+        # Still propagate transitive modules from deps.
+        return _collect_passthrough_transitive_modules(ctx)
 
     swiftmodule_file = _get_swiftmodule_file(target)
 
     # Build transitive module tuples.
     self_module_tuple = "{}={}".format(module_name, str(ctx.label))
     transitive_sets = [depset([self_module_tuple])]
-    for attr_name in ["deps", "private_deps"]:
+    for attr_name in ["deps", "private_deps", "plugins"]:
         if hasattr(ctx.rule.attr, attr_name):
             for dep in getattr(ctx.rule.attr, attr_name):
                 if SwiftDepsInfo in dep:
                     transitive_sets.append(dep[SwiftDepsInfo].transitive_modules)
     transitive_modules = depset(transitive = transitive_sets)
 
-    # Collect declared deps.
+    # Collect declared deps, deduplicating by module name (a module can
+    # appear through multiple swift_library_group expansions).
+    seen_modules = {}
     declared_deps = []
     if hasattr(ctx.rule.attr, "deps"):
         for dep in ctx.rule.attr.deps:
-            info = _collect_dep_info(dep, "dep")
-            if info:
-                declared_deps.append(info)
+            for info in _collect_dep_info(dep, "dep"):
+                if info["module_name"] not in seen_modules:
+                    seen_modules[info["module_name"]] = True
+                    declared_deps.append(info)
 
     declared_private_deps = []
     if hasattr(ctx.rule.attr, "private_deps"):
         for dep in ctx.rule.attr.private_deps:
-            info = _collect_dep_info(dep, "private_dep")
-            if info:
-                declared_private_deps.append(info)
+            for info in _collect_dep_info(dep, "private_dep"):
+                if info["module_name"] not in seen_modules:
+                    seen_modules[info["module_name"]] = True
+                    declared_private_deps.append(info)
 
     # Build transitive module map.
     transitive_map = _collect_transitive_modules(
         ctx.rule.attr.deps if hasattr(ctx.rule.attr, "deps") else [],
         ctx.rule.attr.private_deps if hasattr(ctx.rule.attr, "private_deps") else [],
+        ctx.rule.attr.plugins if hasattr(ctx.rule.attr, "plugins") else [],
     )
 
     # Collect source file names.
@@ -231,6 +282,7 @@ def _swift_deps_aspect_impl(target, ctx):
             module_name = module_name,
             metadata_file = metadata_file,
             transitive_modules = transitive_modules,
+            direct_dep_modules = [],
         ),
         OutputGroupInfo(
             swift_deps_info = depset([metadata_file]),
@@ -247,7 +299,7 @@ swift_deps_aspect = aspect(
     Usage:
         bazel build //targets/... --config=unused-deps
     """,
-    attr_aspects = ["deps", "private_deps"],
+    attr_aspects = ["deps", "private_deps", "plugins"],
     attrs = {
         "_analyzer": attr.label(
             default = Label("//tools/swift_unused_deps/analyzer:cli"),

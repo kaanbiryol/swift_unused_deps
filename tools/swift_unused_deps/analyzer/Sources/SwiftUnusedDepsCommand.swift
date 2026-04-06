@@ -162,7 +162,7 @@ public struct SwiftUnusedDepsCommand: ParsableCommand {
         let hasIssues = output.results.contains { result in
             result.issues.contains { $0.confidence >= confidence }
         }
-        if hasIssues {
+        if hasIssues && !fix {
             throw ExitCode(1)
         }
         if !output.warnings.isEmpty {

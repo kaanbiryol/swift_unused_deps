@@ -43,7 +43,7 @@ public struct ModuleResolver {
             "_Backtracing", "_MatchingEngine",
             "_Builtin_float", "_FoundationCShims",
             "_DarwinFoundation1", "_DarwinFoundation2", "_DarwinFoundation3",
-            "Observation", "System", "XPC",
+            "Observation", "System", "Testing", "XPC",
         ]
 
         let sdk = [
