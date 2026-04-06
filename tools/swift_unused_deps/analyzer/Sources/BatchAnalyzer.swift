@@ -128,7 +128,8 @@ public enum BatchAnalyzer {
         guard var metadata = loadMetadata(from: metadataFile, warnings: &warnings) else {
             return nil
         }
-        metadata = metadata.convertingLabels(with: labelConverter)
+        let buildFileContent = readBuildFile(for: metadata.target.label)
+        metadata = metadata.convertingLabels(with: labelConverter, buildFileContent: buildFileContent)
         if let filter, !filter.matches(label: metadata.target.label) {
             return nil
         }
@@ -238,5 +239,28 @@ public enum BatchAnalyzer {
             warnings.append("Failed to parse trace for \(metadata.target.label): \(error)")
             return nil
         }
+    }
+
+    /// Read the BUILD file for a target label to help disambiguate apparent repo names.
+    private static func readBuildFile(for targetLabel: String) -> String? {
+        guard let workspace = ProcessInfo.processInfo.environment["BUILD_WORKSPACE_DIRECTORY"] else {
+            return nil
+        }
+
+        // Extract package path from label like "@@//path/to/pkg:target" or "//path/to/pkg:target"
+        var label = targetLabel
+        while label.hasPrefix("@") { label.removeFirst() }
+        guard let slashSlash = label.range(of: "//") else { return nil }
+        let afterSlash = label[slashSlash.upperBound...]
+        let packagePath = String(afterSlash.prefix(while: { $0 != ":" }))
+
+        let dir = URL(fileURLWithPath: workspace).appendingPathComponent(packagePath)
+        for name in ["BUILD.bazel", "BUILD"] {
+            let path = dir.appendingPathComponent(name).path
+            if let content = try? String(contentsOfFile: path, encoding: .utf8) {
+                return content
+            }
+        }
+        return nil
     }
 }

@@ -68,24 +68,27 @@ public struct TargetMetadata: Codable {
     }
 
     /// Returns a new instance with all Bazel labels converted from canonical to apparent form.
-    public func convertingLabels(with converter: LabelConverter) -> TargetMetadata {
+    ///
+    /// When multiple apparent names exist for the same canonical repo, pass
+    /// `buildFileContent` to disambiguate by checking which name the BUILD file actually uses.
+    public func convertingLabels(with converter: LabelConverter, buildFileContent: String? = nil) -> TargetMetadata {
         TargetMetadata(
             schemaVersion: schemaVersion,
             target: TargetInfo(
-                label: converter.convert(target.label),
+                label: converter.convert(target.label, buildFileContent: buildFileContent),
                 moduleName: target.moduleName,
                 isMixedSource: target.isMixedSource,
                 srcs: target.srcs
             ),
             declaredDeps: declaredDeps.map {
                 DeclaredDep(
-                    label: converter.convert($0.label),
+                    label: converter.convert($0.label, buildFileContent: buildFileContent),
                     moduleName: $0.moduleName,
                     kind: $0.kind
                 )
             },
             transitiveModuleMap: Dictionary(uniqueKeysWithValues:
-                transitiveModuleMap.map { ($0.key, converter.convert($0.value)) }
+                transitiveModuleMap.map { ($0.key, converter.convert($0.value, buildFileContent: buildFileContent)) }
             ),
             traceFile: traceFile
         )

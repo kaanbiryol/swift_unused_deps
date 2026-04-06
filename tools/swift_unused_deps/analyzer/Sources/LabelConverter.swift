@@ -4,11 +4,11 @@ import Foundation
 /// to apparent labels (e.g., `@swiftpkg_swift_syntax//:SwiftSyntax`) so that
 /// buildozer commands match the text in BUILD files.
 public struct LabelConverter {
-    /// Maps canonical repo name (e.g. "swift-syntax+") to apparent name (e.g. "swiftpkg_swift_syntax").
-    private let canonicalToApparent: [String: String]
+    /// Maps canonical repo name to all known apparent names for that repo.
+    private let canonicalToApparent: [String: [String]]
     private let isIdentity: Bool
 
-    init(canonicalToApparent: [String: String]) {
+    init(canonicalToApparent: [String: [String]]) {
         self.canonicalToApparent = canonicalToApparent
         self.isIdentity = false
     }
@@ -23,10 +23,14 @@ public struct LabelConverter {
 
     /// Convert a canonical label to its apparent form.
     ///
+    /// When multiple apparent names exist for the same canonical repo, pass
+    /// `buildFileContent` to disambiguate by checking which name actually
+    /// appears in the BUILD file.
+    ///
     /// - `@@//pkg:target` (main repo) -> `//pkg:target`
     /// - `@@swift-syntax+//:Foo` -> `@swiftpkg_swift_syntax//:Foo`
     /// - Labels without `@@` prefix -> unchanged (WORKSPACE mode)
-    public func convert(_ label: String) -> String {
+    public func convert(_ label: String, buildFileContent: String? = nil) -> String {
         guard !isIdentity, label.hasPrefix("@@") else { return label }
 
         let withoutPrefix = String(label.dropFirst(2))
@@ -44,12 +48,25 @@ public struct LabelConverter {
         let canonicalRepo = String(withoutPrefix[..<range.lowerBound])
         let remainder = String(withoutPrefix[range.lowerBound...])
 
-        if let apparent = canonicalToApparent[canonicalRepo] {
-            return "@\(apparent)\(remainder)"
+        guard let apparentNames = canonicalToApparent[canonicalRepo], !apparentNames.isEmpty else {
+            // No mapping found - use canonical name with single @
+            return "@\(canonicalRepo)\(remainder)"
         }
 
-        // No mapping found - use canonical name with single @
-        return "@\(canonicalRepo)\(remainder)"
+        if apparentNames.count == 1 {
+            return "@\(apparentNames[0])\(remainder)"
+        }
+
+        // Multiple apparent names - check which one the BUILD file uses.
+        if let content = buildFileContent {
+            for name in apparentNames {
+                if content.contains("@\(name)//") || content.contains("@\(name)//:") {
+                    return "@\(name)\(remainder)"
+                }
+            }
+        }
+
+        return "@\(apparentNames[0])\(remainder)"
     }
 
     /// Load the repo mapping by running `bazel mod dump_repo_mapping ""`.
@@ -87,10 +104,10 @@ public struct LabelConverter {
             return nil
         }
 
-        // Reverse the mapping: apparent -> canonical becomes canonical -> apparent
-        var canonicalToApparent: [String: String] = [:]
+        // Reverse the mapping: apparent -> canonical becomes canonical -> [apparent]
+        var canonicalToApparent: [String: [String]] = [:]
         for (apparent, canonical) in apparentToCanonical where !apparent.isEmpty {
-            canonicalToApparent[canonical] = apparent
+            canonicalToApparent[canonical, default: []].append(apparent)
         }
 
         guard !canonicalToApparent.isEmpty else { return nil }

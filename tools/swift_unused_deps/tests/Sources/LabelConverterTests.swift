@@ -22,8 +22,8 @@ final class LabelConverterTests: XCTestCase {
 
     func testExternalRepoLabelConvertsToApparent() {
         let converter = LabelConverter(canonicalToApparent: [
-            "swift-syntax+": "swiftpkg_swift_syntax",
-            "rules_swift+": "rules_swift",
+            "swift-syntax+": ["swiftpkg_swift_syntax"],
+            "rules_swift+": ["rules_swift"],
         ])
         XCTAssertEqual(
             converter.convert("@@swift-syntax+//:SwiftCompilerPlugin"),
@@ -40,7 +40,7 @@ final class LabelConverterTests: XCTestCase {
     }
 
     func testUnknownCanonicalRepoFallsBackToSingleAt() {
-        let converter = LabelConverter(canonicalToApparent: ["known+": "known"])
+        let converter = LabelConverter(canonicalToApparent: ["known+": ["known"]])
         XCTAssertEqual(
             converter.convert("@@unknown+//:Target"),
             "@unknown+//:Target"
@@ -49,7 +49,7 @@ final class LabelConverterTests: XCTestCase {
 
     func testWorkspaceLabelsPassThrough() {
         let converter = LabelConverter(canonicalToApparent: [
-            "swift-syntax+": "swiftpkg_swift_syntax",
+            "swift-syntax+": ["swiftpkg_swift_syntax"],
         ])
         XCTAssertEqual(converter.convert("//Lib:A"), "//Lib:A")
         XCTAssertEqual(converter.convert("@swiftpkg_swift_syntax//:SwiftSyntax"), "@swiftpkg_swift_syntax//:SwiftSyntax")
@@ -60,11 +60,55 @@ final class LabelConverterTests: XCTestCase {
         XCTAssertEqual(converter.convert("@@no-double-slash"), "@@no-double-slash")
     }
 
+    // MARK: - Multiple apparent names disambiguation
+
+    func testMultipleApparentNamesUsesFirstByDefault() {
+        let converter = LabelConverter(canonicalToApparent: [
+            "swift-syntax+": ["SwiftSyntax", "swiftpkg_swift_syntax"],
+        ])
+        XCTAssertEqual(
+            converter.convert("@@swift-syntax+//:SwiftSyntax"),
+            "@SwiftSyntax//:SwiftSyntax"
+        )
+    }
+
+    func testMultipleApparentNamesDisambiguatesViaBuildFile() {
+        let converter = LabelConverter(canonicalToApparent: [
+            "swift-syntax+": ["SwiftSyntax", "swiftpkg_swift_syntax"],
+        ])
+        let buildFile = """
+        swift_library(
+            name = "Lib",
+            deps = [
+                "@swiftpkg_swift_syntax//:SwiftCompilerPlugin",
+                "@swiftpkg_swift_syntax//:SwiftSyntax",
+            ],
+        )
+        """
+        XCTAssertEqual(
+            converter.convert("@@swift-syntax+//:SwiftSyntax", buildFileContent: buildFile),
+            "@swiftpkg_swift_syntax//:SwiftSyntax"
+        )
+    }
+
+    func testMultipleApparentNamesFallsBackWhenBuildFileHasNoMatch() {
+        let converter = LabelConverter(canonicalToApparent: [
+            "swift-syntax+": ["SwiftSyntax", "swiftpkg_swift_syntax"],
+        ])
+        let buildFile = """
+        swift_library(name = "Lib", deps = [])
+        """
+        XCTAssertEqual(
+            converter.convert("@@swift-syntax+//:SwiftSyntax", buildFileContent: buildFile),
+            "@SwiftSyntax//:SwiftSyntax"
+        )
+    }
+
     // MARK: - TargetMetadata label conversion
 
     func testMetadataConvertingLabels() {
         let converter = LabelConverter(canonicalToApparent: [
-            "swift-syntax+": "swiftpkg_swift_syntax",
+            "swift-syntax+": ["swiftpkg_swift_syntax"],
         ])
 
         let metadata = TargetMetadata(
@@ -95,6 +139,30 @@ final class LabelConverterTests: XCTestCase {
         XCTAssertEqual(converted.traceFile, "")
     }
 
+    func testMetadataConvertingLabelsWithBuildFileDisambiguation() {
+        let converter = LabelConverter(canonicalToApparent: [
+            "swift-syntax+": ["SwiftSyntax", "swiftpkg_swift_syntax"],
+        ])
+        let buildFile = """
+        deps = ["@swiftpkg_swift_syntax//:SwiftSyntax"]
+        """
+
+        let metadata = TargetMetadata(
+            schemaVersion: 1,
+            target: TargetInfo(label: "@@//Lib:A", moduleName: "A"),
+            declaredDeps: [
+                DeclaredDep(label: "@@swift-syntax+//:SwiftSyntax", moduleName: "SwiftSyntax", kind: .dep),
+            ],
+            transitiveModuleMap: ["SwiftSyntax": "@@swift-syntax+//:SwiftSyntax"],
+            traceFile: ""
+        )
+
+        let converted = metadata.convertingLabels(with: converter, buildFileContent: buildFile)
+
+        XCTAssertEqual(converted.declaredDeps[0].label, "@swiftpkg_swift_syntax//:SwiftSyntax")
+        XCTAssertEqual(converted.transitiveModuleMap["SwiftSyntax"], "@swiftpkg_swift_syntax//:SwiftSyntax")
+    }
+
     func testMetadataConvertingLabelsPreservesNonLabelFields() {
         let converter = LabelConverter(canonicalToApparent: [:])
 
@@ -119,7 +187,7 @@ final class LabelConverterTests: XCTestCase {
 
     func testCanonicalLabelsProduceCorrectBuildozerCommands() {
         let converter = LabelConverter(canonicalToApparent: [
-            "swift-syntax+": "swiftpkg_swift_syntax",
+            "swift-syntax+": ["swiftpkg_swift_syntax"],
         ])
 
         let metadata = TargetMetadata(
