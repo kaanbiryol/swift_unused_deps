@@ -1,0 +1,11 @@
+load("@build_bazel_rules_swift//swift:swift.bzl", "swift_library")
+
+# Depends on a swift_library_group. The tool should resolve the group's
+# primary module ("Utilities") and report this target as CLEAN.
+swift_library(
+    name = "Account",
+    srcs = ["AccountView.swift"],
+    module_name = "Account",
+    visibility = ["//example:__subpackages__"],
+    deps = ["//example/Core/Utilities"],
+)

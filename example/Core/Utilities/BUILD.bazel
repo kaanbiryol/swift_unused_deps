@@ -1,0 +1,17 @@
+load("@build_bazel_rules_swift//swift:swift.bzl", "swift_library", "swift_library_group")
+
+# The actual swift_library that compiles sources.
+swift_library(
+    name = "Utilities_Impl",
+    srcs = ["Helpers.swift"],
+    module_name = "Utilities",
+    visibility = ["//example:__subpackages__"],
+)
+
+# A swift_library_group wrapping the library, simulating how
+# rules_swift_package_manager exposes Swift packages.
+swift_library_group(
+    name = "Utilities",
+    deps = [":Utilities_Impl"],
+    visibility = ["//example:__subpackages__"],
+)
