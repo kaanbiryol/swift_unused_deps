@@ -1,0 +1,12 @@
+load("@build_bazel_rules_swift//swift:swift.bzl", "swift_library")
+
+# CLEAN iOS target - all deps are used.
+# Skipped when building for the host platform.
+swift_library(
+    name = "CleanIOSTarget",
+    srcs = ["CleanIOSTarget.swift"],
+    module_name = "CleanIOSTarget",
+    target_compatible_with = ["@platforms//os:ios"],
+    visibility = ["//example:__subpackages__"],
+    deps = ["//example/Deps/iOSLib"],
+)

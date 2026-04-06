@@ -1,0 +1,15 @@
+load("@build_bazel_rules_swift//swift:swift.bzl", "swift_library")
+
+# iOS target with an unused dep (LibA). Only uses iOSLib.
+# Skipped when building for the host platform.
+swift_library(
+    name = "UnusedDepIOSTarget",
+    srcs = ["UnusedDepIOSTarget.swift"],
+    module_name = "UnusedDepIOSTarget",
+    target_compatible_with = ["@platforms//os:ios"],
+    visibility = ["//example:__subpackages__"],
+    deps = [
+        "//example/Deps/iOSLib",
+        "//example/Deps/LibA",    # Unused
+    ],
+)
