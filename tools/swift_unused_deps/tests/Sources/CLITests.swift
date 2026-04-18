@@ -3,15 +3,10 @@ import XCTest
 
 final class CLITests: XCTestCase {
 
-    func testParseBatchModeWithoutArguments() throws {
-        let command = try XCTUnwrap(
-            try SwiftUnusedDepsCommand.parseAsRoot([]) as? SwiftUnusedDepsCommand
-        )
-
-        XCTAssertNil(command.metadataFile)
-        XCTAssertNil(command.traceFile)
-        XCTAssertNil(command.output)
-        XCTAssertNil(command.filter)
+    func testRejectsBatchModeWithoutPattern() {
+        XCTAssertThrowsError(try SwiftUnusedDepsCommand.parseAsRoot([])) { error in
+            XCTAssertTrue("\(error)".contains("Batch mode requires a Bazel target pattern."))
+        }
     }
 
     func testParseBatchModeWithFilter() throws {
@@ -43,12 +38,13 @@ final class CLITests: XCTestCase {
         }
     }
 
-    func testRejectsConflictingBatchInputs() {
+    func testRejectsFixWithJson() {
         XCTAssertThrowsError(try SwiftUnusedDepsCommand.parseAsRoot([
-            "--bazel-bin", "bazel-bin",
-            "--metadata-dir", "tmp/outputs",
+            "//App:App",
+            "--fix",
+            "--json",
         ])) { error in
-            XCTAssertTrue("\(error)".contains("Cannot combine --bazel-bin with --metadata-dir."))
+            XCTAssertTrue("\(error)".contains("--fix cannot be combined with --json."))
         }
     }
 }

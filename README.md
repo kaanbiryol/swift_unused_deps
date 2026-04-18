@@ -58,6 +58,7 @@ build:unused-deps-ios --platforms=@apple_support//platforms:ios_sim_arm64
 ### Prerequisites
 
 - Bazel 9+ with [rules_swift](https://github.com/bazelbuild/rules_swift) 3.6+
+- This repo is pinned to Bazel 9.0.2 via `.bazelversion` for reproducible local runs
 
 ## Usage
 
@@ -71,13 +72,7 @@ bazel run @swift_unused_deps//:swift_unused_deps -- //libraries/...
 bazel run @swift_unused_deps//:swift_unused_deps -- //App:App
 ```
 
-When you provide a target pattern, the tool automatically runs `bazel build <pattern> --config=unused-deps` first. Use `--no-build` to skip this if you've already built:
-
-```sh
-# Build separately, then analyze
-bazel build //libraries/... --config=unused-deps
-bazel run @swift_unused_deps//:swift_unused_deps -- //libraries/... --no-build
-```
+Each run automatically executes `bazel build <pattern> --config=unused-deps` first, then analyzes the produced metadata and traces. Bazel's normal cache handles incremental rebuilds.
 
 ### Auto-fix
 
@@ -125,9 +120,7 @@ bazel run @swift_unused_deps//:swift_unused_deps -- //App/... --extra-system-mod
 | `--json` | Output JSON instead of text |
 | `--min-confidence` | Minimum confidence level: `low`, `medium`, `high` (default: `low`) |
 | `--extra-system-modules` | Comma-separated module names to treat as system modules |
-| `--no-build` | Skip the automatic `bazel build --config=unused-deps` step |
 | `--index-store-path` | Path to Swift index store (default: `/tmp/swift_unused_deps_index_store`) |
-| `--bazel-bin` | Explicit path to bazel-bin (auto-detected by default) |
 
 ## What it detects
 
@@ -147,7 +140,7 @@ bazel run @swift_unused_deps//:swift_unused_deps -- //App/... --extra-system-mod
 
 Everything is cached by Bazel. Re-running after no changes is instant.
 
-`bazel run @swift_unused_deps//:swift_unused_deps` reads the outputs from `bazel-bin/` and prints a human-readable summary. With `--fix`, it runs buildozer to update BUILD files.
+`bazel run @swift_unused_deps//:swift_unused_deps -- <pattern>` first builds the requested targets with `--config=unused-deps`, then reads the resulting outputs from `bazel-bin/` and prints a human-readable summary. With `--fix`, it runs buildozer to update BUILD files.
 
 ### Exit codes
 

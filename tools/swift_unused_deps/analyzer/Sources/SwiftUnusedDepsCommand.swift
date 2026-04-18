@@ -16,12 +16,6 @@ public struct SwiftUnusedDepsCommand: ParsableCommand {
     @Option(help: "Path to write the single-target analysis report.")
     var output: String?
 
-    @Option(help: "Path to bazel-bin. Auto-discovers aspect outputs and trace files.")
-    var bazelBin: String?
-
-    @Option(help: "Directory containing aspect metadata JSON files and traces.")
-    var metadataDir: String?
-
     @Flag(help: "Output JSON.")
     var json = false
 
@@ -37,9 +31,6 @@ public struct SwiftUnusedDepsCommand: ParsableCommand {
     @Option(help: "Path to Swift index store for unused import detection (batch mode only).")
     var indexStorePath: String?
 
-    @Flag(help: "Skip the automatic 'bazel build --config=unused-deps' step.")
-    var noBuild = false
-
     @Argument(help: "Bazel target pattern to analyze (e.g. //libraries/...).")
     var filter: String?
 
@@ -52,9 +43,6 @@ public struct SwiftUnusedDepsCommand: ParsableCommand {
         if metadataFile == nil && output != nil {
             throw ValidationError("--output requires --metadata-file.")
         }
-        if bazelBin != nil && metadataDir != nil {
-            throw ValidationError("Cannot combine --bazel-bin with --metadata-dir.")
-        }
         if fix && json {
             throw ValidationError("--fix cannot be combined with --json.")
         }
@@ -64,14 +52,14 @@ public struct SwiftUnusedDepsCommand: ParsableCommand {
         if isSingleTargetMode && filter != nil {
             throw ValidationError("Target filter is only supported in batch mode.")
         }
-        if metadataFile != nil && hasExplicitBatchInput {
-            throw ValidationError("Cannot combine --metadata-file with --bazel-bin or --metadata-dir.")
-        }
         if metadataFile != nil && traceFile == nil {
             throw ValidationError("--trace-file is required with --metadata-file.")
         }
         if metadataFile != nil && output == nil {
             throw ValidationError("--output is required with --metadata-file.")
+        }
+        if !isSingleTargetMode && filter == nil {
+            throw ValidationError("Batch mode requires a Bazel target pattern.")
         }
     }
 
@@ -91,10 +79,6 @@ public struct SwiftUnusedDepsCommand: ParsableCommand {
 
     private var isSingleTargetMode: Bool {
         metadataFile != nil || traceFile != nil || output != nil
-    }
-
-    private var hasExplicitBatchInput: Bool {
-        bazelBin != nil || metadataDir != nil
     }
 
     private func runSingleTarget(confidence: Confidence, extraSystem: Set<String>) throws {
@@ -125,13 +109,12 @@ public struct SwiftUnusedDepsCommand: ParsableCommand {
     }
 
     private func runBatch(confidence: Confidence, extraSystem: Set<String>) throws {
-        // When a target pattern is provided and no explicit path is set,
-        // run `bazel build --config=unused-deps` automatically.
-        if let pattern = filter, !noBuild, bazelBin == nil, metadataDir == nil {
-            try runBazelBuild(pattern: pattern)
+        guard let pattern = filter else {
+            throw ValidationError("Batch mode requires a Bazel target pattern.")
         }
+        try runBazelBuild(pattern: pattern)
 
-        let metadataRoot = bazelBin ?? metadataDir ?? Self.resolveDefaultMetadataRoot()
+        let metadataRoot = Self.resolveDefaultMetadataRoot()
         guard !metadataRoot.isEmpty else {
             printErr("ERROR: Could not determine metadata root.")
             throw ExitCode(2)
@@ -153,12 +136,12 @@ public struct SwiftUnusedDepsCommand: ParsableCommand {
 
         if output.results.isEmpty && output.warnings.isEmpty {
             printErr("ERROR: No metadata files found.")
-            printErr("Hint: run 'bazel build <targets> --config=unused-deps' first.")
+            printErr("Hint: verify your .bazelrc config named 'unused-deps' writes aspect outputs.")
             throw ExitCode(2)
         }
 
         if output.results.isEmpty {
-            printErr("No targets found. Run 'bazel build <targets> --config=unused-deps' first.")
+            printErr("ERROR: No analysis results found for \(pattern).")
             throw ExitCode(2)
         }
 
