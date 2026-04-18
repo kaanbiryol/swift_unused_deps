@@ -12,6 +12,7 @@ swift_library(
         "Sources/MetadataModels.swift",
         "Sources/ModuleResolver.swift",
         "Sources/Report.swift",
+        "Sources/SourceImportEditor.swift",
         "Sources/SwiftUnusedDepsCommand.swift",
         "Sources/TargetFilter.swift",
         "Sources/TraceParser.swift",

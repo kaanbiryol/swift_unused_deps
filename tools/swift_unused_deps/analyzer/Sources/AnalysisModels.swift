@@ -2,6 +2,7 @@ import Foundation
 
 public enum IssueKind: String, Codable {
     case unusedDep = "unused_dep"
+    case unusedImport = "unused_import"
     case missingDirectDep = "missing_direct_dep"
     case candidatePrivateDep = "candidate_private_dep"
     case unresolvedModule = "unresolved_module"
@@ -50,8 +51,19 @@ public struct SkippedModule: Codable, Equatable {
     }
 }
 
+public struct SourceImportRemoval: Codable, Equatable, Hashable {
+    public let filePath: String
+    public let moduleName: String
+
+    public init(filePath: String, moduleName: String) {
+        self.filePath = filePath
+        self.moduleName = moduleName
+    }
+}
+
 public enum IssueContext {
     case unusedDep(DeclaredDep)
+    case unusedImport(DeclaredDep)
     case missingDirectDep(
         depLabel: String,
         moduleName: String,
@@ -70,6 +82,7 @@ public struct Issue {
     public let suggestedAction: SuggestedAction
     public let context: IssueContext
     public let buildozerCommand: BuildozerCommand?
+    public let sourceImportRemovals: [SourceImportRemoval]
 
     public static func mixedSourceWarning(targetLabel: String) -> Issue {
         Issue(
@@ -78,7 +91,8 @@ public struct Issue {
             reason: "Target \(targetLabel) has mixed Swift/ObjC sources. Analysis may be incomplete - ObjC imports are not tracked.",
             suggestedAction: .investigate,
             context: .mixedSourceTarget(label: targetLabel),
-            buildozerCommand: nil
+            buildozerCommand: nil,
+            sourceImportRemovals: []
         )
     }
 
@@ -89,7 +103,8 @@ public struct Issue {
             reason: "Module '\(moduleName)' was loaded during compilation but could not be mapped to a Bazel label",
             suggestedAction: .investigate,
             context: .unresolvedModule(name: moduleName),
-            buildozerCommand: nil
+            buildozerCommand: nil,
+            sourceImportRemovals: []
         )
     }
 
@@ -104,7 +119,33 @@ public struct Issue {
             buildozerCommand: BuildozerCommand(
                 action: "remove \(attrName) \(dep.label)",
                 target: targetLabel
-            )
+            ),
+            sourceImportRemovals: []
+        )
+    }
+
+    public static func unusedImport(
+        _ dep: DeclaredDep,
+        targetLabel: String,
+        sourceImportRemovals: [SourceImportRemoval]
+    ) -> Issue {
+        let attrName = dep.kind == .privateDep ? "private_deps" : "deps"
+        return Issue(
+            kind: .unusedImport,
+            confidence: .high,
+            reason: "Module '\(dep.moduleName)' is imported in source but no symbols from it are referenced",
+            suggestedAction: .remove,
+            context: .unusedImport(dep),
+            buildozerCommand: BuildozerCommand(
+                action: "remove \(attrName) \(dep.label)",
+                target: targetLabel
+            ),
+            sourceImportRemovals: sourceImportRemovals.sorted {
+                if $0.filePath == $1.filePath {
+                    return $0.moduleName < $1.moduleName
+                }
+                return $0.filePath < $1.filePath
+            }
         )
     }
 
@@ -129,7 +170,8 @@ public struct Issue {
             ),
             buildozerCommand: action == .addDep
                 ? BuildozerCommand(action: "add deps \(depLabel)", target: targetLabel)
-                : nil
+                : nil,
+            sourceImportRemovals: []
         )
     }
 
@@ -143,13 +185,16 @@ public struct Issue {
             buildozerCommand: BuildozerCommand(
                 action: "move deps private_deps \(dep.label)",
                 target: targetLabel
-            )
+            ),
+            sourceImportRemovals: []
         )
     }
 
     public var depLabel: String? {
         switch context {
         case .unusedDep(let dep):
+            return dep.label
+        case .unusedImport(let dep):
             return dep.label
         case .missingDirectDep(let depLabel, _, _, _):
             return depLabel
@@ -164,6 +209,8 @@ public struct Issue {
         switch context {
         case .unusedDep(let dep):
             return dep.moduleName
+        case .unusedImport(let dep):
+            return dep.moduleName
         case .missingDirectDep(_, let moduleName, _, _):
             return moduleName
         case .candidatePrivateDep(let dep):
@@ -177,7 +224,7 @@ public struct Issue {
 
     public var depKind: DepKind? {
         switch context {
-        case .unusedDep(let dep), .candidatePrivateDep(let dep):
+        case .unusedDep(let dep), .unusedImport(let dep), .candidatePrivateDep(let dep):
             return dep.kind
         case .missingDirectDep, .unresolvedModule, .mixedSourceTarget:
             return nil
@@ -188,7 +235,7 @@ public struct Issue {
         switch context {
         case .missingDirectDep(_, _, let reachableVia, _):
             return reachableVia
-        case .unusedDep, .candidatePrivateDep, .unresolvedModule, .mixedSourceTarget:
+        case .unusedDep, .unusedImport, .candidatePrivateDep, .unresolvedModule, .mixedSourceTarget:
             return []
         }
     }

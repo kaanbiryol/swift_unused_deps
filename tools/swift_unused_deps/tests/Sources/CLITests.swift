@@ -19,6 +19,27 @@ final class CLITests: XCTestCase {
         XCTAssertEqual(command.filter, "//App/Features/Login...")
     }
 
+    func testParseBatchModeWithCustomBuildConfig() throws {
+        let command = try XCTUnwrap(
+            try SwiftUnusedDepsCommand.parseAsRoot([
+                "--build-config", "unused-deps-ios",
+                "//App:App",
+            ]) as? SwiftUnusedDepsCommand
+        )
+
+        XCTAssertEqual(command.buildConfig, "unused-deps-ios")
+    }
+
+    func testBuildArgumentsUseSelectedConfig() {
+        XCTAssertEqual(
+            SwiftUnusedDepsCommand.bazelBuildArguments(
+                pattern: "//App:App",
+                config: "unused-deps-ios"
+            ),
+            ["bazel", "build", "//App:App", "--config=unused-deps-ios"]
+        )
+    }
+
     func testRejectsSingleTargetWithBatchFilter() {
         XCTAssertThrowsError(try SwiftUnusedDepsCommand.parseAsRoot([
             "--metadata-file", "meta.json",

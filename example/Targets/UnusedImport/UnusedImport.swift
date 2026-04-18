@@ -1,5 +1,4 @@
-import LibA // Unused import - no symbols from LibA are referenced.
-            // Only detectable via index store analysis.
+import LibA // Unused import - auto-fix should remove this import and the dep.
 import LibB
 
 public struct UnusedImport {

@@ -63,7 +63,6 @@ public enum BatchAnalyzer {
                 filter: filter,
                 labelConverter: options.labelConverter,
                 indexStoreUsageByModule: indexStore.usageByModule,
-                indexedModules: indexStore.indexedModules,
                 warnings: &warnings
             )
         }
@@ -102,10 +101,8 @@ public enum BatchAnalyzer {
 
     private struct IndexStoreData {
         let usageByModule: [String: [SourceFileModuleUsage]]
-        /// Module names that have defined symbols (records) in the index store.
-        let indexedModules: Set<String>
 
-        static let empty = IndexStoreData(usageByModule: [:], indexedModules: [])
+        static let empty = IndexStoreData(usageByModule: [:])
     }
 
     private static func loadIndexStoreData(
@@ -117,8 +114,7 @@ public enum BatchAnalyzer {
         do {
             let result = try IndexStoreReader.readModuleUsage(storePath: storePath)
             return IndexStoreData(
-                usageByModule: Dictionary(grouping: result.usage, by: \.moduleName),
-                indexedModules: result.indexedModules
+                usageByModule: Dictionary(grouping: result.usage, by: \.moduleName)
             )
         } catch {
             warnings.append("Failed to read index store at '\(storePath)': \(error)")
@@ -135,7 +131,6 @@ public enum BatchAnalyzer {
         filter: TargetFilter?,
         labelConverter: LabelConverter,
         indexStoreUsageByModule: [String: [SourceFileModuleUsage]],
-        indexedModules: Set<String>,
         warnings: inout [String]
     ) -> AnalysisResult? {
         guard var metadata = loadMetadata(from: metadataFile, warnings: &warnings) else {
@@ -153,7 +148,6 @@ public enum BatchAnalyzer {
             bazelBin: bazelBin,
             fileManager: fileManager,
             indexStoreUsageByModule: indexStoreUsageByModule,
-            indexedModules: indexedModules,
             warnings: &warnings
         ) else {
             return nil
@@ -163,10 +157,24 @@ public enum BatchAnalyzer {
             transitiveModuleMap: metadata.transitiveModuleMap,
             extraSystemModules: extraSystemModules
         )
-        return Analyzer.analyze(
+        let baseResult = Analyzer.analyze(
             metadata: metadata,
             loadedModules: loadedModules,
             resolver: resolver
+        )
+        let unusedImportIssues = unusedImportIssues(
+            metadata: metadata,
+            sourceFileUsage: indexStoreUsageByModule[metadata.target.moduleName] ?? []
+        )
+        guard !unusedImportIssues.isEmpty else { return baseResult }
+
+        let unusedImportModules = Set(unusedImportIssues.compactMap(\.depModule))
+        return AnalysisResult(
+            target: baseResult.target,
+            moduleName: baseResult.moduleName,
+            issues: baseResult.issues + unusedImportIssues,
+            cleanDeps: baseResult.cleanDeps.filter { !unusedImportModules.contains($0.moduleName) },
+            skippedModules: baseResult.skippedModules
         )
     }
 
@@ -189,11 +197,10 @@ public enum BatchAnalyzer {
         bazelBin: String,
         fileManager: FileManager,
         indexStoreUsageByModule: [String: [SourceFileModuleUsage]],
-        indexedModules: Set<String>,
         warnings: inout [String]
     ) -> [LoadedModule]? {
         if let targetUsage = indexStoreUsageByModule[metadata.target.moduleName], !targetUsage.isEmpty {
-            return deriveLoadedModules(from: targetUsage, indexedModules: indexedModules)
+            return deriveLoadedModules(from: targetUsage)
         }
 
         return loadTraceModules(
@@ -207,16 +214,13 @@ public enum BatchAnalyzer {
 
     /// Derive LoadedModule list from index store data.
     ///
-    /// Filters out modules that are directly imported but have no symbol
-    /// references. The filter is only applied when the module's own records
-    /// exist in the index store (`indexedModules`), so we know the lack of
-    /// references is genuine rather than caused by missing index data.
-    private static func deriveLoadedModules(
-        from targetUsage: [SourceFileModuleUsage],
-        indexedModules: Set<String>
+    /// Direct imports remain "loaded" even when no symbols are referenced from
+    /// them. The import still requires a compilable dep, so auto-fix must not
+    /// treat that dep as safely removable.
+    static func deriveLoadedModules(
+        from targetUsage: [SourceFileModuleUsage]
     ) -> [LoadedModule] {
         var allDirectImports = Set<String>()
-        var allReferenced = Set<String>()
         var allKnownModules = Set<String>()
 
         for usage in targetUsage {
@@ -224,22 +228,45 @@ public enum BatchAnalyzer {
             allKnownModules.formUnion(usage.directImports)
             allKnownModules.formUnion(usage.referencedModules)
             allDirectImports.formUnion(usage.directImports)
-            allReferenced.formUnion(usage.referencedModules)
         }
 
         return allKnownModules.compactMap { moduleName in
             let isDirectlyImported = allDirectImports.contains(moduleName)
-            // Only filter out an imported-but-unreferenced module when the
-            // index store actually has records for it. Without records we
-            // cannot verify symbol usage, so we conservatively keep it.
-            if isDirectlyImported
-                && !allReferenced.contains(moduleName)
-                && indexedModules.contains(moduleName) {
-                return nil
-            }
             return LoadedModule(name: moduleName, isImportedDirectly: isDirectlyImported)
         }
         .sorted { $0.name < $1.name }
+    }
+
+    static func unusedImportIssues(
+        metadata: TargetMetadata,
+        sourceFileUsage: [SourceFileModuleUsage]
+    ) -> [Issue] {
+        guard !metadata.target.isMixedSource else { return [] }
+        guard !sourceFileUsage.isEmpty else { return [] }
+
+        let referencedModules = sourceFileUsage.reduce(into: Set<String>()) { partial, usage in
+            partial.formUnion(usage.referencedModules)
+        }
+
+        return metadata.declaredDeps.sorted { $0.moduleName < $1.moduleName }.compactMap { dep in
+            guard !referencedModules.contains(dep.moduleName) else { return nil }
+
+            let removals = sourceFileUsage.compactMap { usage -> SourceImportRemoval? in
+                guard usage.directImports.contains(dep.moduleName) else { return nil }
+                guard !usage.referencedModules.contains(dep.moduleName) else { return nil }
+                return SourceImportRemoval(
+                    filePath: usage.sourceFile,
+                    moduleName: dep.moduleName
+                )
+            }
+
+            guard !removals.isEmpty else { return nil }
+            return Issue.unusedImport(
+                dep,
+                targetLabel: metadata.target.label,
+                sourceImportRemovals: removals
+            )
+        }
     }
 
     /// Fall back to trace-based module loading.

@@ -12,6 +12,9 @@ bazel run @swift_unused_deps//:swift_unused_deps -- //App/...
 
 # Auto-fix high-confidence issues
 bazel run @swift_unused_deps//:swift_unused_deps -- //App/... --fix
+
+# Analyze iOS-only targets with a dedicated Bazel config
+bazel run @swift_unused_deps//:swift_unused_deps -- --build-config unused-deps-ios //App:App
 ```
 
 ```
@@ -72,7 +75,9 @@ bazel run @swift_unused_deps//:swift_unused_deps -- //libraries/...
 bazel run @swift_unused_deps//:swift_unused_deps -- //App:App
 ```
 
-Each run automatically executes `bazel build <pattern> --config=unused-deps` first, then analyzes the produced metadata and traces. Bazel's normal cache handles incremental rebuilds.
+Each run automatically executes `bazel build <pattern> --config=<build-config>` first, then analyzes the produced metadata and traces. Bazel's normal cache handles incremental rebuilds.
+
+The default build config is `unused-deps`. For iOS-only targets or any workspace that uses a different analysis config name, pass `--build-config <name>`.
 
 ### Auto-fix
 
@@ -86,7 +91,11 @@ This runs buildozer commands to:
 - Remove unused deps (`remove deps`)
 - Add missing direct deps (`add deps`)
 
+After applying fixes, the tool rebuilds and re-runs analysis so the printed report reflects the post-fix state.
+
 Only high-confidence issues are fixed. Low-confidence issues (like unresolved modules) are reported for manual investigation.
+
+If a module is imported in Swift source but no symbols from it are referenced anywhere in the target, `--fix` removes both the unused `import` statement(s) and the Bazel dep.
 
 ### JSON output
 
@@ -111,6 +120,14 @@ If the tool reports false positives for modules that are part of the system SDK 
 bazel run @swift_unused_deps//:swift_unused_deps -- //App/... --extra-system-modules MySystemModule,AnotherModule
 ```
 
+### Custom build config
+
+Use a different Bazel config for the automatic build step when needed, for example iOS-only targets:
+
+```sh
+bazel run @swift_unused_deps//:swift_unused_deps -- --build-config unused-deps-ios //App/...
+```
+
 ### All options
 
 | Option | Description |
@@ -121,12 +138,14 @@ bazel run @swift_unused_deps//:swift_unused_deps -- //App/... --extra-system-mod
 | `--min-confidence` | Minimum confidence level: `low`, `medium`, `high` (default: `low`) |
 | `--extra-system-modules` | Comma-separated module names to treat as system modules |
 | `--index-store-path` | Path to Swift index store (default: `/tmp/swift_unused_deps_index_store`) |
+| `--build-config` | Bazel config for the automatic build step (default: `unused-deps`) |
 
 ## What it detects
 
 | Issue | Description | Confidence |
 |-------|-------------|------------|
 | **Unused dep** | Declared in BUILD but module never loaded by compiler | High |
+| **Unused import** | Imported in Swift source but no symbols from that module are referenced anywhere in the target | High |
 | **Missing direct dep** | Imported in source but not declared, only reachable transitively | High (if directly imported) / Low (if indirect) |
 | **private_deps candidate** | Loaded by compiler but not explicitly imported in source | Low |
 
@@ -140,7 +159,7 @@ bazel run @swift_unused_deps//:swift_unused_deps -- //App/... --extra-system-mod
 
 Everything is cached by Bazel. Re-running after no changes is instant.
 
-`bazel run @swift_unused_deps//:swift_unused_deps -- <pattern>` first builds the requested targets with `--config=unused-deps`, then reads the resulting outputs from `bazel-bin/` and prints a human-readable summary. With `--fix`, it runs buildozer to update BUILD files.
+`bazel run @swift_unused_deps//:swift_unused_deps -- <pattern>` first builds the requested targets with `--config=<build-config>`, then reads the resulting outputs from `bazel-bin/` and prints a human-readable summary. With `--fix`, it runs buildozer, rebuilds, and prints the post-fix results.
 
 ### Exit codes
 
@@ -155,7 +174,7 @@ Everything is cached by Bazel. Re-running after no changes is instant.
 - Requires `--spawn_strategy=local` (most iOS Bazel projects already use this)
 - Pure Swift targets only. Mixed Swift/ObjC targets emit a warning.
 - `@_exported import` re-exports are not tracked
-- Unused Swift `import` statements keep deps alive (use a linter like SwiftLint's `unused_import` rule first)
+- Unused Swift `import` statements are fixed only in batch mode, where the tool has index store data for per-file source edits
 
 ## Example
 

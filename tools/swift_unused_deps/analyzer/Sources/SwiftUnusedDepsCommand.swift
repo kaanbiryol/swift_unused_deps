@@ -31,6 +31,9 @@ public struct SwiftUnusedDepsCommand: ParsableCommand {
     @Option(help: "Path to Swift index store for unused import detection (batch mode only).")
     var indexStorePath: String?
 
+    @Option(help: "Bazel config to use for the automatic build step in batch mode.")
+    var buildConfig: String = "unused-deps"
+
     @Argument(help: "Bazel target pattern to analyze (e.g. //libraries/...).")
     var filter: String?
 
@@ -60,6 +63,9 @@ public struct SwiftUnusedDepsCommand: ParsableCommand {
         }
         if !isSingleTargetMode && filter == nil {
             throw ValidationError("Batch mode requires a Bazel target pattern.")
+        }
+        if buildConfig.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            throw ValidationError("--build-config cannot be empty.")
         }
     }
 
@@ -112,6 +118,40 @@ public struct SwiftUnusedDepsCommand: ParsableCommand {
         guard let pattern = filter else {
             throw ValidationError("Batch mode requires a Bazel target pattern.")
         }
+        let initialOutput = try analyzeBatch(pattern: pattern, extraSystem: extraSystem)
+        let output: BatchAnalyzer.Output
+
+        if fix && !json {
+            let didApplyFixes = try runFixes(results: initialOutput.results)
+            if didApplyFixes {
+                printErr("")
+                printErr("Re-running analysis after fixes...")
+                printErr("")
+                output = try analyzeBatch(pattern: pattern, extraSystem: extraSystem)
+            } else {
+                output = initialOutput
+            }
+        } else {
+            output = initialOutput
+        }
+
+        print(render(results: output.results, minConfidence: confidence))
+
+        let hasIssues = output.results.contains { result in
+            result.issues.contains { $0.confidence >= confidence }
+        }
+        if !output.warnings.isEmpty {
+            throw ExitCode(2)
+        }
+        if hasIssues {
+            throw ExitCode(1)
+        }
+    }
+
+    private func analyzeBatch(
+        pattern: String,
+        extraSystem: Set<String>
+    ) throws -> BatchAnalyzer.Output {
         try runBazelBuild(pattern: pattern)
 
         let metadataRoot = Self.resolveDefaultMetadataRoot()
@@ -126,7 +166,7 @@ public struct SwiftUnusedDepsCommand: ParsableCommand {
             bazelBin: metadataRoot,
             indexStorePath: resolvedIndexStorePath(),
             extraSystemModules: extraSystem,
-            filter: filter,
+            filter: pattern,
             labelConverter: labelConverter
         ))
 
@@ -136,7 +176,7 @@ public struct SwiftUnusedDepsCommand: ParsableCommand {
 
         if output.results.isEmpty && output.warnings.isEmpty {
             printErr("ERROR: No metadata files found.")
-            printErr("Hint: verify your .bazelrc config named 'unused-deps' writes aspect outputs.")
+            printErr("Hint: verify your .bazelrc config named '\(buildConfig)' writes aspect outputs.")
             throw ExitCode(2)
         }
 
@@ -145,21 +185,7 @@ public struct SwiftUnusedDepsCommand: ParsableCommand {
             throw ExitCode(2)
         }
 
-        print(render(results: output.results, minConfidence: confidence))
-
-        if fix && !json {
-            try runFixes(results: output.results)
-        }
-
-        let hasIssues = output.results.contains { result in
-            result.issues.contains { $0.confidence >= confidence }
-        }
-        if hasIssues && !fix {
-            throw ExitCode(1)
-        }
-        if !output.warnings.isEmpty {
-            throw ExitCode(2)
-        }
+        return output
     }
 
     private func analyzeTarget(
@@ -185,30 +211,54 @@ public struct SwiftUnusedDepsCommand: ParsableCommand {
         return Report.formatText(results: results, minConfidence: minConfidence)
     }
 
-    private func runFixes(results: [AnalysisResult]) throws {
-        let commands = results
+    private func runFixes(results: [AnalysisResult]) throws -> Bool {
+        let fixableIssues = results
             .flatMap(\.issues)
             .filter { $0.confidence >= .high }
-            .compactMap(\.buildozerCommand)
+        let sourceImportRemovals = Array(Set(fixableIssues.flatMap(\.sourceImportRemovals))).sorted {
+            if $0.filePath == $1.filePath {
+                return $0.moduleName < $1.moduleName
+            }
+            return $0.filePath < $1.filePath
+        }
+        let commands = fixableIssues.compactMap(\.buildozerCommand)
 
-        guard !commands.isEmpty else {
+        guard !commands.isEmpty || !sourceImportRemovals.isEmpty else {
             printErr("No high-confidence fixes to apply.")
-            return
+            return false
         }
 
         printErr("")
-        printErr("Applying \(commands.count) fix(es)...")
+        printErr("Applying \(commands.count) BUILD fix(es) and \(sourceImportRemovals.count) source import removal(s)...")
         printErr("")
+
+        for removal in sourceImportRemovals {
+            printErr("  remove import \(removal.moduleName) from \(removal.filePath)")
+        }
+
+        if !sourceImportRemovals.isEmpty {
+            try SourceImportEditor.apply(
+                removals: sourceImportRemovals,
+                workspaceDirectory: Self.workspaceDirectory()
+            )
+        }
+
+        if commands.isEmpty {
+            printErr("Done: source import removal(s) applied.")
+            return true
+        }
 
         let result = Buildozer.runBatch(
             commands: commands,
             workingDirectory: Self.workspaceDirectory()
         )
         if result.success {
-            printErr("Done: \(commands.count) fix(es) applied.")
+            printErr("Done: \(commands.count) BUILD fix(es) and \(sourceImportRemovals.count) source import removal(s) applied.")
+            return true
         } else if result.noChanges {
             printErr("WARNING: buildozer made no changes (\(commands.count) command(s) attempted).")
             printErr("The labels in the commands may not match the label format in BUILD files.")
+            return false
         } else {
             printErr("FAILED: \(result.output)")
             throw ExitCode(1)
@@ -234,16 +284,20 @@ public struct SwiftUnusedDepsCommand: ParsableCommand {
         return nil
     }
 
+    static func bazelBuildArguments(pattern: String, config: String) -> [String] {
+        ["bazel", "build", pattern, "--config=\(config)"]
+    }
+
     private func runBazelBuild(pattern: String) throws {
         guard let workspace = Self.workspaceDirectory() else {
             printErr("WARNING: BUILD_WORKSPACE_DIRECTORY not set, skipping automatic build.")
             return
         }
 
-        printErr("Building \(pattern) with --config=unused-deps ...")
+        printErr("Building \(pattern) with --config=\(buildConfig) ...")
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
-        process.arguments = ["bazel", "build", pattern, "--config=unused-deps"]
+        process.arguments = Self.bazelBuildArguments(pattern: pattern, config: buildConfig)
         process.currentDirectoryURL = workspace
         // Inherit stderr so the user sees build progress.
         process.standardError = FileHandle.standardError

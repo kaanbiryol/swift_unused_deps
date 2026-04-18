@@ -98,6 +98,14 @@ public enum Report {
             lines.append("         Currently reachable transitively via: \(issue.currentlyReachableVia.joined(separator: ", "))")
         }
 
+        if !issue.sourceImportRemovals.isEmpty {
+            let files = issue.sourceImportRemovals.map(\.filePath).sorted()
+            let summary = files.count == 1
+                ? files[0]
+                : "\(files.count) source files"
+            lines.append("         Source fix: remove import from \(summary)")
+        }
+
         switch issue.suggestedAction {
         case .remove, .addDep:
             if let cmd = issue.buildozerCommand {
@@ -218,6 +226,7 @@ public enum Report {
         let depKind: String?
         let currentlyReachableVia: [String]?
         let buildozerCommand: String?
+        let sourceImportRemovals: [JSONSourceImportRemoval]?
 
         init(issue: Issue) {
             kind = issue.kind.rawValue
@@ -231,6 +240,9 @@ public enum Report {
                 ? nil
                 : issue.currentlyReachableVia
             buildozerCommand = issue.buildozerCommand?.displayString
+            sourceImportRemovals = issue.sourceImportRemovals.isEmpty
+                ? nil
+                : issue.sourceImportRemovals.map { JSONSourceImportRemoval(removal: $0) }
         }
 
         enum CodingKeys: String, CodingKey {
@@ -243,6 +255,22 @@ public enum Report {
             case depKind = "dep_kind"
             case currentlyReachableVia = "currently_reachable_via"
             case buildozerCommand = "buildozer_command"
+            case sourceImportRemovals = "source_import_removals"
+        }
+    }
+
+    private struct JSONSourceImportRemoval: Encodable {
+        let filePath: String
+        let moduleName: String
+
+        init(removal: SourceImportRemoval) {
+            filePath = removal.filePath
+            moduleName = removal.moduleName
+        }
+
+        enum CodingKeys: String, CodingKey {
+            case filePath = "file_path"
+            case moduleName = "module_name"
         }
     }
 }

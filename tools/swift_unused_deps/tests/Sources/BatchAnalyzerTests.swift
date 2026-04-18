@@ -4,6 +4,53 @@ import XCTest
 
 final class BatchAnalyzerTests: XCTestCase {
 
+    func testDeriveLoadedModulesKeepsDirectImportsWithoutReferencedSymbols() {
+        let modules = BatchAnalyzer.deriveLoadedModules(
+            from: [
+                SourceFileModuleUsage(
+                    sourceFile: "A.swift",
+                    moduleName: "A",
+                    referencedModules: [],
+                    loadedModules: ["LibA", "LibB"],
+                    directImports: ["LibA", "LibB"]
+                ),
+            ]
+        )
+
+        XCTAssertEqual(modules, [
+            LoadedModule(name: "LibA", isImportedDirectly: true),
+            LoadedModule(name: "LibB", isImportedDirectly: true),
+        ])
+    }
+
+    func testUnusedImportIssuesRequireRemovingSourceAndDep() {
+        let metadata = makeMetadata(
+            label: "//Lib:A",
+            moduleName: "A",
+            deps: [DeclaredDep(label: "//Lib:LibA", moduleName: "LibA", kind: .dep)]
+        )
+
+        let issues = BatchAnalyzer.unusedImportIssues(
+            metadata: metadata,
+            sourceFileUsage: [
+                SourceFileModuleUsage(
+                    sourceFile: "/tmp/A.swift",
+                    moduleName: "A",
+                    referencedModules: [],
+                    loadedModules: ["LibA"],
+                    directImports: ["LibA"]
+                ),
+            ]
+        )
+
+        XCTAssertEqual(issues.count, 1)
+        XCTAssertEqual(issues[0].kind, .unusedImport)
+        XCTAssertEqual(issues[0].depLabel, "//Lib:LibA")
+        XCTAssertEqual(issues[0].sourceImportRemovals, [
+            SourceImportRemoval(filePath: "/tmp/A.swift", moduleName: "LibA"),
+        ])
+    }
+
     func testAnalyzeWarnsOnInvalidIndexStorePath() throws {
         try withTemporaryDirectory { directory in
             try writeTarget(
