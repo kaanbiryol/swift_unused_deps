@@ -1,8 +1,7 @@
 """Bazel aspect for detecting unused Swift dependencies.
 
 Propagates through deps and private_deps of swift_library targets, collects
-module traces, and runs the analyzer - all as Bazel actions. Produces a
-per-target report file.
+module traces, and emits per-target metadata for batch analysis.
 
 Usage:
     bazel build //App/... --config=unused-deps
@@ -126,29 +125,6 @@ fi
     )
 
     return trace_output
-
-def _create_analysis_action(ctx, analyzer, metadata_file, trace_file, module_name):
-    """Run the analyzer on a single target's metadata + trace."""
-    report_file = ctx.actions.declare_file(
-        "{}.swift_deps_report.json".format(module_name),
-    )
-
-    args = ctx.actions.args()
-    args.add("--metadata-file", metadata_file)
-    args.add("--trace-file", trace_file)
-    args.add("--output", report_file)
-    args.add("--json")
-
-    ctx.actions.run(
-        executable = analyzer,
-        arguments = [args],
-        inputs = [metadata_file, trace_file],
-        outputs = [report_file],
-        mnemonic = "SwiftDepsAnalyze",
-        progress_message = "Analyzing unused deps for %s" % module_name,
-    )
-
-    return report_file
 
 def _collect_passthrough_transitive_modules(ctx):
     """Collect transitive modules from deps of a non-Swift target.
@@ -294,17 +270,10 @@ swift_deps_aspect = aspect(
     implementation = _swift_deps_aspect_impl,
     doc = """Detects unused Swift dependencies.
 
-    Produces per-target report files as Bazel outputs.
+    Produces per-target metadata files as Bazel outputs.
 
     Usage:
         bazel build //targets/... --config=unused-deps
     """,
     attr_aspects = ["deps", "private_deps", "plugins"],
-    attrs = {
-        "_analyzer": attr.label(
-            default = Label("//tools/swift_unused_deps/analyzer:cli"),
-            executable = True,
-            cfg = "exec",
-        ),
-    },
 )

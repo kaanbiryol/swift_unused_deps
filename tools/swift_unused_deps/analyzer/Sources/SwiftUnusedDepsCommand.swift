@@ -7,15 +7,6 @@ public struct SwiftUnusedDepsCommand: ParsableCommand {
         abstract: "Detect unused and missing direct Bazel deps for Swift targets."
     )
 
-    @Option(help: "Path to a single target metadata JSON file.")
-    var metadataFile: String?
-
-    @Option(help: "Path to a single target trace JSON file.")
-    var traceFile: String?
-
-    @Option(help: "Path to write the single-target analysis report.")
-    var output: String?
-
     @Flag(help: "Output JSON.")
     var json = false
 
@@ -40,28 +31,10 @@ public struct SwiftUnusedDepsCommand: ParsableCommand {
     public init() {}
 
     public func validate() throws {
-        if metadataFile == nil && traceFile != nil {
-            throw ValidationError("--trace-file requires --metadata-file.")
-        }
-        if metadataFile == nil && output != nil {
-            throw ValidationError("--output requires --metadata-file.")
-        }
         if fix && json {
             throw ValidationError("--fix cannot be combined with --json.")
         }
-        if isSingleTargetMode && fix {
-            throw ValidationError("--fix is only supported in batch mode.")
-        }
-        if isSingleTargetMode && filter != nil {
-            throw ValidationError("Target filter is only supported in batch mode.")
-        }
-        if metadataFile != nil && traceFile == nil {
-            throw ValidationError("--trace-file is required with --metadata-file.")
-        }
-        if metadataFile != nil && output == nil {
-            throw ValidationError("--output is required with --metadata-file.")
-        }
-        if !isSingleTargetMode && filter == nil {
+        if filter == nil {
             throw ValidationError("Batch mode requires a Bazel target pattern.")
         }
         if buildConfig.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
@@ -75,43 +48,7 @@ public struct SwiftUnusedDepsCommand: ParsableCommand {
         }
 
         let extraSystem = parseExtraSystemModules(extraSystemModules)
-
-        if isSingleTargetMode {
-            try runSingleTarget(confidence: confidence, extraSystem: extraSystem)
-        } else {
-            try runBatch(confidence: confidence, extraSystem: extraSystem)
-        }
-    }
-
-    private var isSingleTargetMode: Bool {
-        metadataFile != nil || traceFile != nil || output != nil
-    }
-
-    private func runSingleTarget(confidence: Confidence, extraSystem: Set<String>) throws {
-        guard let metadataFile, let traceFile, let output else {
-            throw ValidationError("Single-target analysis requires --metadata-file, --trace-file, and --output.")
-        }
-
-        let metaURL = URL(fileURLWithPath: metadataFile)
-        let traceURL = URL(fileURLWithPath: traceFile)
-
-        let data = try Data(contentsOf: metaURL)
-        let labelConverter = LabelConverter.loadFromBazel() ?? .identity
-        var metadata = try JSONDecoder().decode(TargetMetadata.self, from: data)
-        metadata = metadata.convertingLabels(with: labelConverter)
-        let loadedModules = try TraceParser.parseTraceFile(
-            at: traceURL,
-            forModule: metadata.target.moduleName
-        )
-
-        let result = analyzeTarget(
-            metadata: metadata,
-            loadedModules: loadedModules,
-            extraSystem: extraSystem
-        )
-
-        let content = render(results: [result], minConfidence: confidence)
-        try content.write(toFile: output, atomically: true, encoding: .utf8)
+        try runBatch(confidence: confidence, extraSystem: extraSystem)
     }
 
     private func runBatch(confidence: Confidence, extraSystem: Set<String>) throws {
@@ -186,22 +123,6 @@ public struct SwiftUnusedDepsCommand: ParsableCommand {
         }
 
         return output
-    }
-
-    private func analyzeTarget(
-        metadata: TargetMetadata,
-        loadedModules: [LoadedModule],
-        extraSystem: Set<String>
-    ) -> AnalysisResult {
-        let resolver = ModuleResolver(
-            transitiveModuleMap: metadata.transitiveModuleMap,
-            extraSystemModules: extraSystem
-        )
-        return Analyzer.analyze(
-            metadata: metadata,
-            loadedModules: loadedModules,
-            resolver: resolver
-        )
     }
 
     private func render(results: [AnalysisResult], minConfidence: Confidence) -> String {

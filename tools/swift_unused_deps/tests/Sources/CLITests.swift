@@ -40,25 +40,6 @@ final class CLITests: XCTestCase {
         )
     }
 
-    func testRejectsSingleTargetWithBatchFilter() {
-        XCTAssertThrowsError(try SwiftUnusedDepsCommand.parseAsRoot([
-            "--metadata-file", "meta.json",
-            "--trace-file", "trace.json",
-            "--output", "out.txt",
-            "//App/Features/Login",
-        ])) { error in
-            XCTAssertTrue("\(error)".contains("Target filter is only supported in batch mode."))
-        }
-    }
-
-    func testRejectsTraceWithoutMetadata() {
-        XCTAssertThrowsError(try SwiftUnusedDepsCommand.parseAsRoot([
-            "--trace-file", "trace.json",
-        ])) { error in
-            XCTAssertTrue("\(error)".contains("--trace-file requires --metadata-file."))
-        }
-    }
-
     func testRejectsFixWithJson() {
         XCTAssertThrowsError(try SwiftUnusedDepsCommand.parseAsRoot([
             "//App:App",
