@@ -27,6 +27,83 @@ final class SourceImportEditorTests: XCTestCase {
         """)
     }
 
+    func testRemoveImportsDeletesTestableAndScopedImportLines() throws {
+        let source = """
+        @testable import LibA
+        import struct LibB.Button
+        import LibC
+
+        struct Demo {}
+        """
+
+        let updated = try SourceImportEditor.removeImports(
+            in: source,
+            filePath: "/tmp/Demo.swift",
+            moduleNames: ["LibA", "LibB"]
+        )
+
+        XCTAssertEqual(updated, """
+        import LibC
+
+        struct Demo {}
+        """)
+    }
+
+    func testImportedModuleNamesParsesAttributedAndScopedImports() {
+        let source = """
+        @_spi(Testing) import LibA
+        import struct LibB.Button
+        import class LibC.ImageLoader
+        import Foundation
+        """
+
+        XCTAssertEqual(
+            SourceImportEditor.importedModuleNames(in: source),
+            ["Foundation", "LibA", "LibB", "LibC"]
+        )
+    }
+
+    func testImportLineNumbersTrackAttributedAndScopedImports() {
+        let source = """
+        import Foundation
+
+        @testable import LibA
+        let value = 1
+        import struct LibB.Button
+        """
+
+        XCTAssertEqual(SourceImportEditor.importLineNumbers(in: source), [1, 3, 5])
+    }
+
+    func testRemoveImportsPreservesBlankLinesAndCommentsAroundRemovedImport() throws {
+        let source = """
+        import Foundation
+
+        // Keep this comment with the surrounding declaration.
+        import struct LibA.Tracker // remove me
+
+        import LibB
+
+        struct Demo {}
+        """
+
+        let updated = try SourceImportEditor.removeImports(
+            in: source,
+            filePath: "/tmp/Demo.swift",
+            moduleNames: ["LibA"]
+        )
+
+        XCTAssertEqual(updated, """
+        import Foundation
+
+        // Keep this comment with the surrounding declaration.
+
+        import LibB
+
+        struct Demo {}
+        """)
+    }
+
     func testRemoveImportsFailsWhenImportMissing() {
         XCTAssertThrowsError(
             try SourceImportEditor.removeImports(

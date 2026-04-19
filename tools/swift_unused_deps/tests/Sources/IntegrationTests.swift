@@ -16,7 +16,11 @@ final class IntegrationTests: XCTestCase {
         XCTAssertEqual(analyze.exitCode, 1)
         XCTAssertTrue(analyze.stdout.contains("\"kind\" : \"unused_import\""))
         XCTAssertTrue(analyze.stdout.contains("\"module_name\" : \"LibA\""))
+        XCTAssertTrue(analyze.stdout.contains("\"module_name\" : \"LibB\""))
+        XCTAssertTrue(analyze.stdout.contains("\"classification\" : \"correctly_declared_dep\""))
+        XCTAssertFalse(analyze.stdout.contains("\"dep_module\" : \"LibB\""))
         XCTAssertTrue(analyze.stdout.contains("\"source_import_removals\""))
+        XCTAssertEqual(countOccurrences(of: "\"kind\" : \"unused_import\"", in: analyze.stdout), 1)
 
         let fix = try runBazel(
             bazelPath: bazelPath,
@@ -89,6 +93,10 @@ final class IntegrationTests: XCTestCase {
         let exitCode: Int
         let stdout: String
         let stderr: String
+    }
+
+    private func countOccurrences(of needle: String, in text: String) -> Int {
+        text.components(separatedBy: needle).count - 1
     }
 
     private func copyDirectoryContentsDereferencingSymlinks(from source: URL, to destination: URL) throws {

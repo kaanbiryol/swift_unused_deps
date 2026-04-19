@@ -2,8 +2,6 @@ import ArgumentParser
 import Foundation
 
 public struct SwiftUnusedDepsCommand: ParsableCommand {
-    private static let defaultIndexStoreBase = "/tmp/swift_unused_deps_index_store"
-
     public static let configuration = CommandConfiguration(
         commandName: "swift_unused_deps",
         abstract: "Detect unused and missing direct Bazel deps for Swift targets."
@@ -21,7 +19,7 @@ public struct SwiftUnusedDepsCommand: ParsableCommand {
     @Option(help: "Comma-separated extra module names to treat as system modules.")
     var extraSystemModules: String?
 
-    @Option(help: "Path to Swift index store for unused import detection (batch mode only).")
+    @Option(help: "Override path to Swift index store instead of using rules_swift outputs.")
     var indexStorePath: String?
 
     @Option(help: "Bazel config to use for the automatic build step in batch mode.")
@@ -203,22 +201,17 @@ public struct SwiftUnusedDepsCommand: ParsableCommand {
     }
 
     static func defaultIndexStorePath(workspaceDirectory: URL?) -> String? {
-        guard let workspaceDirectory else { return nil }
-        let hash = Self.fnv1aHashHex(workspaceDirectory.standardizedFileURL.path)
-        return "\(defaultIndexStoreBase)_\(hash)"
+        workspaceDirectory?
+            .appendingPathComponent("bazel-out/_global_index_store", isDirectory: true)
+            .path
     }
 
-    static func bazelBuildArguments(
-        pattern: String,
-        config: String,
-        indexStorePath: String?
-    ) -> [String] {
-        var arguments = ["bazel", "build", pattern, "--config=\(config)"]
-        if let indexStorePath {
-            arguments.append("--@build_bazel_rules_swift//swift:copt=-index-store-path")
-            arguments.append("--@build_bazel_rules_swift//swift:copt=\(indexStorePath)")
-        }
-        return arguments
+    static func bazelBuildArguments(pattern: String, config: String) -> [String] {
+        [
+            "bazel", "build", pattern, "--config=\(config)",
+            "--features=swift.index_while_building",
+            "--features=swift.use_global_index_store",
+        ]
     }
 
     private func runBazelBuild(pattern: String) throws {
@@ -227,17 +220,10 @@ public struct SwiftUnusedDepsCommand: ParsableCommand {
             return
         }
 
-        let indexStorePath = resolvedIndexStorePath()
-        try prepareIndexStoreDirectory(at: indexStorePath)
-
         printErr("Building \(pattern) with --config=\(buildConfig) ...")
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
-        process.arguments = Self.bazelBuildArguments(
-            pattern: pattern,
-            config: buildConfig,
-            indexStorePath: indexStorePath
-        )
+        process.arguments = Self.bazelBuildArguments(pattern: pattern, config: buildConfig)
         process.currentDirectoryURL = workspace
         // Inherit stderr so the user sees build progress.
         process.standardError = FileHandle.standardError
@@ -249,15 +235,6 @@ public struct SwiftUnusedDepsCommand: ParsableCommand {
             printErr("ERROR: bazel build failed (exit \(process.terminationStatus)).")
             throw ExitCode(2)
         }
-    }
-
-    private func prepareIndexStoreDirectory(at path: String?) throws {
-        guard let path else { return }
-        let directory = URL(fileURLWithPath: path).deletingLastPathComponent()
-        try FileManager.default.createDirectory(
-            at: directory,
-            withIntermediateDirectories: true
-        )
     }
 
     private static func resolveDefaultMetadataRoot() -> String {
@@ -338,15 +315,5 @@ public struct SwiftUnusedDepsCommand: ParsableCommand {
     private static func workspaceDirectory() -> URL? {
         ProcessInfo.processInfo.environment["BUILD_WORKSPACE_DIRECTORY"]
             .map { URL(fileURLWithPath: $0) }
-    }
-
-    private static func fnv1aHashHex(_ value: String) -> String {
-        let prime: UInt64 = 1099511628211
-        var hash: UInt64 = 14695981039346656037
-        for byte in value.utf8 {
-            hash ^= UInt64(byte)
-            hash = hash &* prime
-        }
-        return String(format: "%016llx", hash)
     }
 }

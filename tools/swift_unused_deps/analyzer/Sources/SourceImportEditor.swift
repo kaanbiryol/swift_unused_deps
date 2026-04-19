@@ -66,6 +66,16 @@ public enum SourceImportEditor {
         return updated
     }
 
+    static func importedModuleNames(in source: String) -> Set<String> {
+        Set(
+            importStatements(in: source).map(\.moduleName)
+        )
+    }
+
+    static func importLineNumbers(in source: String) -> Set<Int> {
+        Set(importStatements(in: source).map(\.lineNumber))
+    }
+
     private static func readFile(at path: String) throws -> String {
         guard let source = try? String(contentsOfFile: path, encoding: .utf8) else {
             throw Error.fileNotUTF8(path: path)
@@ -80,8 +90,31 @@ public enum SourceImportEditor {
     }
 
     private static func matchesImport(line: String, moduleName: String) -> Bool {
-        let escaped = NSRegularExpression.escapedPattern(for: moduleName)
-        let pattern = #"^\s*(?:@[A-Za-z_][A-Za-z0-9_]*\s+)*import\s+\#(escaped)\s*(?://.*)?$"#
-        return line.range(of: pattern, options: .regularExpression) != nil
+        importedModuleName(in: line) == moduleName
+    }
+
+    private static func importStatements(in source: String) -> [(lineNumber: Int, moduleName: String)] {
+        source.split(separator: "\n", omittingEmptySubsequences: false)
+            .enumerated()
+            .compactMap { offset, rawLine in
+                importedModuleName(in: String(rawLine)).map { (offset + 1, $0) }
+            }
+    }
+
+    private static func importedModuleName(in line: String) -> String? {
+        let pattern =
+            #"^\s*(?:@[A-Za-z_][A-Za-z0-9_]*(?:\([^)]*\))?\s+)*import\s+(?:(?:typealias|struct|class|enum|protocol|let|var|func)\s+)?([A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)*)\s*(?://.*)?$"#
+        guard
+            let regex = try? NSRegularExpression(pattern: pattern),
+            let match = regex.firstMatch(
+                in: line,
+                range: NSRange(line.startIndex..<line.endIndex, in: line)
+            ),
+            let range = Range(match.range(at: 1), in: line)
+        else {
+            return nil
+        }
+
+        return line[range].split(separator: ".").first.map(String.init)
     }
 }

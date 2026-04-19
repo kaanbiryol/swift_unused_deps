@@ -8,8 +8,10 @@ Usage:
 
     Or explicitly:
     bazel build //App/... \
+        --features=swift.index_while_building \
+        --features=swift.use_global_index_store \
         --aspects=//tools/swift_unused_deps/aspect:deps_info.bzl%swift_deps_aspect \
-        --output_groups=swift_deps_info \
+        --output_groups=swift_deps_info,swift_index_store \
         --spawn_strategy=local
 """
 
@@ -28,6 +30,13 @@ def _get_swiftmodule_file(target):
     for module in target[SwiftInfo].direct_modules:
         if module.swift:
             return module.swift.swiftmodule
+    return None
+
+def _get_indexstore_directory(target):
+    """Get the declared indexstore directory from SwiftInfo if available."""
+    for module in target[SwiftInfo].direct_modules:
+        if module.swift:
+            return getattr(module.swift, "indexstore", None)
     return None
 
 def _has_mixed_sources(ctx):
@@ -168,6 +177,7 @@ def _swift_deps_aspect_impl(target, ctx):
         return _collect_passthrough_transitive_modules(ctx)
 
     swiftmodule_file = _get_swiftmodule_file(target)
+    indexstore_directory = _get_indexstore_directory(target)
 
     # Build transitive module tuples.
     self_module_tuple = "{}={}".format(module_name, str(ctx.label))
@@ -226,6 +236,7 @@ def _swift_deps_aspect_impl(target, ctx):
         "declared_deps": declared_deps + declared_private_deps,
         "transitive_module_map": transitive_map,
         "trace_file": "",
+        "indexstore_path": indexstore_directory.short_path if indexstore_directory else "",
     }
 
     metadata_file = ctx.actions.declare_file(

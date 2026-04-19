@@ -58,6 +58,7 @@ public struct TargetMetadata: Codable {
     public let declaredDeps: [DeclaredDep]
     public let transitiveModuleMap: [String: String]
     public let traceFile: String
+    public let indexStorePath: String?
 
     enum CodingKeys: String, CodingKey {
         case schemaVersion = "schema_version"
@@ -65,6 +66,23 @@ public struct TargetMetadata: Codable {
         case declaredDeps = "declared_deps"
         case transitiveModuleMap = "transitive_module_map"
         case traceFile = "trace_file"
+        case indexStorePath = "indexstore_path"
+    }
+
+    public init(
+        schemaVersion: Int,
+        target: TargetInfo,
+        declaredDeps: [DeclaredDep],
+        transitiveModuleMap: [String: String],
+        traceFile: String,
+        indexStorePath: String? = nil
+    ) {
+        self.schemaVersion = schemaVersion
+        self.target = target
+        self.declaredDeps = declaredDeps
+        self.transitiveModuleMap = transitiveModuleMap
+        self.traceFile = traceFile
+        self.indexStorePath = indexStorePath
     }
 
     /// Returns a new instance with all Bazel labels converted from canonical to apparent form.
@@ -90,7 +108,8 @@ public struct TargetMetadata: Codable {
             transitiveModuleMap: Dictionary(uniqueKeysWithValues:
                 transitiveModuleMap.map { ($0.key, converter.convert($0.value, buildFileContent: buildFileContent)) }
             ),
-            traceFile: traceFile
+            traceFile: traceFile,
+            indexStorePath: indexStorePath
         )
     }
 }

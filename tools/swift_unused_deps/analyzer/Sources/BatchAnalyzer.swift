@@ -38,6 +38,7 @@ public enum BatchAnalyzer {
         let baseURL = URL(fileURLWithPath: options.bazelBin, isDirectory: true)
         let fm = FileManager.default
         var warnings: [String] = []
+        var indexStoreCache: [String: IndexStoreData] = [:]
 
         guard directoryExists(at: baseURL, fileManager: fm) else {
             return Output(
@@ -48,10 +49,6 @@ public enum BatchAnalyzer {
 
         let artifacts = discoverArtifacts(in: baseURL, fileManager: fm)
         let filter = options.filter.map(TargetFilter.init)
-        let indexStore = loadIndexStoreData(
-            storePath: options.indexStorePath,
-            warnings: &warnings
-        )
 
         let results = artifacts.metadataFiles.compactMap { metadataFile in
             analyzeTarget(
@@ -62,7 +59,8 @@ public enum BatchAnalyzer {
                 extraSystemModules: options.extraSystemModules,
                 filter: filter,
                 labelConverter: options.labelConverter,
-                indexStoreUsageByModule: indexStore.usageByModule,
+                indexStoreOverridePath: options.indexStorePath,
+                indexStoreCache: &indexStoreCache,
                 warnings: &warnings
             )
         }
@@ -122,6 +120,54 @@ public enum BatchAnalyzer {
         }
     }
 
+    private static func loadIndexStoreUsage(
+        for metadata: TargetMetadata,
+        bazelBin: String,
+        overridePath: String?,
+        cache: inout [String: IndexStoreData],
+        warnings: inout [String]
+    ) -> [SourceFileModuleUsage] {
+        guard let storePath = resolveIndexStorePath(
+            for: metadata,
+            bazelBin: bazelBin,
+            overridePath: overridePath
+        ) else {
+            return []
+        }
+
+        let key = URL(fileURLWithPath: storePath).standardizedFileURL.path
+        let indexStoreData: IndexStoreData
+        if let cached = cache[key] {
+            indexStoreData = cached
+        } else {
+            indexStoreData = loadIndexStoreData(storePath: key, warnings: &warnings)
+            cache[key] = indexStoreData
+        }
+
+        return indexStoreData.usageByModule[metadata.target.moduleName] ?? []
+    }
+
+    private static func resolveIndexStorePath(
+        for metadata: TargetMetadata,
+        bazelBin: String,
+        overridePath: String?
+    ) -> String? {
+        if let overridePath, !overridePath.isEmpty {
+            return overridePath
+        }
+
+        guard let metadataPath = metadata.indexStorePath, !metadataPath.isEmpty else {
+            return nil
+        }
+
+        if metadataPath.hasPrefix("/") {
+            return metadataPath
+        }
+
+        let bazelBinURL = URL(fileURLWithPath: bazelBin, isDirectory: true)
+        return bazelBinURL.appendingPathComponent(metadataPath).path
+    }
+
     private static func analyzeTarget(
         metadataFile: URL,
         artifacts: ArtifactCatalog,
@@ -130,7 +176,8 @@ public enum BatchAnalyzer {
         extraSystemModules: Set<String>,
         filter: TargetFilter?,
         labelConverter: LabelConverter,
-        indexStoreUsageByModule: [String: [SourceFileModuleUsage]],
+        indexStoreOverridePath: String?,
+        indexStoreCache: inout [String: IndexStoreData],
         warnings: inout [String]
     ) -> AnalysisResult? {
         guard var metadata = loadMetadata(from: metadataFile, warnings: &warnings) else {
@@ -142,12 +189,20 @@ public enum BatchAnalyzer {
             return nil
         }
 
+        let sourceFileUsage = loadIndexStoreUsage(
+            for: metadata,
+            bazelBin: bazelBin,
+            overridePath: indexStoreOverridePath,
+            cache: &indexStoreCache,
+            warnings: &warnings
+        )
+
         guard let loadedModules = loadModules(
             for: metadata,
             artifacts: artifacts,
             bazelBin: bazelBin,
             fileManager: fileManager,
-            indexStoreUsageByModule: indexStoreUsageByModule,
+            sourceFileUsage: sourceFileUsage,
             warnings: &warnings
         ) else {
             return nil
@@ -164,7 +219,7 @@ public enum BatchAnalyzer {
         )
         let unusedImportIssues = unusedImportIssues(
             metadata: metadata,
-            sourceFileUsage: indexStoreUsageByModule[metadata.target.moduleName] ?? []
+            sourceFileUsage: sourceFileUsage
         )
         guard !unusedImportIssues.isEmpty else { return baseResult }
 
@@ -196,11 +251,11 @@ public enum BatchAnalyzer {
         artifacts: ArtifactCatalog,
         bazelBin: String,
         fileManager: FileManager,
-        indexStoreUsageByModule: [String: [SourceFileModuleUsage]],
+        sourceFileUsage: [SourceFileModuleUsage],
         warnings: inout [String]
     ) -> [LoadedModule]? {
-        if let targetUsage = indexStoreUsageByModule[metadata.target.moduleName], !targetUsage.isEmpty {
-            return deriveLoadedModules(from: targetUsage)
+        if !sourceFileUsage.isEmpty {
+            return deriveLoadedModules(from: sourceFileUsage)
         }
 
         return loadTraceModules(

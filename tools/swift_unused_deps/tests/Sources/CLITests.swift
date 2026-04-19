@@ -34,34 +34,23 @@ final class CLITests: XCTestCase {
         XCTAssertEqual(
             SwiftUnusedDepsCommand.bazelBuildArguments(
                 pattern: "//App:App",
-                config: "unused-deps-ios",
-                indexStorePath: "/tmp/store"
+                config: "unused-deps-ios"
             ),
             [
                 "bazel", "build", "//App:App", "--config=unused-deps-ios",
-                "--@build_bazel_rules_swift//swift:copt=-index-store-path",
-                "--@build_bazel_rules_swift//swift:copt=/tmp/store",
+                "--features=swift.index_while_building",
+                "--features=swift.use_global_index_store",
             ]
         )
     }
 
-    func testDefaultIndexStorePathIsWorkspaceScoped() throws {
-        let workspace = URL(fileURLWithPath: "/tmp/workspace-one")
-        let otherWorkspace = URL(fileURLWithPath: "/tmp/workspace-two")
+    func testDefaultIndexStorePathUsesGlobalBazelOutLocation() {
+        let workspace = URL(fileURLWithPath: "/tmp/workspace-one", isDirectory: true)
 
-        let first = try XCTUnwrap(
-            SwiftUnusedDepsCommand.defaultIndexStorePath(workspaceDirectory: workspace)
+        XCTAssertEqual(
+            SwiftUnusedDepsCommand.defaultIndexStorePath(workspaceDirectory: workspace),
+            "/tmp/workspace-one/bazel-out/_global_index_store"
         )
-        let second = try XCTUnwrap(
-            SwiftUnusedDepsCommand.defaultIndexStorePath(workspaceDirectory: workspace)
-        )
-        let third = try XCTUnwrap(
-            SwiftUnusedDepsCommand.defaultIndexStorePath(workspaceDirectory: otherWorkspace)
-        )
-
-        XCTAssertEqual(first, second)
-        XCTAssertNotEqual(first, third)
-        XCTAssertTrue(first.hasPrefix("/tmp/swift_unused_deps_index_store_"))
     }
 
     func testRejectsFixWithJson() {

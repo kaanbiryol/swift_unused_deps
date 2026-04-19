@@ -82,12 +82,23 @@ public enum IndexStoreReader {
             var definedUSRs = Set<String>()
             var referencedUSRs = Set<String>()
             var directImports = Set<String>()
+            var importLineNumbers = Set<Int>()
+
+            if let source = try? String(contentsOfFile: unitReader.mainFile, encoding: .utf8) {
+                directImports.formUnion(SourceImportEditor.importedModuleNames(in: source))
+                importLineNumbers = SourceImportEditor.importLineNumbers(in: source)
+            }
 
             recordReader.forEach { (occurrence: SymbolOccurrence) in
                 if occurrence.roles.contains(.definition) {
                     definedUSRs.insert(occurrence.symbol.usr)
                 } else if occurrence.roles.contains(.reference) {
-                    referencedUSRs.insert(occurrence.symbol.usr)
+                    // Symbol-scoped imports like `import struct LibA.Type` appear as
+                    // references in the index store, but they are import declarations,
+                    // not semantic usage sites.
+                    if !importLineNumbers.contains(occurrence.location.line) {
+                        referencedUSRs.insert(occurrence.symbol.usr)
+                    }
                     if occurrence.symbol.kind == .module {
                         directImports.insert(occurrence.symbol.name)
                     }
