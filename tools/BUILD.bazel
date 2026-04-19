@@ -1,1 +1,7 @@
 # tools package
+
+filegroup(
+    name = "integration_test_files",
+    srcs = ["BUILD.bazel"],
+    visibility = ["//visibility:public"],
+)

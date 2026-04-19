@@ -45,9 +45,7 @@ bazel_dep(name = "swift_unused_deps", version = "0.1.0")
 
 ```
 build:unused-deps --aspects=@swift_unused_deps//tools/swift_unused_deps/aspect:deps_info.bzl%swift_deps_aspect
-build:unused-deps --output_groups=swift_deps_report
-build:unused-deps --@build_bazel_rules_swift//swift:copt=-index-store-path
-build:unused-deps --@build_bazel_rules_swift//swift:copt=/tmp/swift_unused_deps_index_store
+build:unused-deps --output_groups=swift_deps_info
 build:unused-deps --spawn_strategy=local
 ```
 
@@ -137,7 +135,7 @@ bazel run @swift_unused_deps//:swift_unused_deps -- --build-config unused-deps-i
 | `--json` | Output JSON instead of text |
 | `--min-confidence` | Minimum confidence level: `low`, `medium`, `high` (default: `low`) |
 | `--extra-system-modules` | Comma-separated module names to treat as system modules |
-| `--index-store-path` | Path to Swift index store (default: `/tmp/swift_unused_deps_index_store`) |
+| `--index-store-path` | Path to Swift index store (default: workspace-scoped path under `/tmp`) |
 | `--build-config` | Bazel config for the automatic build step (default: `unused-deps`) |
 
 ## What it detects
@@ -155,7 +153,7 @@ bazel run @swift_unused_deps//:swift_unused_deps -- --build-config unused-deps-i
 
 1. **Collects metadata** - reads `SwiftInfo` from rules_swift to get module names, declared deps, and the transitive module map
 2. **Captures traces** - copies the Swift compiler's [loaded module trace](https://github.com/swiftlang/swift/blob/main/docs/LoadedModuleTrace.md) (records which `.swiftmodule` files were actually opened)
-3. **Reads index store** - uses the Swift index store to determine which imports are directly used in source (more accurate than traces alone)
+3. **Reads index store** - uses the Swift index store to determine which imports are directly used in source (more accurate than traces alone). By default the CLI builds with a workspace-scoped temp path for the index store.
 
 Everything is cached by Bazel. Re-running after no changes is instant.
 

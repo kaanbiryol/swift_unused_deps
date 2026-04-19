@@ -41,3 +41,9 @@ swift_binary(
     deps = [":SwiftUnusedDepsLib"],
     visibility = ["//visibility:public"],
 )
+
+filegroup(
+    name = "integration_test_files",
+    srcs = glob(["Sources/**"]) + ["BUILD.bazel"],
+    visibility = ["//visibility:public"],
+)

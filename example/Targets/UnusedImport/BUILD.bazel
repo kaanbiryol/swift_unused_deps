@@ -12,3 +12,12 @@ swift_library(
         "//example/Deps/LibB",
     ],
 )
+
+filegroup(
+    name = "integration_test_files",
+    srcs = [
+        "BUILD.bazel",
+        "UnusedImport.swift",
+    ],
+    visibility = ["//visibility:public"],
+)

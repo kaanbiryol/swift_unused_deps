@@ -2,6 +2,8 @@ import ArgumentParser
 import Foundation
 
 public struct SwiftUnusedDepsCommand: ParsableCommand {
+    private static let defaultIndexStoreBase = "/tmp/swift_unused_deps_index_store"
+
     public static let configuration = CommandConfiguration(
         commandName: "swift_unused_deps",
         abstract: "Detect unused and missing direct Bazel deps for Swift targets."
@@ -197,16 +199,26 @@ public struct SwiftUnusedDepsCommand: ParsableCommand {
         if let indexStorePath {
             return indexStorePath
         }
-
-        let defaultIndexStorePath = "/tmp/swift_unused_deps_index_store"
-        if FileManager.default.fileExists(atPath: defaultIndexStorePath) {
-            return defaultIndexStorePath
-        }
-        return nil
+        return Self.defaultIndexStorePath(workspaceDirectory: Self.workspaceDirectory())
     }
 
-    static func bazelBuildArguments(pattern: String, config: String) -> [String] {
-        ["bazel", "build", pattern, "--config=\(config)"]
+    static func defaultIndexStorePath(workspaceDirectory: URL?) -> String? {
+        guard let workspaceDirectory else { return nil }
+        let hash = Self.fnv1aHashHex(workspaceDirectory.standardizedFileURL.path)
+        return "\(defaultIndexStoreBase)_\(hash)"
+    }
+
+    static func bazelBuildArguments(
+        pattern: String,
+        config: String,
+        indexStorePath: String?
+    ) -> [String] {
+        var arguments = ["bazel", "build", pattern, "--config=\(config)"]
+        if let indexStorePath {
+            arguments.append("--@build_bazel_rules_swift//swift:copt=-index-store-path")
+            arguments.append("--@build_bazel_rules_swift//swift:copt=\(indexStorePath)")
+        }
+        return arguments
     }
 
     private func runBazelBuild(pattern: String) throws {
@@ -215,10 +227,17 @@ public struct SwiftUnusedDepsCommand: ParsableCommand {
             return
         }
 
+        let indexStorePath = resolvedIndexStorePath()
+        try prepareIndexStoreDirectory(at: indexStorePath)
+
         printErr("Building \(pattern) with --config=\(buildConfig) ...")
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
-        process.arguments = Self.bazelBuildArguments(pattern: pattern, config: buildConfig)
+        process.arguments = Self.bazelBuildArguments(
+            pattern: pattern,
+            config: buildConfig,
+            indexStorePath: indexStorePath
+        )
         process.currentDirectoryURL = workspace
         // Inherit stderr so the user sees build progress.
         process.standardError = FileHandle.standardError
@@ -230,6 +249,15 @@ public struct SwiftUnusedDepsCommand: ParsableCommand {
             printErr("ERROR: bazel build failed (exit \(process.terminationStatus)).")
             throw ExitCode(2)
         }
+    }
+
+    private func prepareIndexStoreDirectory(at path: String?) throws {
+        guard let path else { return }
+        let directory = URL(fileURLWithPath: path).deletingLastPathComponent()
+        try FileManager.default.createDirectory(
+            at: directory,
+            withIntermediateDirectories: true
+        )
     }
 
     private static func resolveDefaultMetadataRoot() -> String {
@@ -310,5 +338,15 @@ public struct SwiftUnusedDepsCommand: ParsableCommand {
     private static func workspaceDirectory() -> URL? {
         ProcessInfo.processInfo.environment["BUILD_WORKSPACE_DIRECTORY"]
             .map { URL(fileURLWithPath: $0) }
+    }
+
+    private static func fnv1aHashHex(_ value: String) -> String {
+        let prime: UInt64 = 1099511628211
+        var hash: UInt64 = 14695981039346656037
+        for byte in value.utf8 {
+            hash ^= UInt64(byte)
+            hash = hash &* prime
+        }
+        return String(format: "%016llx", hash)
     }
 }

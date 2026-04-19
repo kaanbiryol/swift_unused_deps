@@ -6,3 +6,12 @@ swift_library(
     module_name = "LibB",
     visibility = ["//example:__subpackages__"],
 )
+
+filegroup(
+    name = "integration_test_files",
+    srcs = [
+        "BUILD.bazel",
+        "LibB.swift",
+    ],
+    visibility = ["//visibility:public"],
+)

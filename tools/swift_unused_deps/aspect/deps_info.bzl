@@ -9,8 +9,7 @@ Usage:
     Or explicitly:
     bazel build //App/... \
         --aspects=//tools/swift_unused_deps/aspect:deps_info.bzl%swift_deps_aspect \
-        --output_groups=swift_deps_report \
-        --@build_bazel_rules_swift//swift:copt=-emit-loaded-module-trace \
+        --output_groups=swift_deps_info \
         --spawn_strategy=local
 """
 
@@ -260,10 +259,7 @@ def _swift_deps_aspect_impl(target, ctx):
             transitive_modules = transitive_modules,
             direct_dep_modules = [],
         ),
-        OutputGroupInfo(
-            swift_deps_info = depset([metadata_file]),
-            swift_deps_report = depset([metadata_file]),
-        ),
+        OutputGroupInfo(swift_deps_info = depset([metadata_file])),
     ]
 
 swift_deps_aspect = aspect(

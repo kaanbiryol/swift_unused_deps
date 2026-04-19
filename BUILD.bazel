@@ -3,3 +3,22 @@ alias(
     actual = "//tools/swift_unused_deps/analyzer:swift_unused_deps",
     visibility = ["//visibility:public"],
 )
+
+filegroup(
+    name = "integration_test_workspace_files",
+    srcs = [
+        ".bazelrc",
+        ".bazelversion",
+        "BUILD.bazel",
+        "MODULE.bazel",
+        "MODULE.bazel.lock",
+        "//example/Deps/LibA:integration_test_files",
+        "//example/Deps/LibB:integration_test_files",
+        "//example/Targets/UnusedImport:integration_test_files",
+        "//tools:integration_test_files",
+        "//tools/swift_unused_deps:integration_test_files",
+        "//tools/swift_unused_deps/analyzer:integration_test_files",
+        "//tools/swift_unused_deps/aspect:integration_test_files",
+    ],
+    visibility = ["//visibility:public"],
+)
