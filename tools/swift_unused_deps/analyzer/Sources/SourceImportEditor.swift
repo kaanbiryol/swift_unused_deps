@@ -1,6 +1,13 @@
 import Foundation
+import SwiftParser
+import SwiftSyntax
 
 public enum SourceImportEditor {
+
+    private struct ImportStatement {
+        let lineNumber: Int
+        let moduleName: String
+    }
 
     public enum Error: Swift.Error, CustomStringConvertible {
         case fileNotUTF8(path: String)
@@ -45,15 +52,19 @@ public enum SourceImportEditor {
         var foundModules = Set<String>()
         let hadTrailingNewline = source.hasSuffix("\n")
         let lines = source.split(separator: "\n", omittingEmptySubsequences: false)
-
-        let filteredLines = lines.filter { rawLine in
-            let line = String(rawLine)
-            for moduleName in moduleNames where matchesImport(line: line, moduleName: moduleName) {
-                foundModules.insert(moduleName)
-                return false
+        let importStatements = importStatements(in: source)
+        let removedLineNumbers: Set<Int> = Set(
+            importStatements.compactMap { statement in
+                guard moduleNames.contains(statement.moduleName) else { return nil }
+                foundModules.insert(statement.moduleName)
+                return statement.lineNumber
             }
-            return true
+        )
+
+        let filteredLines = lines.enumerated().filter { offset, _ in
+            !removedLineNumbers.contains(offset + 1)
         }
+        .map(\.element)
 
         for moduleName in moduleNames where !foundModules.contains(moduleName) {
             throw Error.importNotFound(path: filePath, moduleName: moduleName)
@@ -89,16 +100,32 @@ public enum SourceImportEditor {
         return workspaceDirectory.appendingPathComponent(path).path
     }
 
-    private static func matchesImport(line: String, moduleName: String) -> Bool {
-        importedModuleName(in: line) == moduleName
-    }
+    private static func importStatements(in source: String) -> [ImportStatement] {
+        let syntax = Parser.parse(source: source)
+        let sourceLines = source.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
 
-    private static func importStatements(in source: String) -> [(lineNumber: Int, moduleName: String)] {
-        source.split(separator: "\n", omittingEmptySubsequences: false)
-            .enumerated()
-            .compactMap { offset, rawLine in
-                importedModuleName(in: String(rawLine)).map { (offset + 1, $0) }
+        return syntax.statements.compactMap { item in
+            guard let importDecl = item.item.as(ImportDeclSyntax.self) else {
+                return nil
             }
+
+            let lineNumber = lineNumber(
+                atUTF8Offset: importDecl.positionAfterSkippingLeadingTrivia.utf8Offset,
+                in: source
+            )
+            guard sourceLines.indices.contains(lineNumber - 1) else {
+                return nil
+            }
+            let text = sourceLines[lineNumber - 1]
+            guard let moduleName = importedModuleName(in: text) else {
+                return nil
+            }
+
+            return ImportStatement(
+                lineNumber: lineNumber,
+                moduleName: moduleName
+            )
+        }
     }
 
     private static func importedModuleName(in line: String) -> String? {
@@ -116,5 +143,14 @@ public enum SourceImportEditor {
         }
 
         return line[range].split(separator: ".").first.map(String.init)
+    }
+
+    private static func lineNumber(atUTF8Offset offset: Int, in source: String) -> Int {
+        let newlineCount = source.utf8.prefix(offset).reduce(into: 0) { count, byte in
+            if byte == 0x0A {
+                count += 1
+            }
+        }
+        return newlineCount + 1
     }
 }

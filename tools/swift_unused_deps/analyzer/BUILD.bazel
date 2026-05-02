@@ -23,6 +23,8 @@ swift_library(
     deps = [
         "@swift-index-store//:IndexStore",
         "@swift_argument_parser//:ArgumentParser",
+        "@SwiftSyntax//:SwiftParser",
+        "@SwiftSyntax//:SwiftSyntax",
     ],
 )
 
