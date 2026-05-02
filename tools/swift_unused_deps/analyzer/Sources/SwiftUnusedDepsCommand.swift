@@ -1,6 +1,35 @@
 import ArgumentParser
 import Foundation
 
+struct BazelInfoProvider {
+    let lookup: (String, URL) -> String?
+
+    static let process = BazelInfoProvider { key, currentDirectory in
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
+        process.arguments = ["bazel", "info", key]
+        process.currentDirectoryURL = currentDirectory
+
+        let stdout = Pipe()
+        process.standardOutput = stdout
+        process.standardError = FileHandle.nullDevice
+
+        do {
+            try process.run()
+            process.waitUntilExit()
+        } catch {
+            return nil
+        }
+
+        guard process.terminationStatus == 0 else { return nil }
+        let data = stdout.fileHandleForReading.readDataToEndOfFile()
+        let value = String(data: data, encoding: .utf8)?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let value, !value.isEmpty else { return nil }
+        return value
+    }
+}
+
 public struct SwiftUnusedDepsCommand: ParsableCommand {
     public static let configuration = CommandConfiguration(
         commandName: "swift_unused_deps",
@@ -97,7 +126,8 @@ public struct SwiftUnusedDepsCommand: ParsableCommand {
             throw ExitCode(2)
         }
 
-        let labelConverter = LabelConverter.loadFromBazel() ?? .identity
+        let workspace = Self.workspaceDirectory()
+        let labelConverter = LabelConverter.loadFromBazel(workspaceDirectory: workspace?.path) ?? .identity
 
         let output = BatchAnalyzer.analyze(options: .init(
             bazelBin: metadataRoot,
@@ -200,8 +230,17 @@ public struct SwiftUnusedDepsCommand: ParsableCommand {
         return Self.defaultIndexStorePath(workspaceDirectory: Self.workspaceDirectory())
     }
 
-    static func defaultIndexStorePath(workspaceDirectory: URL?) -> String? {
-        workspaceDirectory?
+    static func defaultIndexStorePath(
+        workspaceDirectory: URL?,
+        bazelInfo: BazelInfoProvider = .process
+    ) -> String? {
+        guard let workspaceDirectory else { return nil }
+        if let outputPath = bazelInfo.lookup("output_path", workspaceDirectory) {
+            return URL(fileURLWithPath: outputPath, isDirectory: true)
+                .appendingPathComponent("_global_index_store", isDirectory: true)
+                .path
+        }
+        return workspaceDirectory
             .appendingPathComponent("bazel-out/_global_index_store", isDirectory: true)
             .path
     }
@@ -238,12 +277,30 @@ public struct SwiftUnusedDepsCommand: ParsableCommand {
     }
 
     private static func resolveDefaultMetadataRoot() -> String {
-        let workspace = ProcessInfo.processInfo.environment["BUILD_WORKSPACE_DIRECTORY"]
-            ?? FileManager.default.currentDirectoryPath
-        let wsURL = URL(fileURLWithPath: workspace)
-        let fm = FileManager.default
+        resolveMetadataRoot(
+            workspaceDirectory: workspaceDirectory(),
+            currentDirectory: URL(fileURLWithPath: FileManager.default.currentDirectoryPath),
+            fileManager: .default,
+            bazelInfo: .process
+        )
+    }
 
-        // Try bazel-bin symlink first.
+    static func resolveMetadataRoot(
+        workspaceDirectory: URL?,
+        currentDirectory: URL,
+        fileManager fm: FileManager,
+        bazelInfo: BazelInfoProvider
+    ) -> String {
+        let wsURL = workspaceDirectory ?? currentDirectory
+
+        // Ask Bazel first. Some workspaces use a custom output base and do not
+        // create the usual bazel-bin/bazel-out convenience symlinks.
+        if let bazelBin = bazelInfo.lookup("bazel-bin", wsURL),
+           hasMetadataFiles(in: bazelBin, fileManager: fm) {
+            return bazelBin
+        }
+
+        // Try bazel-bin symlink next.
         let bazelBin = wsURL.appendingPathComponent("bazel-bin").path
         if let resolved = try? fm.destinationOfSymbolicLink(atPath: bazelBin),
            hasMetadataFiles(in: resolved, fileManager: fm) {
@@ -254,7 +311,9 @@ public struct SwiftUnusedDepsCommand: ParsableCommand {
         // `bazel run` changes the symlink). Scan bazel-out for the config
         // that has aspect outputs from --config=unused-deps.
         let bazelOut = wsURL.appendingPathComponent("bazel-out").path
-        let outPath = (try? fm.destinationOfSymbolicLink(atPath: bazelOut)) ?? bazelOut
+        let outPath = bazelInfo.lookup("output_path", wsURL)
+            ?? (try? fm.destinationOfSymbolicLink(atPath: bazelOut))
+            ?? bazelOut
         if let best = bestConfigBin(in: outPath, fileManager: fm) {
             printErr("Auto-detected metadata in: \(best)")
             return best
@@ -312,8 +371,20 @@ public struct SwiftUnusedDepsCommand: ParsableCommand {
         return best?.path
     }
 
-    private static func workspaceDirectory() -> URL? {
-        ProcessInfo.processInfo.environment["BUILD_WORKSPACE_DIRECTORY"]
-            .map { URL(fileURLWithPath: $0) }
+    static func workspaceDirectory(
+        environment: [String: String] = ProcessInfo.processInfo.environment,
+        bazelInfo: BazelInfoProvider = .process
+    ) -> URL? {
+        if let workingDirectory = environment["BUILD_WORKING_DIRECTORY"],
+           let workspace = bazelInfo.lookup(
+               "workspace",
+               URL(fileURLWithPath: workingDirectory, isDirectory: true)
+           ) {
+            return URL(fileURLWithPath: workspace, isDirectory: true)
+        }
+        if let workspace = environment["BUILD_WORKSPACE_DIRECTORY"] {
+            return URL(fileURLWithPath: workspace, isDirectory: true)
+        }
+        return nil
     }
 }

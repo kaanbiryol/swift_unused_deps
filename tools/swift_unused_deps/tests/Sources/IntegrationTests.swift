@@ -49,6 +49,25 @@ final class IntegrationTests: XCTestCase {
         XCTAssertFalse(buildFile.contains("//example/Deps/LibA"))
     }
 
+    func testExternalConsumerViaLocalPathOverride() throws {
+        let bazelPath = try XCTUnwrap(resolveBazelPath(), "bazel binary not found for integration test")
+        let repoDirectory = try makeWorkspaceCopy()
+        let consumerDirectory = try makeConsumerWorkspace(swiftUnusedDepsPath: repoDirectory.path)
+
+        let result = try runBazel(
+            bazelPath: bazelPath,
+            in: consumerDirectory,
+            arguments: [
+                "run", "@swift_unused_deps//:swift_unused_deps", "--",
+                "//App:App", "--json",
+            ]
+        )
+
+        XCTAssertEqual(result.exitCode, 0, "stdout:\n\(result.stdout)\n\nstderr:\n\(result.stderr)")
+        XCTAssertTrue(result.stdout.contains("\"status\" : \"clean\""))
+        XCTAssertTrue(result.stdout.contains("\"target\" : \"\\/\\/App:App\""))
+    }
+
     private func makeWorkspaceCopy() throws -> URL {
         let testSrcDir = try XCTUnwrap(ProcessInfo.processInfo.environment["TEST_SRCDIR"])
         let runfilesRoot = URL(fileURLWithPath: testSrcDir).appendingPathComponent("_main")
@@ -62,6 +81,109 @@ final class IntegrationTests: XCTestCase {
             try? FileManager.default.removeItem(at: tempRoot)
         }
         return repoDirectory
+    }
+
+    private func makeConsumerWorkspace(swiftUnusedDepsPath: String) throws -> URL {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+
+        addTeardownBlock {
+            try? FileManager.default.removeItem(at: directory)
+        }
+
+        try "9.0.2\n".write(
+            to: directory.appendingPathComponent(".bazelversion"),
+            atomically: true,
+            encoding: .utf8
+        )
+        try """
+        build:unused-deps --features=swift.index_while_building
+        build:unused-deps --features=swift.use_global_index_store
+        build:unused-deps --aspects=@swift_unused_deps//tools/swift_unused_deps/aspect:deps_info.bzl%swift_deps_aspect
+        build:unused-deps --output_groups=swift_deps_info,swift_index_store
+        build:unused-deps --spawn_strategy=local
+        """.write(
+            to: directory.appendingPathComponent(".bazelrc"),
+            atomically: true,
+            encoding: .utf8
+        )
+        try """
+        module(name = "swift_unused_deps_consumer")
+
+        bazel_dep(name = "rules_swift", version = "3.6.0", repo_name = "build_bazel_rules_swift")
+        bazel_dep(name = "swift_unused_deps", version = "0.1.0")
+
+        local_path_override(
+            module_name = "swift_unused_deps",
+            path = "\(swiftUnusedDepsPath)",
+        )
+        """.write(
+            to: directory.appendingPathComponent("MODULE.bazel"),
+            atomically: true,
+            encoding: .utf8
+        )
+        try "# External consumer smoke workspace.\n".write(
+            to: directory.appendingPathComponent("BUILD.bazel"),
+            atomically: true,
+            encoding: .utf8
+        )
+
+        let libDirectory = directory.appendingPathComponent("Lib", isDirectory: true)
+        try FileManager.default.createDirectory(at: libDirectory, withIntermediateDirectories: true)
+        try """
+        load("@build_bazel_rules_swift//swift:swift.bzl", "swift_library")
+
+        swift_library(
+            name = "Lib",
+            srcs = ["Lib.swift"],
+            module_name = "Lib",
+            visibility = ["//visibility:public"],
+        )
+        """.write(
+            to: libDirectory.appendingPathComponent("BUILD.bazel"),
+            atomically: true,
+            encoding: .utf8
+        )
+        try """
+        public struct LibValue {
+            public init() {}
+        }
+        """.write(
+            to: libDirectory.appendingPathComponent("Lib.swift"),
+            atomically: true,
+            encoding: .utf8
+        )
+
+        let appDirectory = directory.appendingPathComponent("App", isDirectory: true)
+        try FileManager.default.createDirectory(at: appDirectory, withIntermediateDirectories: true)
+        try """
+        load("@build_bazel_rules_swift//swift:swift.bzl", "swift_library")
+
+        swift_library(
+            name = "App",
+            srcs = ["App.swift"],
+            module_name = "App",
+            deps = ["//Lib:Lib"],
+        )
+        """.write(
+            to: appDirectory.appendingPathComponent("BUILD.bazel"),
+            atomically: true,
+            encoding: .utf8
+        )
+        try """
+        import Lib
+
+        public func makeValue() -> LibValue {
+            LibValue()
+        }
+        """.write(
+            to: appDirectory.appendingPathComponent("App.swift"),
+            atomically: true,
+            encoding: .utf8
+        )
+
+        return directory
     }
 
     private func runBazel(
