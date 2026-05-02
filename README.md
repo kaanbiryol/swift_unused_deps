@@ -1,5 +1,7 @@
 # swift_unused_deps
 
+[![CI](https://github.com/kaanbiryol/swift_unused_deps/actions/workflows/ci.yml/badge.svg)](https://github.com/kaanbiryol/swift_unused_deps/actions/workflows/ci.yml)
+
 Detect unused and missing direct Bazel dependencies for Swift targets.
 
 Compares declared `deps` in BUILD files against what the Swift compiler actually loaded during compilation. Finds deps you can safely remove and deps you should add.
