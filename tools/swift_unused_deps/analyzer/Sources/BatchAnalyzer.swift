@@ -13,19 +13,22 @@ public enum BatchAnalyzer {
         public var extraSystemModules: Set<String>
         public var filter: String?
         public var labelConverter: LabelConverter
+        public var workspaceDirectory: URL?
 
         public init(
             bazelBin: String,
             indexStorePath: String? = nil,
             extraSystemModules: Set<String> = [],
             filter: String? = nil,
-            labelConverter: LabelConverter = .identity
+            labelConverter: LabelConverter = .identity,
+            workspaceDirectory: URL? = nil
         ) {
             self.bazelBin = bazelBin
             self.indexStorePath = indexStorePath
             self.extraSystemModules = extraSystemModules
             self.filter = filter
             self.labelConverter = labelConverter
+            self.workspaceDirectory = workspaceDirectory
         }
     }
 
@@ -59,6 +62,7 @@ public enum BatchAnalyzer {
                 extraSystemModules: options.extraSystemModules,
                 filter: filter,
                 labelConverter: options.labelConverter,
+                workspaceDirectory: options.workspaceDirectory,
                 indexStoreOverridePath: options.indexStorePath,
                 indexStoreCache: &indexStoreCache,
                 warnings: &warnings
@@ -176,6 +180,7 @@ public enum BatchAnalyzer {
         extraSystemModules: Set<String>,
         filter: TargetFilter?,
         labelConverter: LabelConverter,
+        workspaceDirectory: URL?,
         indexStoreOverridePath: String?,
         indexStoreCache: inout [String: IndexStoreData],
         warnings: inout [String]
@@ -183,7 +188,10 @@ public enum BatchAnalyzer {
         guard var metadata = loadMetadata(from: metadataFile, warnings: &warnings) else {
             return nil
         }
-        let buildFileContent = readBuildFile(for: metadata.target.label)
+        let buildFileContent = readBuildFile(
+            for: metadata.target.label,
+            workspaceDirectory: workspaceDirectory
+        )
         metadata = metadata.convertingLabels(with: labelConverter, buildFileContent: buildFileContent)
         if let filter, !filter.matches(label: metadata.target.label) {
             return nil
@@ -351,8 +359,8 @@ public enum BatchAnalyzer {
     }
 
     /// Read the BUILD file for a target label to help disambiguate apparent repo names.
-    private static func readBuildFile(for targetLabel: String) -> String? {
-        guard let workspace = ProcessInfo.processInfo.environment["BUILD_WORKSPACE_DIRECTORY"] else {
+    private static func readBuildFile(for targetLabel: String, workspaceDirectory: URL?) -> String? {
+        guard let workspaceDirectory else {
             return nil
         }
 
@@ -363,7 +371,7 @@ public enum BatchAnalyzer {
         let afterSlash = label[slashSlash.upperBound...]
         let packagePath = String(afterSlash.prefix(while: { $0 != ":" }))
 
-        let dir = URL(fileURLWithPath: workspace).appendingPathComponent(packagePath)
+        let dir = workspaceDirectory.appendingPathComponent(packagePath)
         for name in ["BUILD.bazel", "BUILD"] {
             let path = dir.appendingPathComponent(name).path
             if let content = try? String(contentsOfFile: path, encoding: .utf8) {

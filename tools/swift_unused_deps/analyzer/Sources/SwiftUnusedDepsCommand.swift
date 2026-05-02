@@ -2,12 +2,26 @@ import ArgumentParser
 import Foundation
 
 struct BazelInfoProvider {
-    let lookup: (String, URL) -> String?
+    private let lookupImpl: (String, URL, [String]) -> String?
 
-    static let process = BazelInfoProvider { key, currentDirectory in
+    init(_ lookup: @escaping (String, URL) -> String?) {
+        self.lookupImpl = { key, currentDirectory, _ in
+            lookup(key, currentDirectory)
+        }
+    }
+
+    init(_ lookup: @escaping (String, URL, [String]) -> String?) {
+        self.lookupImpl = lookup
+    }
+
+    func lookup(_ key: String, currentDirectory: URL, options: [String] = []) -> String? {
+        lookupImpl(key, currentDirectory, options)
+    }
+
+    static let process = BazelInfoProvider { key, currentDirectory, options in
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
-        process.arguments = ["bazel", "info", key]
+        process.arguments = ["bazel", "info"] + options + [key]
         process.currentDirectoryURL = currentDirectory
 
         let stdout = Pipe()
@@ -118,23 +132,28 @@ public struct SwiftUnusedDepsCommand: ParsableCommand {
         pattern: String,
         extraSystem: Set<String>
     ) throws -> BatchAnalyzer.Output {
-        try runBazelBuild(pattern: pattern)
+        let workspace = Self.workspaceDirectory()
+        try runBazelBuild(pattern: pattern, workspaceDirectory: workspace)
 
-        let metadataRoot = Self.resolveDefaultMetadataRoot()
+        let metadataRoot = Self.resolveDefaultMetadataRoot(
+            targetPattern: pattern,
+            buildConfig: buildConfig,
+            workspaceDirectory: workspace
+        )
         guard !metadataRoot.isEmpty else {
             printErr("ERROR: Could not determine metadata root.")
             throw ExitCode(2)
         }
 
-        let workspace = Self.workspaceDirectory()
         let labelConverter = LabelConverter.loadFromBazel(workspaceDirectory: workspace?.path) ?? .identity
 
         let output = BatchAnalyzer.analyze(options: .init(
             bazelBin: metadataRoot,
-            indexStorePath: resolvedIndexStorePath(),
+            indexStorePath: resolvedIndexStorePath(workspaceDirectory: workspace),
             extraSystemModules: extraSystem,
             filter: pattern,
-            labelConverter: labelConverter
+            labelConverter: labelConverter,
+            workspaceDirectory: workspace
         ))
 
         for warning in output.warnings {
@@ -163,6 +182,7 @@ public struct SwiftUnusedDepsCommand: ParsableCommand {
     }
 
     private func runFixes(results: [AnalysisResult]) throws -> Bool {
+        let workspace = Self.workspaceDirectory()
         let fixableIssues = results
             .flatMap(\.issues)
             .filter { $0.confidence >= .high }
@@ -190,7 +210,7 @@ public struct SwiftUnusedDepsCommand: ParsableCommand {
         if !sourceImportRemovals.isEmpty {
             try SourceImportEditor.apply(
                 removals: sourceImportRemovals,
-                workspaceDirectory: Self.workspaceDirectory()
+                workspaceDirectory: workspace
             )
         }
 
@@ -201,7 +221,7 @@ public struct SwiftUnusedDepsCommand: ParsableCommand {
 
         let result = Buildozer.runBatch(
             commands: commands,
-            workingDirectory: Self.workspaceDirectory()
+            workingDirectory: workspace
         )
         if result.success {
             printErr("Done: \(commands.count) BUILD fix(es) and \(sourceImportRemovals.count) source import removal(s) applied.")
@@ -223,11 +243,11 @@ public struct SwiftUnusedDepsCommand: ParsableCommand {
         }.filter { !$0.isEmpty })
     }
 
-    private func resolvedIndexStorePath() -> String? {
+    private func resolvedIndexStorePath(workspaceDirectory: URL?) -> String? {
         if let indexStorePath {
             return indexStorePath
         }
-        return Self.defaultIndexStorePath(workspaceDirectory: Self.workspaceDirectory())
+        return Self.defaultIndexStorePath(workspaceDirectory: workspaceDirectory)
     }
 
     static func defaultIndexStorePath(
@@ -235,7 +255,7 @@ public struct SwiftUnusedDepsCommand: ParsableCommand {
         bazelInfo: BazelInfoProvider = .process
     ) -> String? {
         guard let workspaceDirectory else { return nil }
-        if let outputPath = bazelInfo.lookup("output_path", workspaceDirectory) {
+        if let outputPath = bazelInfo.lookup("output_path", currentDirectory: workspaceDirectory) {
             return URL(fileURLWithPath: outputPath, isDirectory: true)
                 .appendingPathComponent("_global_index_store", isDirectory: true)
                 .path
@@ -253,8 +273,8 @@ public struct SwiftUnusedDepsCommand: ParsableCommand {
         ]
     }
 
-    private func runBazelBuild(pattern: String) throws {
-        guard let workspace = Self.workspaceDirectory() else {
+    private func runBazelBuild(pattern: String, workspaceDirectory: URL?) throws {
+        guard let workspace = workspaceDirectory else {
             printErr("WARNING: BUILD_WORKSPACE_DIRECTORY not set, skipping automatic build.")
             return
         }
@@ -276,12 +296,18 @@ public struct SwiftUnusedDepsCommand: ParsableCommand {
         }
     }
 
-    private static func resolveDefaultMetadataRoot() -> String {
+    private static func resolveDefaultMetadataRoot(
+        targetPattern: String,
+        buildConfig: String,
+        workspaceDirectory: URL?
+    ) -> String {
         resolveMetadataRoot(
-            workspaceDirectory: workspaceDirectory(),
+            workspaceDirectory: workspaceDirectory,
             currentDirectory: URL(fileURLWithPath: FileManager.default.currentDirectoryPath),
             fileManager: .default,
-            bazelInfo: .process
+            bazelInfo: .process,
+            targetPattern: targetPattern,
+            bazelInfoOptions: ["--config=\(buildConfig)"]
         )
     }
 
@@ -289,32 +315,47 @@ public struct SwiftUnusedDepsCommand: ParsableCommand {
         workspaceDirectory: URL?,
         currentDirectory: URL,
         fileManager fm: FileManager,
-        bazelInfo: BazelInfoProvider
+        bazelInfo: BazelInfoProvider,
+        targetPattern: String? = nil,
+        bazelInfoOptions: [String] = []
     ) -> String {
         let wsURL = workspaceDirectory ?? currentDirectory
+        let targetFilter = targetPattern.map(TargetFilter.init)
+        let bazelOut = wsURL.appendingPathComponent("bazel-out").path
+        let outPath = bazelInfo.lookup("output_path", currentDirectory: wsURL)
+            ?? (try? fm.destinationOfSymbolicLink(atPath: bazelOut))
+            ?? bazelOut
 
         // Ask Bazel first. Some workspaces use a custom output base and do not
         // create the usual bazel-bin/bazel-out convenience symlinks.
-        if let bazelBin = bazelInfo.lookup("bazel-bin", wsURL),
-           hasMetadataFiles(in: bazelBin, fileManager: fm) {
+        if let bazelBin = bazelInfo.lookup(
+            "bazel-bin",
+            currentDirectory: wsURL,
+            options: bazelInfoOptions
+        ),
+           hasMetadataFiles(in: bazelBin, matching: targetFilter, fileManager: fm) {
             return bazelBin
+        }
+
+        // If Bazel cannot report a configured bazel-bin path, search the real
+        // output path for a config directory containing this run's target.
+        if let targetFilter,
+           let best = bestConfigBin(in: outPath, matching: targetFilter, fileManager: fm) {
+            printErr("Auto-detected metadata in: \(best)")
+            return best
         }
 
         // Try bazel-bin symlink next.
         let bazelBin = wsURL.appendingPathComponent("bazel-bin").path
         if let resolved = try? fm.destinationOfSymbolicLink(atPath: bazelBin),
-           hasMetadataFiles(in: resolved, fileManager: fm) {
+           hasMetadataFiles(in: resolved, matching: targetFilter, fileManager: fm) {
             return resolved
         }
 
         // bazel-bin points to a config with no metadata (common when
         // `bazel run` changes the symlink). Scan bazel-out for the config
         // that has aspect outputs from --config=unused-deps.
-        let bazelOut = wsURL.appendingPathComponent("bazel-out").path
-        let outPath = bazelInfo.lookup("output_path", wsURL)
-            ?? (try? fm.destinationOfSymbolicLink(atPath: bazelOut))
-            ?? bazelOut
-        if let best = bestConfigBin(in: outPath, fileManager: fm) {
+        if let best = bestConfigBin(in: outPath, matching: targetFilter, fileManager: fm) {
             printErr("Auto-detected metadata in: \(best)")
             return best
         }
@@ -323,29 +364,63 @@ public struct SwiftUnusedDepsCommand: ParsableCommand {
     }
 
     /// Check if a directory contains any `.swift_deps_info.json` files.
-    private static func hasMetadataFiles(in path: String, fileManager: FileManager) -> Bool {
+    private static func hasMetadataFiles(
+        in path: String,
+        matching targetFilter: TargetFilter?,
+        fileManager: FileManager
+    ) -> Bool {
+        metadataStats(in: path, matching: targetFilter, fileManager: fileManager).count > 0
+    }
+
+    private static func metadataStats(
+        in path: String,
+        matching targetFilter: TargetFilter?,
+        fileManager: FileManager
+    ) -> (count: Int, latestModificationDate: Date) {
         guard let enumerator = fileManager.enumerator(
             at: URL(fileURLWithPath: path),
-            includingPropertiesForKeys: nil,
+            includingPropertiesForKeys: [.contentModificationDateKey],
             options: [.skipsHiddenFiles]
-        ) else { return false }
+        ) else { return (0, .distantPast) }
+
+        var count = 0
+        var latestModificationDate = Date.distantPast
         for case let url as URL in enumerator {
-            if url.lastPathComponent.hasSuffix(".swift_deps_info.json") {
-                return true
+            guard url.lastPathComponent.hasSuffix(".swift_deps_info.json") else {
+                continue
+            }
+
+            if let targetFilter {
+                guard
+                    let data = try? Data(contentsOf: url),
+                    let metadata = try? JSONDecoder().decode(TargetMetadata.self, from: data),
+                    targetFilter.matches(label: metadata.target.label)
+                else {
+                    continue
+                }
+            }
+
+            count += 1
+            if let values = try? url.resourceValues(forKeys: [.contentModificationDateKey]),
+               let modificationDate = values.contentModificationDate,
+               modificationDate > latestModificationDate {
+                latestModificationDate = modificationDate
             }
         }
-        return false
+
+        return (count, latestModificationDate)
     }
 
     /// Find the `<config>/bin/` directory under `bazel-out` that contains
     /// aspect metadata files. Returns nil if none found.
     private static func bestConfigBin(
         in bazelOut: String,
+        matching targetFilter: TargetFilter?,
         fileManager fm: FileManager
     ) -> String? {
         guard let configs = try? fm.contentsOfDirectory(atPath: bazelOut) else { return nil }
 
-        var best: (path: String, count: Int)?
+        var best: (path: String, count: Int, latestModificationDate: Date)?
         for config in configs {
             let binDir = URL(fileURLWithPath: bazelOut)
                 .appendingPathComponent(config)
@@ -354,18 +429,15 @@ public struct SwiftUnusedDepsCommand: ParsableCommand {
             guard fm.fileExists(atPath: binDir.path, isDirectory: &isDir),
                   isDir.boolValue else { continue }
 
-            var count = 0
-            if let enumerator = fm.enumerator(
-                at: binDir, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles]
-            ) {
-                for case let url as URL in enumerator {
-                    if url.lastPathComponent.hasSuffix(".swift_deps_info.json") {
-                        count += 1
-                    }
-                }
+            let stats = metadataStats(in: binDir.path, matching: targetFilter, fileManager: fm)
+            if stats.count == 0 {
+                continue
             }
-            if count > 0 && (best == nil || count > best!.count) {
-                best = (binDir.path, count)
+
+            if best == nil
+                || stats.count > best!.count
+                || (stats.count == best!.count && stats.latestModificationDate > best!.latestModificationDate) {
+                best = (binDir.path, stats.count, stats.latestModificationDate)
             }
         }
         return best?.path
@@ -378,7 +450,7 @@ public struct SwiftUnusedDepsCommand: ParsableCommand {
         if let workingDirectory = environment["BUILD_WORKING_DIRECTORY"],
            let workspace = bazelInfo.lookup(
                "workspace",
-               URL(fileURLWithPath: workingDirectory, isDirectory: true)
+               currentDirectory: URL(fileURLWithPath: workingDirectory, isDirectory: true)
            ) {
             return URL(fileURLWithPath: workspace, isDirectory: true)
         }

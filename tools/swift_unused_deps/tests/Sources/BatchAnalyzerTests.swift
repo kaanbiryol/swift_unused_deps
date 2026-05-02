@@ -120,6 +120,51 @@ final class BatchAnalyzerTests: XCTestCase {
         }
     }
 
+    func testAnalyzeUsesProvidedWorkspaceToDisambiguateBuildFileLabels() throws {
+        try withTemporaryDirectory { directory in
+            let bazelBin = directory.appendingPathComponent("bazel-bin", isDirectory: true)
+            let workspace = directory.appendingPathComponent("workspace", isDirectory: true)
+            let packageDirectory = workspace.appendingPathComponent("Lib", isDirectory: true)
+            try FileManager.default.createDirectory(at: bazelBin, withIntermediateDirectories: true)
+            try FileManager.default.createDirectory(at: packageDirectory, withIntermediateDirectories: true)
+            try """
+            swift_library(
+                name = "A",
+                deps = ["@right//:B"],
+            )
+            """.write(
+                to: packageDirectory.appendingPathComponent("BUILD.bazel"),
+                atomically: true,
+                encoding: .utf8
+            )
+
+            try writeTarget(
+                to: bazelBin,
+                metadata: makeMetadata(
+                    label: "//Lib:A",
+                    moduleName: "A",
+                    deps: [DeclaredDep(label: "@@repo+//:B", moduleName: "B", kind: .dep)],
+                    transitiveModuleMap: ["B": "@@repo+//:B"]
+                ),
+                traceContents: """
+                {"version":2,"name":"A","arch":"arm64","swiftmodules":[]}
+                """
+            )
+
+            let output = BatchAnalyzer.analyze(options: .init(
+                bazelBin: bazelBin.path,
+                labelConverter: LabelConverter(canonicalToApparent: ["repo+": ["wrong", "right"]]),
+                workspaceDirectory: workspace
+            ))
+
+            XCTAssertEqual(output.warnings.count, 0)
+            XCTAssertEqual(output.results.count, 1)
+            let issue = try XCTUnwrap(output.results[0].issues.first { $0.kind == .unusedDep })
+            XCTAssertEqual(issue.depLabel, "@right//:B")
+            XCTAssertEqual(issue.buildozerCommand?.displayString, "buildozer 'remove deps @right//:B' //Lib:A")
+        }
+    }
+
     private func makeMetadata(
         label: String,
         moduleName: String,

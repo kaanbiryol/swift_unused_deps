@@ -28,11 +28,9 @@ swift_library(
     ],
 )
 
-swift_binary(
+alias(
     name = "cli",
-    srcs = ["Sources/Main.swift"],
-    data = ["@buildozer_binary//:buildozer.exe"],
-    deps = [":SwiftUnusedDepsLib"],
+    actual = ":swift_unused_deps",
     visibility = ["//visibility:public"],
 )
 

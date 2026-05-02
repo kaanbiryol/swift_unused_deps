@@ -124,6 +124,44 @@ final class CLITests: XCTestCase {
         XCTAssertEqual(result, configBin.path)
     }
 
+    func testResolveMetadataRootPrefersTargetMatchingOutputPathOverStaleBazelBin() throws {
+        let directory = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        let workspace = directory.appendingPathComponent("workspace", isDirectory: true)
+        let staleBin = directory.appendingPathComponent("stale-bin", isDirectory: true)
+        let outputPath = directory.appendingPathComponent("custom-bazel-out", isDirectory: true)
+        let configBin = outputPath
+            .appendingPathComponent("ios-sim_arm64-fastbuild", isDirectory: true)
+            .appendingPathComponent("bin", isDirectory: true)
+        try writeMetadataFile(under: staleBin, label: "//Other:Other", moduleName: "Other")
+        try writeMetadataFile(under: configBin, label: "//App:App", moduleName: "App")
+        var bazelBinOptions: [String]?
+
+        let result = SwiftUnusedDepsCommand.resolveMetadataRoot(
+            workspaceDirectory: workspace,
+            currentDirectory: directory,
+            fileManager: .default,
+            bazelInfo: BazelInfoProvider { key, _, options in
+                switch key {
+                case "bazel-bin":
+                    bazelBinOptions = options
+                    return staleBin.path
+                case "output_path":
+                    XCTAssertEqual(options, [])
+                    return outputPath.path
+                default:
+                    return nil
+                }
+            },
+            targetPattern: "//App:App",
+            bazelInfoOptions: ["--config=unused-deps-ios"]
+        )
+
+        XCTAssertEqual(result, configBin.path)
+        XCTAssertEqual(bazelBinOptions, ["--config=unused-deps-ios"])
+    }
+
     func testWorkspaceDirectoryPrefersBazelWorkspaceFromBuildWorkingDirectory() {
         let workingDirectory = "/tmp/consumer/subdir"
         let consumerWorkspace = "/tmp/consumer"
@@ -172,13 +210,22 @@ final class CLITests: XCTestCase {
         return directory
     }
 
-    private func writeMetadataFile(under root: URL) throws {
+    private func writeMetadataFile(
+        under root: URL,
+        label: String = "//pkg:target",
+        moduleName: String = "Target"
+    ) throws {
         let packageDirectory = root.appendingPathComponent("pkg", isDirectory: true)
         try FileManager.default.createDirectory(at: packageDirectory, withIntermediateDirectories: true)
-        try "{}".write(
-            to: packageDirectory.appendingPathComponent("target.swift_deps_info.json"),
-            atomically: true,
-            encoding: .utf8
+        let metadata = TargetMetadata(
+            schemaVersion: 1,
+            target: TargetInfo(label: label, moduleName: moduleName),
+            declaredDeps: [],
+            transitiveModuleMap: [:],
+            traceFile: ""
+        )
+        try JSONEncoder().encode(metadata).write(
+            to: packageDirectory.appendingPathComponent("\(moduleName).swift_deps_info.json")
         )
     }
 }
