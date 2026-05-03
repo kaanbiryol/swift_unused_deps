@@ -1,7 +1,7 @@
 load("@build_bazel_rules_swift//swift:swift.bzl", "swift_library")
 
-# UNRESOLVED MODULE - RegexBuilder is a Swift stdlib module but is not in the
-# tool's hardcoded system modules list, so it gets flagged as unresolved.
+# UNRESOLVED MODULE - RegexBuilder is imported directly but is not reported as a
+# system unit dependency in the fixture index store, so it is flagged as unresolved.
 swift_library(
     name = "UnresolvedSystemModule",
     srcs = ["UnresolvedSystemModule.swift"],

@@ -285,17 +285,23 @@ public enum BatchAnalyzer {
     ) -> [LoadedModule] {
         var allDirectImports = Set<String>()
         var allKnownModules = Set<String>()
+        var allSystemModules = Set<String>()
 
         for usage in targetUsage {
             allKnownModules.formUnion(usage.loadedModules)
             allKnownModules.formUnion(usage.directImports)
             allKnownModules.formUnion(usage.referencedModules)
+            allSystemModules.formUnion(usage.systemModules)
             allDirectImports.formUnion(usage.directImports)
         }
 
         return allKnownModules.compactMap { moduleName in
             let isDirectlyImported = allDirectImports.contains(moduleName)
-            return LoadedModule(name: moduleName, isImportedDirectly: isDirectlyImported)
+            return LoadedModule(
+                name: moduleName,
+                isImportedDirectly: isDirectlyImported,
+                isSystem: allSystemModules.contains(moduleName)
+            )
         }
         .sorted { $0.name < $1.name }
     }

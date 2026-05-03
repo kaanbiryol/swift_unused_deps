@@ -8,6 +8,8 @@ public struct SourceFileModuleUsage {
     public let referencedModules: Set<String>
     /// All modules the compiler loaded for this file (unit dependencies).
     public let loadedModules: Set<String>
+    /// Loaded modules the compiler marked as system modules.
+    public let systemModules: Set<String>
     /// Modules explicitly imported in source (`import X` statements).
     public let directImports: Set<String>
 
@@ -16,12 +18,14 @@ public struct SourceFileModuleUsage {
         moduleName: String,
         referencedModules: Set<String>,
         loadedModules: Set<String> = [],
+        systemModules: Set<String> = [],
         directImports: Set<String> = []
     ) {
         self.sourceFile = sourceFile
         self.moduleName = moduleName
         self.referencedModules = referencedModules
         self.loadedModules = loadedModules
+        self.systemModules = systemModules
         self.directImports = directImports
     }
 }
@@ -63,6 +67,7 @@ public enum IndexStoreReader {
             moduleName: String,
             referencedUSRs: Set<String>,
             loadedModules: Set<String>,
+            systemModules: Set<String>,
             directImports: Set<String>
         )] = []
         var seenFiles = Set<String>()
@@ -107,9 +112,13 @@ public enum IndexStoreReader {
 
             // Collect loaded modules from unit dependencies.
             var loadedModules = Set<String>()
+            var systemModules = Set<String>()
             unitReader.forEach(dependency: { dep in
-                if dep.kind == .unit && !dep.moduleName.isEmpty && !dep.isSystem {
+                if dep.kind == .unit && !dep.moduleName.isEmpty {
                     loadedModules.insert(dep.moduleName)
+                    if dep.isSystem {
+                        systemModules.insert(dep.moduleName)
+                    }
                 }
             })
 
@@ -119,7 +128,7 @@ public enum IndexStoreReader {
             if let filter = filterModules, !filter.contains(mod) { continue }
 
             sourceFileEntries.append((
-                unitReader.mainFile, mod, referencedUSRs, loadedModules, directImports
+                unitReader.mainFile, mod, referencedUSRs, loadedModules, systemModules, directImports
             ))
             seenFiles.insert(unitReader.mainFile)
         }
@@ -141,6 +150,7 @@ public enum IndexStoreReader {
                 moduleName: entry.moduleName,
                 referencedModules: referencedModules,
                 loadedModules: entry.loadedModules,
+                systemModules: entry.systemModules,
                 directImports: entry.directImports
             ))
         }

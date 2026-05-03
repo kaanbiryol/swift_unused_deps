@@ -50,9 +50,11 @@ public struct ModuleTrace: Codable {
 public struct LoadedModule: Equatable {
     public let name: String
     public let isImportedDirectly: Bool
+    public let isSystem: Bool
 
-    public init(name: String, isImportedDirectly: Bool) {
+    public init(name: String, isImportedDirectly: Bool, isSystem: Bool = false) {
         self.name = name
         self.isImportedDirectly = isImportedDirectly
+        self.isSystem = isSystem
     }
 }

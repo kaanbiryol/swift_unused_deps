@@ -45,6 +45,13 @@ public enum TraceParser {
         return nil
     }
 
+    public static func isSystemModulePath(_ path: String) -> Bool {
+        let normalized = path.replacingOccurrences(of: "\\", with: "/")
+        return normalized.contains(".sdk/System/Library/")
+            || normalized.contains(".sdk/usr/lib/")
+            || normalized.contains("/usr/lib/swift/")
+    }
+
     /// Parse a loaded module trace file.
     ///
     /// Handles two formats:
@@ -114,7 +121,11 @@ public enum TraceParser {
         // Prefer swiftmodulesDetailedInfo (has inline name field).
         if let detailed = trace.swiftmodulesDetailedInfo, !detailed.isEmpty {
             return detailed.map { entry in
-                LoadedModule(name: entry.name, isImportedDirectly: entry.isImportedDirectly)
+                LoadedModule(
+                    name: entry.name,
+                    isImportedDirectly: entry.isImportedDirectly,
+                    isSystem: isSystemModulePath(entry.path)
+                )
             }
         }
 
@@ -124,10 +135,18 @@ public enum TraceParser {
             switch entry {
             case .path(let path):
                 guard let name = extractModuleName(from: path) else { return nil }
-                return LoadedModule(name: name, isImportedDirectly: true)
+                return LoadedModule(
+                    name: name,
+                    isImportedDirectly: true,
+                    isSystem: isSystemModulePath(path)
+                )
             case .entry(let e):
                 guard let name = extractModuleName(from: e.path) else { return nil }
-                return LoadedModule(name: name, isImportedDirectly: e.isImportedDirectly)
+                return LoadedModule(
+                    name: name,
+                    isImportedDirectly: e.isImportedDirectly,
+                    isSystem: isSystemModulePath(e.path)
+                )
             }
         }
     }

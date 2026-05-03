@@ -23,20 +23,6 @@ final class ModuleResolverTests: XCTestCase {
         XCTAssertEqual(result.status, .resolved(label: "//App/Core/Logger:Logger"))
     }
 
-    func testResolveSystemModules() {
-        for module in ["Foundation", "UIKit", "Swift", "Combine"] {
-            let result = resolver.resolve(module)
-            XCTAssertEqual(result.status, .system, "\(module) should be system")
-        }
-    }
-
-    func testResolveStdlibInternalModules() {
-        for module in ["_Concurrency", "_StringProcessing", "SwiftOnoneSupport"] {
-            let result = resolver.resolve(module)
-            XCTAssertEqual(result.status, .system, "\(module) should be system")
-        }
-    }
-
     func testResolveUnknownModule() {
         let result = resolver.resolve("SomeUnknownModule")
         XCTAssertEqual(result.status, .unresolved)
@@ -58,6 +44,7 @@ final class ModuleResolverTests: XCTestCase {
     }
 
     func testIsSystemModule() {
+        let resolver = ModuleResolver(transitiveModuleMap: [:], extraSystemModules: ["Foundation"])
         XCTAssertTrue(resolver.isSystemModule("Foundation"))
         XCTAssertFalse(resolver.isSystemModule("Networking"))
     }

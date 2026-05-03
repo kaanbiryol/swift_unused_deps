@@ -23,6 +23,26 @@ final class BatchAnalyzerTests: XCTestCase {
         ])
     }
 
+    func testDeriveLoadedModulesMarksSystemModules() {
+        let modules = BatchAnalyzer.deriveLoadedModules(
+            from: [
+                SourceFileModuleUsage(
+                    sourceFile: "A.swift",
+                    moduleName: "A",
+                    referencedModules: ["LibA"],
+                    loadedModules: ["Foundation", "LibA"],
+                    systemModules: ["Foundation"],
+                    directImports: ["Foundation", "LibA"]
+                ),
+            ]
+        )
+
+        XCTAssertEqual(modules, [
+            LoadedModule(name: "Foundation", isImportedDirectly: true, isSystem: true),
+            LoadedModule(name: "LibA", isImportedDirectly: true),
+        ])
+    }
+
     func testUnusedImportIssuesRequireRemovingSourceAndDep() {
         let metadata = makeMetadata(
             label: "//Lib:A",

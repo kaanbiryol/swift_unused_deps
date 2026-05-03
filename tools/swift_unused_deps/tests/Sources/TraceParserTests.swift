@@ -35,6 +35,20 @@ final class TraceParserTests: XCTestCase {
         )
     }
 
+    func testDetectsSystemModulePaths() {
+        let sdkUIKitPath = "/Applications/Xcode.app/Contents/Developer/Platforms/iPhoneOS.platform"
+            + "/Developer/SDKs/iPhoneOS.sdk/System/Library/Frameworks/UIKit.framework"
+            + "/Modules/UIKit.swiftmodule/arm64-apple-ios.swiftmodule"
+        let bazelModulePath = "/private/var/tmp/bazel-out/ios-arm64/bin/App"
+            + "/LibA.swiftmodule/arm64-apple-ios.swiftmodule"
+
+        XCTAssertTrue(TraceParser.isSystemModulePath(
+            "/usr/lib/swift/Foundation.swiftmodule/arm64-apple-ios.swiftmodule"
+        ))
+        XCTAssertTrue(TraceParser.isSystemModulePath(sdkUIKitPath))
+        XCTAssertFalse(TraceParser.isSystemModulePath(bazelModulePath))
+    }
+
     func testPCMReturnsNil() {
         XCTAssertNil(TraceParser.extractModuleName(from: "/path/to/some.pcm"))
     }
@@ -61,8 +75,32 @@ final class TraceParserTests: XCTestCase {
         XCTAssertEqual(modules.count, 2)
         XCTAssertEqual(modules[0].name, "Dep1")
         XCTAssertTrue(modules[0].isImportedDirectly)
+        XCTAssertFalse(modules[0].isSystem)
         XCTAssertEqual(modules[1].name, "Dep2")
         XCTAssertFalse(modules[1].isImportedDirectly)
+        XCTAssertFalse(modules[1].isSystem)
+    }
+
+    func testVersion2MarksSystemModulesFromPath() throws {
+        let sdkUIKitPath = "/Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform"
+            + "/Developer/SDKs/iPhoneSimulator.sdk/System/Library/Frameworks/UIKit.framework"
+            + "/Modules/UIKit.swiftmodule/arm64-apple-ios.swiftmodule"
+        let json = """
+        {
+            "version": 2,
+            "name": "MyLib",
+            "arch": "arm64-apple-ios16.0",
+            "swiftmodules": [
+                {"path": "\(sdkUIKitPath)", "isImportedDirectly": true}
+            ]
+        }
+        """.data(using: .utf8)!
+
+        let modules = try TraceParser.parseTraceData(json)
+
+        XCTAssertEqual(modules, [
+            LoadedModule(name: "UIKit", isImportedDirectly: true, isSystem: true),
+        ])
     }
 
     func testSkipsPCMFiles() throws {

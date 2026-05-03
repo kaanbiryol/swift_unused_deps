@@ -122,7 +122,8 @@ Values: `low` (default), `medium`, `high`.
 
 ### Extra system modules
 
-If the tool reports false positives for modules that are part of the system SDK but not in the built-in list:
+The tool uses compiler/index-store metadata to skip system modules. If a custom
+toolchain or SDK module is not reported as system, add it explicitly:
 
 ```sh
 bazel run @swift_unused_deps//:swift_unused_deps -- //App/... --extra-system-modules MySystemModule,AnotherModule

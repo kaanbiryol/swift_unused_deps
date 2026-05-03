@@ -70,6 +70,11 @@ public enum Analyzer {
         var usedModulesByName: [String: UsedModule] = [:]
 
         for loaded in loadedModules where loaded.name != targetModuleName {
+            if loaded.isSystem {
+                skippedModules.append(SkippedModule(name: loaded.name, reason: .systemModule))
+                continue
+            }
+
             switch resolver.resolve(loaded.name).status {
             case .system:
                 skippedModules.append(SkippedModule(name: loaded.name, reason: .systemModule))

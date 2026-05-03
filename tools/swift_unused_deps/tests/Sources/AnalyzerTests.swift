@@ -24,13 +24,18 @@ final class AnalyzerTests: XCTestCase {
         modules.map { LoadedModule(name: $0.name, isImportedDirectly: $0.direct) }
     }
 
+    private func makeSystemModules(_ modules: [(name: String, direct: Bool)]) -> [LoadedModule] {
+        modules.map { LoadedModule(name: $0.name, isImportedDirectly: $0.direct, isSystem: true) }
+    }
+
     func testCleanTarget() {
         let metadata = makeMetadata(
             label: "//Lib:A", moduleName: "A",
             deps: [("//Lib:B", "B", .dep)],
             transitive: ["B": "//Lib:B"]
         )
-        let modules = makeModules([("B", true), ("Foundation", true)])
+        let modules = makeModules([("B", true)])
+            + makeSystemModules([("Foundation", true)])
         let resolver = ModuleResolver(transitiveModuleMap: metadata.transitiveModuleMap)
 
         let result = Analyzer.analyze(metadata: metadata, loadedModules: modules, resolver: resolver)
@@ -46,7 +51,8 @@ final class AnalyzerTests: XCTestCase {
             deps: [("//Lib:B", "B", .dep), ("//Lib:C", "C", .dep)],
             transitive: ["B": "//Lib:B", "C": "//Lib:C"]
         )
-        let modules = makeModules([("C", true), ("Foundation", true)])
+        let modules = makeModules([("C", true)])
+            + makeSystemModules([("Foundation", true)])
         let resolver = ModuleResolver(transitiveModuleMap: metadata.transitiveModuleMap)
 
         let result = Analyzer.analyze(metadata: metadata, loadedModules: modules, resolver: resolver)
@@ -98,7 +104,7 @@ final class AnalyzerTests: XCTestCase {
 
     func testSystemOnly() {
         let metadata = makeMetadata(label: "//Lib:A", moduleName: "A")
-        let modules = makeModules([("Foundation", true), ("UIKit", true), ("Swift", false)])
+        let modules = makeSystemModules([("Foundation", true), ("UIKit", true), ("Swift", false)])
         let resolver = ModuleResolver(transitiveModuleMap: [:])
 
         let result = Analyzer.analyze(metadata: metadata, loadedModules: modules, resolver: resolver)
