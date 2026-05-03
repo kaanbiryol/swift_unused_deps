@@ -18,9 +18,38 @@ make_fixture_workspace() {
     "${root}"
 }
 
+build_swift_unused_deps_cli() {
+  local root
+  local bazel_bin
+
+  if [[ -n "${SWIFT_UNUSED_DEPS_BINARY:-}" ]]; then
+    if [[ -x "${SWIFT_UNUSED_DEPS_BINARY}" ]]; then
+      return 0
+    fi
+    echo "swift_unused_deps binary not found: ${SWIFT_UNUSED_DEPS_BINARY}" >&2
+    return 1
+  fi
+
+  root="$(repo_root)"
+  SWIFT_UNUSED_DEPS_BINARY="${root}/bazel-bin/tools/swift_unused_deps/analyzer/swift_unused_deps"
+  if [[ -x "${SWIFT_UNUSED_DEPS_BINARY}" ]]; then
+    return 0
+  fi
+
+  (cd "${root}" && bazel build //:swift_unused_deps >/dev/null)
+
+  bazel_bin="$(cd "${root}" && bazel info bazel-bin 2>/dev/null)"
+  SWIFT_UNUSED_DEPS_BINARY="${bazel_bin}/tools/swift_unused_deps/analyzer/swift_unused_deps"
+  if [[ ! -x "${SWIFT_UNUSED_DEPS_BINARY}" ]]; then
+    echo "swift_unused_deps binary not found: ${SWIFT_UNUSED_DEPS_BINARY}" >&2
+    return 1
+  fi
+}
+
 export_fixture_workspace() {
   export FIXTURE_TEMP_DIR
   export FIXTURE_WORKSPACE
+  export SWIFT_UNUSED_DEPS_BINARY
 }
 
 cleanup_fixture_workspace() {
@@ -35,6 +64,16 @@ cleanup_fixture_workspace() {
 
 run_in_workspace() {
   run --separate-stderr bash -c 'cd "$1" && shift && "$@"' bash "${FIXTURE_WORKSPACE}" "$@"
+}
+
+run_swift_unused_deps_in_workspace() {
+  run --separate-stderr bash -c '
+    cd "$1"
+    shift
+    unset BUILD_WORKING_DIRECTORY
+    export BUILD_WORKSPACE_DIRECTORY="$PWD"
+    "$@"
+  ' bash "${FIXTURE_WORKSPACE}" "${SWIFT_UNUSED_DEPS_BINARY}" "$@"
 }
 
 assert_status() {

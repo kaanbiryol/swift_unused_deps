@@ -4,6 +4,7 @@ load "test_helper.bash"
 
 setup_file() {
   make_fixture_workspace "cases_workspace"
+  build_swift_unused_deps_cli
   export_fixture_workspace
 }
 
@@ -12,7 +13,7 @@ teardown_file() {
 }
 
 @test "cases workspace reports expected results across fixture targets" {
-  run_in_workspace bazel run //:swift_unused_deps -- //cases/Targets/... --json
+  run_swift_unused_deps_in_workspace //cases/Targets/... --json
 
   assert_status 1
 
@@ -237,7 +238,7 @@ PY
 }
 
 @test "iOS cases report expected results with iOS build config" {
-  run_in_workspace bazel run //:swift_unused_deps -- --build-config unused-deps-ios //cases/Targets/CleanIOSTarget:CleanIOSTarget --json
+  run_swift_unused_deps_in_workspace --build-config unused-deps-ios //cases/Targets/CleanIOSTarget:CleanIOSTarget --json
 
   assert_status 0
 
@@ -267,7 +268,7 @@ if result.get("issues") or result.get("skipped_modules"):
     sys.exit(1)
 PY
 
-  run_in_workspace bazel run //:swift_unused_deps -- --build-config unused-deps-ios //cases/Targets/UnusedDepIOSTarget:UnusedDepIOSTarget --json
+  run_swift_unused_deps_in_workspace --build-config unused-deps-ios //cases/Targets/UnusedDepIOSTarget:UnusedDepIOSTarget --json
 
   assert_status 1
 

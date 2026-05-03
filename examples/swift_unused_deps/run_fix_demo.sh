@@ -38,6 +38,7 @@ esac
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 repo_root="$(git -C "${script_dir}" rev-parse --show-toplevel)"
 materialize="${repo_root}/tools/swift_unused_deps/tests/helpers/materialize_fixture_workspace.sh"
+cli_binary="${SWIFT_UNUSED_DEPS_BINARY:-}"
 
 if [[ -z "${destination}" ]]; then
   destination="$(mktemp -d "${TMPDIR:-/tmp}/swift-unused-deps-${scenario}.XXXXXX")"
@@ -57,6 +58,20 @@ shutdown_bazel() {
 trap shutdown_bazel EXIT
 
 "${materialize}" cases_workspace "${destination}" "${repo_root}"
+
+if [[ -z "${cli_binary}" ]]; then
+  cli_binary="${repo_root}/bazel-bin/tools/swift_unused_deps/analyzer/swift_unused_deps"
+  if [[ ! -x "${cli_binary}" ]]; then
+    (cd "${repo_root}" && bazel build //:swift_unused_deps >/dev/null)
+    bazel_bin="$(cd "${repo_root}" && bazel info bazel-bin 2>/dev/null)"
+    cli_binary="${bazel_bin}/tools/swift_unused_deps/analyzer/swift_unused_deps"
+  fi
+fi
+
+if [[ ! -x "${cli_binary}" ]]; then
+  echo "swift_unused_deps binary not found: ${cli_binary}" >&2
+  exit 1
+fi
 
 git -C "${destination}" init --quiet
 {
@@ -78,7 +93,9 @@ echo
 
 (
   cd "${destination}"
-  bazel run //:swift_unused_deps -- "${target}" --fix --min-confidence high
+  unset BUILD_WORKING_DIRECTORY
+  export BUILD_WORKSPACE_DIRECTORY="$PWD"
+  "${cli_binary}" "${target}" --fix --min-confidence high
 )
 
 echo
