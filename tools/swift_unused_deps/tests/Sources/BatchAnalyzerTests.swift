@@ -71,6 +71,30 @@ final class BatchAnalyzerTests: XCTestCase {
         ])
     }
 
+    func testUnusedImportIssuesSkipReexportedImports() {
+        let metadata = makeMetadata(
+            label: "//Lib:A",
+            moduleName: "A",
+            deps: [DeclaredDep(label: "//Lib:LibA", moduleName: "LibA", kind: .dep)]
+        )
+
+        let issues = BatchAnalyzer.unusedImportIssues(
+            metadata: metadata,
+            sourceFileUsage: [
+                SourceFileModuleUsage(
+                    sourceFile: "/tmp/A.swift",
+                    moduleName: "A",
+                    referencedModules: [],
+                    loadedModules: ["LibA"],
+                    directImports: ["LibA"],
+                    reexportedImports: ["LibA"]
+                ),
+            ]
+        )
+
+        XCTAssertTrue(issues.isEmpty)
+    }
+
     func testAnalyzeWarnsOnInvalidIndexStorePath() throws {
         try withTemporaryDirectory { directory in
             try writeTarget(

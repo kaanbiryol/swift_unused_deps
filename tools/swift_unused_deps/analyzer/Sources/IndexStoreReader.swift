@@ -12,6 +12,8 @@ public struct SourceFileModuleUsage {
     public let systemModules: Set<String>
     /// Modules explicitly imported in source (`import X` statements).
     public let directImports: Set<String>
+    /// Modules imported with `@_exported import`.
+    public let reexportedImports: Set<String>
 
     public init(
         sourceFile: String,
@@ -19,7 +21,8 @@ public struct SourceFileModuleUsage {
         referencedModules: Set<String>,
         loadedModules: Set<String> = [],
         systemModules: Set<String> = [],
-        directImports: Set<String> = []
+        directImports: Set<String> = [],
+        reexportedImports: Set<String> = []
     ) {
         self.sourceFile = sourceFile
         self.moduleName = moduleName
@@ -27,6 +30,7 @@ public struct SourceFileModuleUsage {
         self.loadedModules = loadedModules
         self.systemModules = systemModules
         self.directImports = directImports
+        self.reexportedImports = reexportedImports
     }
 }
 
@@ -68,7 +72,8 @@ public enum IndexStoreReader {
             referencedUSRs: Set<String>,
             loadedModules: Set<String>,
             systemModules: Set<String>,
-            directImports: Set<String>
+            directImports: Set<String>,
+            reexportedImports: Set<String>
         )] = []
         var seenFiles = Set<String>()
 
@@ -87,10 +92,12 @@ public enum IndexStoreReader {
             var definedUSRs = Set<String>()
             var referencedUSRs = Set<String>()
             var directImports = Set<String>()
+            var reexportedImports = Set<String>()
             var importLineNumbers = Set<Int>()
 
             if let source = try? String(contentsOfFile: unitReader.mainFile, encoding: .utf8) {
                 directImports.formUnion(SourceImportEditor.importedModuleNames(in: source))
+                reexportedImports.formUnion(SourceImportEditor.reexportedImportModuleNames(in: source))
                 importLineNumbers = SourceImportEditor.importLineNumbers(in: source)
             }
 
@@ -128,7 +135,7 @@ public enum IndexStoreReader {
             if let filter = filterModules, !filter.contains(mod) { continue }
 
             sourceFileEntries.append((
-                unitReader.mainFile, mod, referencedUSRs, loadedModules, systemModules, directImports
+                unitReader.mainFile, mod, referencedUSRs, loadedModules, systemModules, directImports, reexportedImports
             ))
             seenFiles.insert(unitReader.mainFile)
         }
@@ -151,7 +158,8 @@ public enum IndexStoreReader {
                 referencedModules: referencedModules,
                 loadedModules: entry.loadedModules,
                 systemModules: entry.systemModules,
-                directImports: entry.directImports
+                directImports: entry.directImports,
+                reexportedImports: entry.reexportedImports
             ))
         }
 

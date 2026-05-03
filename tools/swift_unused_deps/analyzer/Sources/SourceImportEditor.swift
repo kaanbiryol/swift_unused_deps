@@ -7,11 +7,13 @@ public enum SourceImportEditor {
     private struct ImportStatement {
         let lineNumber: Int
         let moduleName: String
+        let isReexported: Bool
     }
 
     public enum Error: Swift.Error, CustomStringConvertible {
         case fileNotUTF8(path: String)
         case importNotFound(path: String, moduleName: String)
+        case reexportedImportNotRemovable(path: String, moduleName: String)
 
         public var description: String {
             switch self {
@@ -19,6 +21,8 @@ public enum SourceImportEditor {
                 return "Failed to read source file as UTF-8: \(path)"
             case .importNotFound(let path, let moduleName):
                 return "Did not find an import for module '\(moduleName)' in \(path)"
+            case .reexportedImportNotRemovable(let path, let moduleName):
+                return "Refusing to remove re-exported import for module '\(moduleName)' in \(path)"
             }
         }
     }
@@ -50,12 +54,17 @@ public enum SourceImportEditor {
         moduleNames: Set<String>
     ) throws -> String {
         var foundModules = Set<String>()
+        var protectedModules = Set<String>()
         let hadTrailingNewline = source.hasSuffix("\n")
         let lines = source.split(separator: "\n", omittingEmptySubsequences: false)
         let importStatements = importStatements(in: source)
         let removedLineNumbers: Set<Int> = Set(
             importStatements.compactMap { statement in
                 guard moduleNames.contains(statement.moduleName) else { return nil }
+                if statement.isReexported {
+                    protectedModules.insert(statement.moduleName)
+                    return nil
+                }
                 foundModules.insert(statement.moduleName)
                 return statement.lineNumber
             }
@@ -67,6 +76,9 @@ public enum SourceImportEditor {
         .map(\.element)
 
         for moduleName in moduleNames where !foundModules.contains(moduleName) {
+            if protectedModules.contains(moduleName) {
+                throw Error.reexportedImportNotRemovable(path: filePath, moduleName: moduleName)
+            }
             throw Error.importNotFound(path: filePath, moduleName: moduleName)
         }
 
@@ -85,6 +97,10 @@ public enum SourceImportEditor {
 
     static func importLineNumbers(in source: String) -> Set<Int> {
         Set(importStatements(in: source).map(\.lineNumber))
+    }
+
+    static func reexportedImportModuleNames(in source: String) -> Set<String> {
+        Set(importStatements(in: source).filter(\.isReexported).map(\.moduleName))
     }
 
     private static func readFile(at path: String) throws -> String {
@@ -123,7 +139,8 @@ public enum SourceImportEditor {
 
             return ImportStatement(
                 lineNumber: lineNumber,
-                moduleName: moduleName
+                moduleName: moduleName,
+                isReexported: isReexportedImport(text)
             )
         }
     }
@@ -143,6 +160,13 @@ public enum SourceImportEditor {
         }
 
         return line[range].split(separator: ".").first.map(String.init)
+    }
+
+    private static func isReexportedImport(_ line: String) -> Bool {
+        guard let importRange = line.range(of: #"\bimport\b"#, options: .regularExpression) else {
+            return false
+        }
+        return line[..<importRange.lowerBound].contains("@_exported")
     }
 
     private static func lineNumber(atUTF8Offset offset: Int, in source: String) -> Int {

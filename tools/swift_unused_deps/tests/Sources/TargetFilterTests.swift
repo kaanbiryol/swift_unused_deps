@@ -23,6 +23,27 @@ final class TargetFilterTests: XCTestCase {
         XCTAssertFalse(filter.matches(label: "//App/Features/Profile:Profile"))
     }
 
+    func testRecursivePatternMatchesRootPackageTarget() {
+        let filter = TargetFilter("//App/...")
+
+        XCTAssertTrue(filter.matches(label: "//App:App"))
+        XCTAssertTrue(filter.matches(label: "//App/Features/Login:Login"))
+    }
+
+    func testRecursivePatternDoesNotMatchPrefixSibling() {
+        let filter = TargetFilter("//App/...")
+
+        XCTAssertFalse(filter.matches(label: "//Application:Application"))
+    }
+
+    func testRootRecursivePatternMatchesWorkspaceTargets() {
+        let filter = TargetFilter("//...")
+
+        XCTAssertTrue(filter.matches(label: "//:root"))
+        XCTAssertTrue(filter.matches(label: "//App:App"))
+        XCTAssertTrue(filter.matches(label: "//App/Features:Features"))
+    }
+
     func testNormalizeTrimsWhitespaceAndRepoMarker() {
         XCTAssertEqual(
             TargetFilter.normalize("  @@//App/Features/Login...  "),

@@ -316,13 +316,18 @@ public enum BatchAnalyzer {
         let referencedModules = sourceFileUsage.reduce(into: Set<String>()) { partial, usage in
             partial.formUnion(usage.referencedModules)
         }
+        let reexportedImportModules = sourceFileUsage.reduce(into: Set<String>()) { partial, usage in
+            partial.formUnion(usage.reexportedImports)
+        }
 
         return metadata.declaredDeps.sorted { $0.moduleName < $1.moduleName }.compactMap { dep in
             guard !referencedModules.contains(dep.moduleName) else { return nil }
+            guard !reexportedImportModules.contains(dep.moduleName) else { return nil }
 
             let removals = sourceFileUsage.compactMap { usage -> SourceImportRemoval? in
                 guard usage.directImports.contains(dep.moduleName) else { return nil }
                 guard !usage.referencedModules.contains(dep.moduleName) else { return nil }
+                guard !usage.reexportedImports.contains(dep.moduleName) else { return nil }
                 return SourceImportRemoval(
                     filePath: usage.sourceFile,
                     moduleName: dep.moduleName

@@ -52,6 +52,7 @@ final class SourceImportEditorTests: XCTestCase {
     func testImportedModuleNamesParsesAttributedAndScopedImports() {
         let source = """
         @_spi(Testing) import LibA
+        @_exported import ExportedLib
         import struct LibB.Button
         import class LibC.ImageLoader
         import Foundation
@@ -59,7 +60,21 @@ final class SourceImportEditorTests: XCTestCase {
 
         XCTAssertEqual(
             SourceImportEditor.importedModuleNames(in: source),
-            ["Foundation", "LibA", "LibB", "LibC"]
+            ["ExportedLib", "Foundation", "LibA", "LibB", "LibC"]
+        )
+    }
+
+    func testReexportedImportModuleNamesTracksExportedImports() {
+        let source = """
+        @_spi(Testing) import LibA
+        @_exported import ExportedLib
+        @preconcurrency @_exported import AnotherExportedLib
+        import Foundation
+        """
+
+        XCTAssertEqual(
+            SourceImportEditor.reexportedImportModuleNames(in: source),
+            ["AnotherExportedLib", "ExportedLib"]
         )
     }
 
@@ -113,6 +128,18 @@ final class SourceImportEditorTests: XCTestCase {
             )
         ) { error in
             XCTAssertTrue("\(error)".contains("Did not find an import for module 'LibA'"))
+        }
+    }
+
+    func testRemoveImportsRefusesReexportedImport() {
+        XCTAssertThrowsError(
+            try SourceImportEditor.removeImports(
+                in: "@_exported import LibA\n",
+                filePath: "/tmp/Demo.swift",
+                moduleNames: ["LibA"]
+            )
+        ) { error in
+            XCTAssertTrue("\(error)".contains("Refusing to remove re-exported import"))
         }
     }
 

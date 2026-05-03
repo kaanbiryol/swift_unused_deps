@@ -182,7 +182,7 @@ Everything is cached by Bazel. Re-running after no changes is instant.
 
 - Requires `--spawn_strategy=local` (most iOS Bazel projects already use this)
 - Pure Swift targets only. Mixed Swift/ObjC targets emit a warning.
-- `@_exported import` re-exports are not tracked
+- `@_exported import` re-exports are treated as non-removable by `--fix`
 - Scoped imports like `import struct LibA.Button` are not analyzed reliably end to end yet
 - Unused Swift `import` statements are fixed only in batch mode, where the tool has index store data for per-file source edits
 

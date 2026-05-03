@@ -15,7 +15,12 @@ public struct TargetFilter: Equatable {
     public func matches(label: String) -> Bool {
         let normalizedLabel = Self.normalize(label)
         if isRecursivePattern {
-            return normalizedLabel.hasPrefix(normalizedPrefix)
+            if normalizedPrefix == "//" || normalizedPrefix.hasSuffix("//") {
+                return normalizedLabel.hasPrefix(normalizedPrefix)
+            }
+            return normalizedLabel == normalizedPrefix
+                || normalizedLabel.hasPrefix("\(normalizedPrefix):")
+                || normalizedLabel.hasPrefix("\(normalizedPrefix)/")
         }
         return normalizedLabel == normalizedPrefix
     }
@@ -24,6 +29,9 @@ public struct TargetFilter: Equatable {
         var normalized = value.trimmingCharacters(in: .whitespacesAndNewlines)
         if normalized.hasSuffix("...") {
             normalized.removeLast(3)
+            if normalized.hasSuffix("/") && !normalized.hasSuffix("//") {
+                normalized.removeLast()
+            }
         }
         while normalized.hasPrefix("@") {
             normalized.removeFirst()
