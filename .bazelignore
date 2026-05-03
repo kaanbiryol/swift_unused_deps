@@ -1,0 +1,5 @@
+bazel-bin
+bazel-out
+bazel-testlogs
+bazel-swift_unused_deps
+bazel-swift-unused-deps

@@ -2,15 +2,22 @@ import Foundation
 
 public struct TargetFilter: Equatable {
     public let rawValue: String
+    private let isRecursivePattern: Bool
     private let normalizedPrefix: String
 
     public init(_ rawValue: String) {
         self.rawValue = rawValue
+        self.isRecursivePattern = rawValue.trimmingCharacters(in: .whitespacesAndNewlines)
+            .hasSuffix("...")
         self.normalizedPrefix = Self.normalize(rawValue)
     }
 
     public func matches(label: String) -> Bool {
-        Self.normalize(label).hasPrefix(normalizedPrefix)
+        let normalizedLabel = Self.normalize(label)
+        if isRecursivePattern {
+            return normalizedLabel.hasPrefix(normalizedPrefix)
+        }
+        return normalizedLabel == normalizedPrefix
     }
 
     static func normalize(_ value: String) -> String {

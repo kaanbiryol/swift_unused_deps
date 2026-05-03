@@ -44,6 +44,10 @@ struct BazelInfoProvider {
     }
 }
 
+struct BazelBuildOutput {
+    let metadataRoot: String?
+}
+
 public struct SwiftUnusedDepsCommand: ParsableCommand {
     public static let configuration = CommandConfiguration(
         commandName: "swift_unused_deps",
@@ -133,9 +137,9 @@ public struct SwiftUnusedDepsCommand: ParsableCommand {
         extraSystem: Set<String>
     ) throws -> BatchAnalyzer.Output {
         let workspace = Self.workspaceDirectory()
-        try runBazelBuild(pattern: pattern, workspaceDirectory: workspace)
+        let buildOutput = try runBazelBuild(pattern: pattern, workspaceDirectory: workspace)
 
-        let metadataRoot = Self.resolveDefaultMetadataRoot(
+        let metadataRoot = buildOutput.metadataRoot ?? Self.resolveDefaultMetadataRoot(
             targetPattern: pattern,
             buildConfig: buildConfig,
             workspaceDirectory: workspace
@@ -265,24 +269,41 @@ public struct SwiftUnusedDepsCommand: ParsableCommand {
             .path
     }
 
-    static func bazelBuildArguments(pattern: String, config: String) -> [String] {
-        [
+    static func bazelBuildArguments(
+        pattern: String,
+        config: String,
+        buildEventJSONFile: String? = nil
+    ) -> [String] {
+        var arguments = [
             "bazel", "build", pattern, "--config=\(config)",
             "--features=swift.index_while_building",
             "--features=swift.use_global_index_store",
         ]
+        if let buildEventJSONFile {
+            arguments.append("--build_event_json_file=\(buildEventJSONFile)")
+            arguments.append("--build_event_json_file_path_conversion=false")
+        }
+        return arguments
     }
 
-    private func runBazelBuild(pattern: String, workspaceDirectory: URL?) throws {
+    private func runBazelBuild(pattern: String, workspaceDirectory: URL?) throws -> BazelBuildOutput {
         guard let workspace = workspaceDirectory else {
             printErr("WARNING: BUILD_WORKSPACE_DIRECTORY not set, skipping automatic build.")
-            return
+            return BazelBuildOutput(metadataRoot: nil)
         }
+
+        let buildEventURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("swift-unused-deps-\(UUID().uuidString).bep.json")
+        defer { try? FileManager.default.removeItem(at: buildEventURL) }
 
         printErr("Building \(pattern) with --config=\(buildConfig) ...")
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
-        process.arguments = Self.bazelBuildArguments(pattern: pattern, config: buildConfig)
+        process.arguments = Self.bazelBuildArguments(
+            pattern: pattern,
+            config: buildConfig,
+            buildEventJSONFile: buildEventURL.path
+        )
         process.currentDirectoryURL = workspace
         // Inherit stderr so the user sees build progress.
         process.standardError = FileHandle.standardError
@@ -294,6 +315,12 @@ public struct SwiftUnusedDepsCommand: ParsableCommand {
             printErr("ERROR: bazel build failed (exit \(process.terminationStatus)).")
             throw ExitCode(2)
         }
+
+        let metadataRoot = Self.metadataRootFromBuildEvent(
+            at: buildEventURL,
+            fileManager: .default
+        )
+        return BazelBuildOutput(metadataRoot: metadataRoot)
     }
 
     private static func resolveDefaultMetadataRoot(
@@ -321,10 +348,6 @@ public struct SwiftUnusedDepsCommand: ParsableCommand {
     ) -> String {
         let wsURL = workspaceDirectory ?? currentDirectory
         let targetFilter = targetPattern.map(TargetFilter.init)
-        let bazelOut = wsURL.appendingPathComponent("bazel-out").path
-        let outPath = bazelInfo.lookup("output_path", currentDirectory: wsURL)
-            ?? (try? fm.destinationOfSymbolicLink(atPath: bazelOut))
-            ?? bazelOut
 
         // Ask Bazel first. Some workspaces use a custom output base and do not
         // create the usual bazel-bin/bazel-out convenience symlinks.
@@ -337,27 +360,11 @@ public struct SwiftUnusedDepsCommand: ParsableCommand {
             return bazelBin
         }
 
-        // If Bazel cannot report a configured bazel-bin path, search the real
-        // output path for a config directory containing this run's target.
-        if let targetFilter,
-           let best = bestConfigBin(in: outPath, matching: targetFilter, fileManager: fm) {
-            printErr("Auto-detected metadata in: \(best)")
-            return best
-        }
-
         // Try bazel-bin symlink next.
         let bazelBin = wsURL.appendingPathComponent("bazel-bin").path
         if let resolved = try? fm.destinationOfSymbolicLink(atPath: bazelBin),
            hasMetadataFiles(in: resolved, matching: targetFilter, fileManager: fm) {
             return resolved
-        }
-
-        // bazel-bin points to a config with no metadata (common when
-        // `bazel run` changes the symlink). Scan bazel-out for the config
-        // that has aspect outputs from --config=unused-deps.
-        if let best = bestConfigBin(in: outPath, matching: targetFilter, fileManager: fm) {
-            printErr("Auto-detected metadata in: \(best)")
-            return best
         }
 
         return (try? fm.destinationOfSymbolicLink(atPath: bazelBin)) ?? bazelBin
@@ -369,22 +376,12 @@ public struct SwiftUnusedDepsCommand: ParsableCommand {
         matching targetFilter: TargetFilter?,
         fileManager: FileManager
     ) -> Bool {
-        metadataStats(in: path, matching: targetFilter, fileManager: fileManager).count > 0
-    }
-
-    private static func metadataStats(
-        in path: String,
-        matching targetFilter: TargetFilter?,
-        fileManager: FileManager
-    ) -> (count: Int, latestModificationDate: Date) {
         guard let enumerator = fileManager.enumerator(
             at: URL(fileURLWithPath: path),
-            includingPropertiesForKeys: [.contentModificationDateKey],
+            includingPropertiesForKeys: nil,
             options: [.skipsHiddenFiles]
-        ) else { return (0, .distantPast) }
+        ) else { return false }
 
-        var count = 0
-        var latestModificationDate = Date.distantPast
         for case let url as URL in enumerator {
             guard url.lastPathComponent.hasSuffix(".swift_deps_info.json") else {
                 continue
@@ -400,47 +397,73 @@ public struct SwiftUnusedDepsCommand: ParsableCommand {
                 }
             }
 
-            count += 1
-            if let values = try? url.resourceValues(forKeys: [.contentModificationDateKey]),
-               let modificationDate = values.contentModificationDate,
-               modificationDate > latestModificationDate {
-                latestModificationDate = modificationDate
-            }
+            return true
         }
 
-        return (count, latestModificationDate)
+        return false
     }
 
-    /// Find the `<config>/bin/` directory under `bazel-out` that contains
-    /// aspect metadata files. Returns nil if none found.
-    private static func bestConfigBin(
-        in bazelOut: String,
-        matching targetFilter: TargetFilter?,
-        fileManager fm: FileManager
+    static func metadataRootFromBuildEvent(
+        at buildEventURL: URL,
+        fileManager: FileManager
     ) -> String? {
-        guard let configs = try? fm.contentsOfDirectory(atPath: bazelOut) else { return nil }
+        guard
+            let data = fileManager.contents(atPath: buildEventURL.path),
+            let contents = String(data: data, encoding: .utf8)
+        else {
+            return nil
+        }
 
-        var best: (path: String, count: Int, latestModificationDate: Date)?
-        for config in configs {
-            let binDir = URL(fileURLWithPath: bazelOut)
-                .appendingPathComponent(config)
-                .appendingPathComponent("bin")
-            var isDir: ObjCBool = false
-            guard fm.fileExists(atPath: binDir.path, isDirectory: &isDir),
-                  isDir.boolValue else { continue }
-
-            let stats = metadataStats(in: binDir.path, matching: targetFilter, fileManager: fm)
-            if stats.count == 0 {
+        let decoder = JSONDecoder()
+        var rootCounts: [String: Int] = [:]
+        for line in contents.split(separator: "\n", omittingEmptySubsequences: true) {
+            guard let eventData = String(line).data(using: .utf8),
+                  let event = try? decoder.decode(BuildEvent.self, from: eventData),
+                  let files = event.namedSetOfFiles?.files else {
                 continue
             }
 
-            if best == nil
-                || stats.count > best!.count
-                || (stats.count == best!.count && stats.latestModificationDate > best!.latestModificationDate) {
-                best = (binDir.path, stats.count, stats.latestModificationDate)
+            for file in files {
+                guard let root = metadataRoot(from: file) else { continue }
+                rootCounts[root, default: 0] += 1
             }
         }
-        return best?.path
+
+        return rootCounts
+            .sorted {
+                if $0.value == $1.value {
+                    return $0.key < $1.key
+                }
+                return $0.value > $1.value
+            }
+            .first?
+            .key
+    }
+
+    private struct BuildEvent: Decodable {
+        let namedSetOfFiles: NamedSetOfFiles?
+    }
+
+    private struct NamedSetOfFiles: Decodable {
+        let files: [BuildEventFile]
+    }
+
+    private struct BuildEventFile: Decodable {
+        let name: String
+        let uri: String
+    }
+
+    private static func metadataRoot(from file: BuildEventFile) -> String? {
+        guard file.name.hasSuffix(".swift_deps_info.json"),
+              let fileURL = URL(string: file.uri),
+              fileURL.isFileURL else {
+            return nil
+        }
+
+        let path = fileURL.path
+        let suffix = "/" + file.name
+        guard path.hasSuffix(suffix) else { return nil }
+        return String(path.dropLast(suffix.count))
     }
 
     static func workspaceDirectory(

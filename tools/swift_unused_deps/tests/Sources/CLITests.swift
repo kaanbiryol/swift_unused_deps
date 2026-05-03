@@ -44,6 +44,23 @@ final class CLITests: XCTestCase {
         )
     }
 
+    func testBuildArgumentsCanWriteBuildEventJSON() {
+        XCTAssertEqual(
+            SwiftUnusedDepsCommand.bazelBuildArguments(
+                pattern: "//App:App",
+                config: "unused-deps",
+                buildEventJSONFile: "/tmp/events.json"
+            ),
+            [
+                "bazel", "build", "//App:App", "--config=unused-deps",
+                "--features=swift.index_while_building",
+                "--features=swift.use_global_index_store",
+                "--build_event_json_file=/tmp/events.json",
+                "--build_event_json_file_path_conversion=false",
+            ]
+        )
+    }
+
     func testDefaultIndexStorePathUsesGlobalBazelOutLocation() {
         let workspace = URL(fileURLWithPath: "/tmp/workspace-one", isDirectory: true)
 
@@ -79,31 +96,37 @@ final class CLITests: XCTestCase {
         let workspace = directory.appendingPathComponent("workspace", isDirectory: true)
         let bazelBin = directory.appendingPathComponent("custom-bin", isDirectory: true)
         try writeMetadataFile(under: bazelBin)
+        var bazelBinOptions: [String]?
 
         let result = SwiftUnusedDepsCommand.resolveMetadataRoot(
             workspaceDirectory: workspace,
             currentDirectory: directory,
             fileManager: .default,
-            bazelInfo: BazelInfoProvider { key, _ in
-                key == "bazel-bin" ? bazelBin.path : nil
-            }
+            bazelInfo: BazelInfoProvider { key, _, options in
+                bazelBinOptions = options
+                return key == "bazel-bin" ? bazelBin.path : nil
+            },
+            bazelInfoOptions: ["--config=unused-deps-ios"]
         )
 
         XCTAssertEqual(result, bazelBin.path)
+        XCTAssertEqual(bazelBinOptions, ["--config=unused-deps-ios"])
     }
 
-    func testResolveMetadataRootScansBazelInfoOutputPathWhenBazelBinHasNoMetadata() throws {
+    func testResolveMetadataRootUsesBazelBinSymlinkWhenBazelInfoHasNoMetadata() throws {
         let directory = try makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
 
         let workspace = directory.appendingPathComponent("workspace", isDirectory: true)
         let emptyBin = directory.appendingPathComponent("empty-bin", isDirectory: true)
-        let outputPath = directory.appendingPathComponent("custom-bazel-out", isDirectory: true)
-        let configBin = outputPath
-            .appendingPathComponent("ios-sim_arm64-fastbuild", isDirectory: true)
-            .appendingPathComponent("bin", isDirectory: true)
+        let configBin = directory.appendingPathComponent("configured-bin", isDirectory: true)
+        try FileManager.default.createDirectory(at: workspace, withIntermediateDirectories: true)
         try FileManager.default.createDirectory(at: emptyBin, withIntermediateDirectories: true)
         try writeMetadataFile(under: configBin)
+        try FileManager.default.createSymbolicLink(
+            at: workspace.appendingPathComponent("bazel-bin"),
+            withDestinationURL: configBin
+        )
 
         let result = SwiftUnusedDepsCommand.resolveMetadataRoot(
             workspaceDirectory: workspace,
@@ -113,8 +136,6 @@ final class CLITests: XCTestCase {
                 switch key {
                 case "bazel-bin":
                     return emptyBin.path
-                case "output_path":
-                    return outputPath.path
                 default:
                     return nil
                 }
@@ -124,42 +145,35 @@ final class CLITests: XCTestCase {
         XCTAssertEqual(result, configBin.path)
     }
 
-    func testResolveMetadataRootPrefersTargetMatchingOutputPathOverStaleBazelBin() throws {
+    func testMetadataRootFromBuildEventUsesReportedMetadataArtifact() throws {
         let directory = try makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
 
-        let workspace = directory.appendingPathComponent("workspace", isDirectory: true)
-        let staleBin = directory.appendingPathComponent("stale-bin", isDirectory: true)
-        let outputPath = directory.appendingPathComponent("custom-bazel-out", isDirectory: true)
-        let configBin = outputPath
+        let root = directory
+            .appendingPathComponent("execroot", isDirectory: true)
+            .appendingPathComponent("bazel-out", isDirectory: true)
             .appendingPathComponent("ios-sim_arm64-fastbuild", isDirectory: true)
             .appendingPathComponent("bin", isDirectory: true)
-        try writeMetadataFile(under: staleBin, label: "//Other:Other", moduleName: "Other")
-        try writeMetadataFile(under: configBin, label: "//App:App", moduleName: "App")
-        var bazelBinOptions: [String]?
-
-        let result = SwiftUnusedDepsCommand.resolveMetadataRoot(
-            workspaceDirectory: workspace,
-            currentDirectory: directory,
-            fileManager: .default,
-            bazelInfo: BazelInfoProvider { key, _, options in
-                switch key {
-                case "bazel-bin":
-                    bazelBinOptions = options
-                    return staleBin.path
-                case "output_path":
-                    XCTAssertEqual(options, [])
-                    return outputPath.path
-                default:
-                    return nil
-                }
-            },
-            targetPattern: "//App:App",
-            bazelInfoOptions: ["--config=unused-deps-ios"]
+        let metadata = root
+            .appendingPathComponent("App", isDirectory: true)
+            .appendingPathComponent("App.swift_deps_info.json")
+        let buildEvent = directory.appendingPathComponent("events.json")
+        try FileManager.default.createDirectory(
+            at: metadata.deletingLastPathComponent(),
+            withIntermediateDirectories: true
         )
+        try "{}".write(to: metadata, atomically: true, encoding: .utf8)
+        try """
+        {"id":{"namedSet":{"id":"0"}},"namedSetOfFiles":{"files":[{"name":"App/App.swift_deps_info.json","uri":"\(metadata.absoluteString)"}]}}
+        """.write(to: buildEvent, atomically: true, encoding: .utf8)
 
-        XCTAssertEqual(result, configBin.path)
-        XCTAssertEqual(bazelBinOptions, ["--config=unused-deps-ios"])
+        XCTAssertEqual(
+            SwiftUnusedDepsCommand.metadataRootFromBuildEvent(
+                at: buildEvent,
+                fileManager: .default
+            ),
+            root.path
+        )
     }
 
     func testWorkspaceDirectoryPrefersBazelWorkspaceFromBuildWorkingDirectory() {

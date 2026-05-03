@@ -10,6 +10,13 @@ final class TargetFilterTests: XCTestCase {
         XCTAssertTrue(filter.matches(label: "//App/Features/Login/Subfeature:Child"))
     }
 
+    func testExactTargetDoesNotMatchPrefixSibling() {
+        let filter = TargetFilter("//App:App")
+
+        XCTAssertTrue(filter.matches(label: "@@//App:App"))
+        XCTAssertFalse(filter.matches(label: "//App:AppTests"))
+    }
+
     func testDoesNotMatchDifferentSubtree() {
         let filter = TargetFilter("//App/Features/Login...")
 

@@ -28,7 +28,7 @@ jobs:
         run: bazel build //:swift_unused_deps
 
       - name: Test
-        run: bazel test //tools/swift_unused_deps/tests:swift_unused_deps_tests
+        run: bazel test //...
 
       - name: Smoke Analyze Clean Example
         run: bazel run //:swift_unused_deps -- //example/Targets/CleanTarget:CleanTarget --min-confidence high

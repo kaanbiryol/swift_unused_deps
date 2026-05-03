@@ -37,11 +37,20 @@ Run with --fix to automatically apply fixes.
 
 ### 1. Add the dependency
 
-In your `MODULE.bazel`:
+In your `MODULE.bazel`, pin the GitHub release tag:
 
 ```python
 bazel_dep(name = "swift_unused_deps", version = "0.1.0")
+
+git_override(
+    module_name = "swift_unused_deps",
+    remote = "https://github.com/kaanbiryol/swift_unused_deps.git",
+    tag = "v0.1.0",
+)
 ```
+
+After the module is published to the Bazel Central Registry, the `git_override`
+can be removed.
 
 ### 2. Configure your `.bazelrc`
 
@@ -161,7 +170,7 @@ bazel run @swift_unused_deps//:swift_unused_deps -- --build-config unused-deps-i
 
 Everything is cached by Bazel. Re-running after no changes is instant.
 
-`bazel run @swift_unused_deps//:swift_unused_deps -- <pattern>` first builds the requested targets with `--config=<build-config>`, then reads the resulting outputs from `bazel-bin/` and prints a human-readable summary. With `--fix`, it runs buildozer, rebuilds, and prints the post-fix results.
+`bazel run @swift_unused_deps//:swift_unused_deps -- <pattern>` first builds the requested targets with `--config=<build-config>`, then reads the metadata outputs reported by that Bazel build and prints a human-readable summary. With `--fix`, it runs buildozer, rebuilds, and prints the post-fix results.
 
 ### Exit codes
 
