@@ -123,7 +123,6 @@ if [ -f "$root" ]; then
 elif [ -f "$beside" ]; then
     cp "$beside" "$dst"
 else
-    echo "WARNING: No module trace found for $module (cached build). Run bazel clean to regenerate." >&2
     echo '{}' > "$dst"
 fi
 """,
@@ -149,6 +148,7 @@ def _collect_passthrough_transitive_modules(ctx):
             for dep in getattr(ctx.rule.attr, attr_name):
                 if SwiftDepsInfo in dep:
                     transitive_sets.append(dep[SwiftDepsInfo].transitive_modules)
+
                 # Record direct module names from deps that have SwiftInfo.
                 if SwiftInfo in dep:
                     for module in dep[SwiftInfo].direct_modules:
@@ -178,6 +178,7 @@ def _swift_deps_aspect_impl(target, ctx):
 
     swiftmodule_file = _get_swiftmodule_file(target)
     indexstore_directory = _get_indexstore_directory(target)
+    trace_file = _create_trace_action(ctx, module_name, swiftmodule_file) if swiftmodule_file else None
 
     # Build transitive module tuples.
     self_module_tuple = "{}={}".format(module_name, str(ctx.label))
@@ -235,7 +236,7 @@ def _swift_deps_aspect_impl(target, ctx):
         },
         "declared_deps": declared_deps + declared_private_deps,
         "transitive_module_map": transitive_map,
-        "trace_file": "",
+        "trace_file": trace_file.short_path if trace_file else "",
         "indexstore_path": indexstore_directory.short_path if indexstore_directory else "",
     }
 
@@ -251,7 +252,8 @@ def _swift_deps_aspect_impl(target, ctx):
             inputs = [swiftmodule_file],
             outputs = [metadata_file],
             command = "cat > '{}' << 'METADATA_EOF'\n{}\nMETADATA_EOF".format(
-                metadata_file.path, metadata_json,
+                metadata_file.path,
+                metadata_json,
             ),
             mnemonic = "SwiftDepsMetadata",
             progress_message = "Collecting deps metadata for %s" % module_name,
@@ -262,6 +264,10 @@ def _swift_deps_aspect_impl(target, ctx):
             content = metadata_json,
         )
 
+    swift_deps_outputs = [metadata_file]
+    if trace_file:
+        swift_deps_outputs.append(trace_file)
+
     return [
         SwiftDepsInfo(
             target_label = ctx.label,
@@ -270,7 +276,7 @@ def _swift_deps_aspect_impl(target, ctx):
             transitive_modules = transitive_modules,
             direct_dep_modules = [],
         ),
-        OutputGroupInfo(swift_deps_info = depset([metadata_file])),
+        OutputGroupInfo(swift_deps_info = depset(swift_deps_outputs)),
     ]
 
 swift_deps_aspect = aspect(

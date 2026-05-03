@@ -3,9 +3,3 @@ alias(
     actual = "//tools/swift_unused_deps/analyzer:swift_unused_deps",
     visibility = ["//visibility:public"],
 )
-
-filegroup(
-    name = "integration_test_files",
-    srcs = ["BUILD.bazel"],
-    visibility = ["//visibility:public"],
-)

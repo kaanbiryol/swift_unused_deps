@@ -1,0 +1,13 @@
+load("@build_bazel_rules_swift//swift:swift.bzl", "swift_library")
+
+# UNUSED ATTRIBUTED IMPORT - LibA is imported with an attribute but never referenced.
+swift_library(
+    name = "UnusedAttributedImport",
+    srcs = ["UnusedAttributedImport.swift"],
+    module_name = "UnusedAttributedImport",
+    deps = [
+        "//cases/Deps/LibA",    # Unused - imported with an attribute but no symbols referenced
+        "//cases/Deps/LibB",
+    ],
+    visibility = ["//cases:__subpackages__"],
+)

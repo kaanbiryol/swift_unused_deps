@@ -30,5 +30,13 @@ jobs:
       - name: Test
         run: bazel test //...
 
-      - name: Smoke Analyze Clean Example
-        run: bazel run //:swift_unused_deps -- //example/Targets/CleanTarget:CleanTarget --min-confidence high
+      - name: Setup Bats
+        uses: mig4/setup-bats@v1
+        with:
+          bats-version: "1.13.0"
+
+      - name: Fixture integration tests
+        run: bats tools/swift_unused_deps/tests/acceptance
+
+      - name: Example smoke tests
+        run: bats examples/swift_unused_deps/test

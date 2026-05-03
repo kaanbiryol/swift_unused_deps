@@ -1,0 +1,17 @@
+load("@build_bazel_rules_swift//swift:swift.bzl", "swift_library", "swift_library_group")
+
+# The actual swift_library that compiles sources.
+swift_library(
+    name = "LibraryGroup_Impl",
+    srcs = ["LibraryGroup.swift"],
+    module_name = "LibraryGroup",
+    visibility = ["//cases:__subpackages__"],
+)
+
+# A swift_library_group wrapping the library, simulating how
+# rules_swift_package_manager exposes Swift packages.
+swift_library_group(
+    name = "LibraryGroup",
+    deps = [":LibraryGroup_Impl"],
+    visibility = ["//cases:__subpackages__"],
+)

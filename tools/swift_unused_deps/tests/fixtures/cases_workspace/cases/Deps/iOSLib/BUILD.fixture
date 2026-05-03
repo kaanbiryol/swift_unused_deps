@@ -1,0 +1,11 @@
+load("@build_bazel_rules_swift//swift:swift.bzl", "swift_library")
+
+# iOS-only library. Skipped when building for the host platform.
+# Build with --config=unused-deps-ios to include this target.
+swift_library(
+    name = "iOSLib",
+    srcs = ["iOSLib.swift"],
+    module_name = "iOSLib",
+    target_compatible_with = ["@platforms//os:ios"],
+    visibility = ["//cases:__subpackages__"],
+)

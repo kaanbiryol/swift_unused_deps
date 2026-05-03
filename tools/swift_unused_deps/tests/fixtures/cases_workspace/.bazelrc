@@ -1,0 +1,5 @@
+build:unused-deps --aspects=@swift_unused_deps//tools/swift_unused_deps/aspect:deps_info.bzl%swift_deps_aspect
+build:unused-deps --features=swift.index_while_building
+build:unused-deps --features=swift.use_global_index_store
+build:unused-deps --output_groups=swift_deps_info,swift_index_store
+build:unused-deps --spawn_strategy=local

@@ -2,13 +2,3 @@ exports_files([
     "deps_info.bzl",
     "providers.bzl",
 ])
-
-filegroup(
-    name = "integration_test_files",
-    srcs = [
-        "BUILD.bazel",
-        "deps_info.bzl",
-        "providers.bzl",
-    ],
-    visibility = ["//visibility:public"],
-)

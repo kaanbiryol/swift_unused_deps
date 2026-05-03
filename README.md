@@ -86,7 +86,7 @@ bazel run @swift_unused_deps//:swift_unused_deps -- //libraries/...
 bazel run @swift_unused_deps//:swift_unused_deps -- //App:App
 ```
 
-Each run automatically executes `bazel build <pattern> --config=<build-config>` first, then analyzes the produced metadata and traces. Bazel's normal cache handles incremental rebuilds.
+Each run automatically executes `bazel build <pattern> --config=<build-config>` first, then analyzes the produced metadata, index store, and trace artifacts. Bazel's normal cache handles incremental rebuilds.
 
 The default build config is `unused-deps`. For iOS-only targets or any workspace that uses a different analysis config name, pass `--build-config <name>`.
 
@@ -133,7 +133,7 @@ bazel run @swift_unused_deps//:swift_unused_deps -- //App/... --extra-system-mod
 
 ### Custom build config
 
-Use a different Bazel config for the automatic build step when needed, for example iOS-only targets:
+Use a different Bazel config for the automatic build step when needed, such as iOS-only targets:
 
 ```sh
 bazel run @swift_unused_deps//:swift_unused_deps -- --build-config unused-deps-ios //App/...
@@ -162,15 +162,15 @@ bazel run @swift_unused_deps//:swift_unused_deps -- --build-config unused-deps-i
 
 ## How it works
 
-`bazel build --config=unused-deps` runs a Bazel [aspect](https://bazel.build/extending/aspects) on every Swift target. For each target, it:
+`bazel build --config=unused-deps` runs a Bazel [aspect](https://bazel.build/extending/aspects) on every Swift target. The aspect is the Bazel-native collection layer. For each target, it:
 
 1. **Collects metadata** - reads `SwiftInfo` from rules_swift to get module names, declared deps, and the transitive module map
-2. **Captures traces** - copies the Swift compiler's [loaded module trace](https://github.com/swiftlang/swift/blob/main/docs/LoadedModuleTrace.md) (records which `.swiftmodule` files were actually opened)
-3. **Reads index store** - uses the `rules_swift` global index store produced by `swift.index_while_building` + `swift.use_global_index_store` to determine which imports are directly used in source (more accurate than traces alone).
+2. **Captures traces** - copies the Swift compiler's [loaded module trace](https://github.com/swiftlang/swift/blob/main/docs/LoadedModuleTrace.md), which records which `.swiftmodule` files were opened
+3. **Records index-store locations** - points the analyzer at the `rules_swift` global index store produced by `swift.index_while_building` + `swift.use_global_index_store`
 
 Everything is cached by Bazel. Re-running after no changes is instant.
 
-`bazel run @swift_unused_deps//:swift_unused_deps -- <pattern>` first builds the requested targets with `--config=<build-config>`, then reads the metadata outputs reported by that Bazel build and prints a human-readable summary. With `--fix`, it runs buildozer, rebuilds, and prints the post-fix results.
+`bazel run @swift_unused_deps//:swift_unused_deps -- <pattern>` first builds the requested targets with `--config=<build-config>`, then the Swift analyzer reads those outputs and prints a human-readable summary. The analyzer prefers index-store data because it can distinguish direct imports from actual symbol references and can drive unused-import source edits. Loaded-module traces remain a fallback when index-store data is unavailable. With `--fix`, the Swift CLI removes unused imports, runs buildozer, rebuilds, and prints the post-fix results.
 
 ### Exit codes
 
@@ -188,12 +188,52 @@ Everything is cached by Bazel. Re-running after no changes is instant.
 - Scoped imports like `import struct LibA.Button` are not analyzed reliably end to end yet
 - Unused Swift `import` statements are fixed only in batch mode, where the tool has index store data for per-file source edits
 
-## Example
+## Development Fixtures
 
-The `example/` directory contains real `swift_library` targets demonstrating each case:
+Analyzer case workspaces live under `tools/swift_unused_deps/tests/fixtures/`.
+
+Run Swift unit tests with Bazel. These cover analyzer internals and do not run
+the fixture acceptance tests:
 
 ```sh
-bazel run //:swift_unused_deps -- //example/...
+bazel test //...
+```
+
+Run fixture acceptance tests with [Bats](https://github.com/bats-core/bats-core).
+These materialize fixture workspaces, run the public CLI, and assert reports or
+file edits:
+
+```sh
+bats tools/swift_unused_deps/tests/acceptance
+```
+
+Runnable examples live under `examples/`. They materialize the same fixture
+workspaces into temporary directories, run the public CLI, and leave a git diff
+you can inspect:
+
+```sh
+./examples/swift_unused_deps/run_fix_demo.sh unused-import
+./examples/swift_unused_deps/run_fix_demo.sh missing-direct-dep
+```
+
+Run example smoke tests with Bats:
+
+```sh
+bats examples/swift_unused_deps/test
+```
+
+If Bats is not installed locally:
+
+```sh
+brew install bats-core
+```
+
+To inspect a fixture manually:
+
+```sh
+tools/swift_unused_deps/tests/helpers/materialize_fixture_workspace.sh cases_workspace /tmp/swift-unused-deps-cases
+cd /tmp/swift-unused-deps-cases
+bazel run //:swift_unused_deps -- //cases/Targets/UnusedImport:UnusedImport --fix
 ```
 
 ## License

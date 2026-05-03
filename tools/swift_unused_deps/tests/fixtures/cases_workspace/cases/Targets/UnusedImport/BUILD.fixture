@@ -1,0 +1,14 @@
+load("@build_bazel_rules_swift//swift:swift.bzl", "swift_library")
+
+# UNUSED IMPORT - LibA is imported in source but no symbols from it are
+# referenced. The analyzer can auto-fix this by removing both the import
+# statement and the Bazel dep together.
+swift_library(
+    name = "UnusedImport",
+    srcs = ["UnusedImport.swift"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//cases/Deps/LibA",    # Unused - imported but no symbols referenced (index store detects this)
+        "//cases/Deps/LibB",
+    ],
+)

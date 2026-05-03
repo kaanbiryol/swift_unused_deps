@@ -1,0 +1,16 @@
+load("@build_bazel_rules_swift//swift:swift.bzl", "swift_library")
+
+# UNUSED DEP - LibA is declared but never imported.
+# Also tests custom module_name: CustomModuleName target has module_name="AppLogger".
+swift_library(
+    name = "UnusedDepCustomModuleName",
+    srcs = ["UnusedDepCustomModuleName.swift"],
+    module_name = "UnusedDepCustomModuleName",
+    deps = [
+        "//cases/Deps/DirectDepWithTransitive",
+        "//cases/Deps/LibA",              # Unused - never imported
+        "//cases/Deps/TransitiveDep",
+        "//cases/Deps/CustomModuleName",  # Used via `import AppLogger`
+    ],
+    visibility = ["//cases:__subpackages__"],
+)

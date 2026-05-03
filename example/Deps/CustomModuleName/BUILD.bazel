@@ -1,9 +1,0 @@
-load("@build_bazel_rules_swift//swift:swift.bzl", "swift_library")
-
-# Target name differs from module_name to test custom module name handling.
-swift_library(
-    name = "CustomModuleName",
-    srcs = ["CustomModuleName.swift"],
-    module_name = "AppLogger",
-    visibility = ["//example:__subpackages__"],
-)

@@ -1,0 +1,14 @@
+load("@build_bazel_rules_swift//swift:swift.bzl", "swift_library")
+
+# CLEAN - all deps are actually used.
+swift_library(
+    name = "CleanTarget",
+    srcs = ["CleanTarget.swift"],
+    module_name = "CleanTarget",
+    deps = [
+        "//cases/Deps/TransitiveDep",
+        "//cases/Deps/DirectDepWithTransitive",
+        "//cases/Deps/LibB",
+    ],
+    visibility = ["//cases:__subpackages__"],
+)

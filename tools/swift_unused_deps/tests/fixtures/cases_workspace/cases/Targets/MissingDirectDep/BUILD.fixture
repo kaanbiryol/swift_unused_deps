@@ -1,0 +1,12 @@
+load("@build_bazel_rules_swift//swift:swift.bzl", "swift_library")
+
+# MISSING DIRECT DEP - TransitiveDep is directly imported in source but not
+# declared. Available transitively via DirectDepWithTransitive -> TransitiveDep.
+swift_library(
+    name = "MissingDirectDep",
+    srcs = ["MissingDirectDep.swift"],
+    deps = [
+        "//cases/Deps/DirectDepWithTransitive",
+    ],
+    visibility = ["//visibility:public"],
+)

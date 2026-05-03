@@ -99,6 +99,30 @@ final class BatchAnalyzerTests: XCTestCase {
         }
     }
 
+    func testAnalyzeUsesTraceFilePathFromMetadata() throws {
+        try withTemporaryDirectory { directory in
+            try writeTarget(
+                to: directory,
+                metadata: makeMetadata(
+                    label: "//Lib:A",
+                    moduleName: "A",
+                    deps: [DeclaredDep(label: "//Lib:B", moduleName: "B", kind: .dep)],
+                    transitiveModuleMap: ["B": "//Lib:B"],
+                    traceFile: "nested/custom.trace.json"
+                ),
+                traceContents: """
+                {"version":2,"name":"A","arch":"arm64","swiftmodulesDetailedInfo":[{"name":"B","path":"/out/B.swiftmodule","isImportedDirectly":true}]}
+                """
+            )
+
+            let output = BatchAnalyzer.analyze(options: .init(bazelBin: directory.path))
+
+            XCTAssertEqual(output.warnings.count, 0)
+            XCTAssertEqual(output.results.count, 1)
+            XCTAssertTrue(output.results[0].issues.isEmpty)
+        }
+    }
+
     func testAnalyzeWarnsAndSkipsInvalidTrace() throws {
         try withTemporaryDirectory { directory in
             try writeTarget(
@@ -170,14 +194,15 @@ final class BatchAnalyzerTests: XCTestCase {
         moduleName: String,
         deps: [DeclaredDep] = [],
         transitiveModuleMap: [String: String] = [:],
-        srcs: [String] = ["A.swift"]
+        srcs: [String] = ["A.swift"],
+        traceFile: String? = nil
     ) -> TargetMetadata {
         TargetMetadata(
             schemaVersion: 1,
             target: TargetInfo(label: label, moduleName: moduleName, srcs: srcs),
             declaredDeps: deps,
             transitiveModuleMap: transitiveModuleMap,
-            traceFile: "\(moduleName).trace.json"
+            traceFile: traceFile ?? "\(moduleName).trace.json"
         )
     }
 
@@ -187,10 +212,14 @@ final class BatchAnalyzerTests: XCTestCase {
         traceContents: String
     ) throws {
         let metadataURL = directory.appendingPathComponent("\(metadata.target.moduleName).swift_deps_info.json")
-        let traceURL = directory.appendingPathComponent("\(metadata.target.moduleName).trace.json")
+        let traceURL = directory.appendingPathComponent(metadata.traceFile)
 
         let encoder = JSONEncoder()
         try encoder.encode(metadata).write(to: metadataURL)
+        try FileManager.default.createDirectory(
+            at: traceURL.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
         try traceContents.write(to: traceURL, atomically: true, encoding: .utf8)
     }
 
