@@ -49,9 +49,6 @@ git_override(
 )
 ```
 
-After the module is published to the Bazel Central Registry, the `git_override`
-can be removed.
-
 ### 2. Configure your `.bazelrc`
 
 ```
@@ -205,21 +202,6 @@ file edits:
 
 ```sh
 bats tools/swift_unused_deps/tests/acceptance
-```
-
-Runnable examples live under `examples/`. They materialize the same fixture
-workspaces into temporary directories, run the public CLI, and leave a git diff
-you can inspect:
-
-```sh
-./examples/swift_unused_deps/run_fix_demo.sh unused-import
-./examples/swift_unused_deps/run_fix_demo.sh missing-direct-dep
-```
-
-Run example smoke tests with Bats:
-
-```sh
-bats examples/swift_unused_deps/test
 ```
 
 If Bats is not installed locally:

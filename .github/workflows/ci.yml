@@ -37,6 +37,3 @@ jobs:
 
       - name: Fixture integration tests
         run: bats tools/swift_unused_deps/tests/acceptance
-
-      - name: Example smoke tests
-        run: bats examples/swift_unused_deps/test
