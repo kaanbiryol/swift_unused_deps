@@ -16,7 +16,7 @@ fixture packages from becoming Bazel packages in the repository checkout.
 | `//cases/Targets/MultipleUnusedDeps:MultipleUnusedDeps` | Reports `unused_dep` for `LibA`, `LibB`, and `LibC` | Bats asserts all three issues and verifies `--fix` removes all three BUILD deps |
 | `//cases/Targets/MissingDirectDep:MissingDirectDep` | Reports `missing_direct_dep` for `TransitiveDep` | Bats asserts report metadata and verifies `--fix` adds the missing BUILD dep |
 | `//cases/Targets/CandidatePrivateDep:CandidatePrivateDep` | Reports `candidate_private_dep` for `TransitiveDep` | Bats asserts report metadata and verifies `--fix` leaves the low-confidence suggestion unchanged |
-| `//cases/Targets/UnresolvedSystemModule:UnresolvedSystemModule` | Reports `unresolved_module` for `RegexBuilder` | Bats asserts report metadata; not auto-fixed |
+| `//cases/Targets/UnresolvedSystemModule:UnresolvedSystemModule` | Skips directly imported `RegexBuilder` as a system module | Bats asserts clean status and skipped system modules |
 | `//cases/Targets/UnusedDepCustomModuleName:UnusedDepCustomModuleName` | Reports `unused_dep` for `LibA` while keeping the used `AppLogger` module clean | Bats asserts report metadata and verifies `--fix` removes only the unused BUILD dep |
 | `//cases/Targets/CleanIOSTarget:CleanIOSTarget` | Reports clean under the iOS build config | Bats asserts it is skipped by the default host report and clean with `--build-config unused-deps-ios` |
 | `//cases/Targets/UnusedDepIOSTarget:UnusedDepIOSTarget` | Reports `unused_dep` for `LibA` under the iOS build config | Bats asserts iOS report metadata and verifies `--fix` removes the unused BUILD dep with `--build-config unused-deps-ios` |

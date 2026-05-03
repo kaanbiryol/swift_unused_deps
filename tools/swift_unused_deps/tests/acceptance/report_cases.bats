@@ -191,15 +191,15 @@ require_issues(
 )
 require_skipped_modules("//cases/Targets/CandidatePrivateDep:CandidatePrivateDep", set())
 
-require_status("//cases/Targets/UnresolvedSystemModule:UnresolvedSystemModule", "issues_found")
+require_status("//cases/Targets/UnresolvedSystemModule:UnresolvedSystemModule", "clean")
 require_clean_modules("//cases/Targets/UnresolvedSystemModule:UnresolvedSystemModule", set())
 require_issues(
     "//cases/Targets/UnresolvedSystemModule:UnresolvedSystemModule",
-    {("unresolved_module", "RegexBuilder")},
+    set(),
 )
 require_skipped_modules(
     "//cases/Targets/UnresolvedSystemModule:UnresolvedSystemModule",
-    {("Foundation", "system_module"), ("RegexBuilder", "unresolved")},
+    {("Foundation", "system_module"), ("RegexBuilder", "system_module")},
 )
 
 require_status("//cases/Targets/UnusedAttributedImport:UnusedAttributedImport", "issues_found")

@@ -71,13 +71,17 @@ public enum Analyzer {
 
         for loaded in loadedModules where loaded.name != targetModuleName {
             if loaded.isSystem {
-                skippedModules.append(SkippedModule(name: loaded.name, reason: .systemModule))
+                if loaded.isImportedDirectly {
+                    skippedModules.append(SkippedModule(name: loaded.name, reason: .systemModule))
+                }
                 continue
             }
 
             switch resolver.resolve(loaded.name).status {
             case .system:
-                skippedModules.append(SkippedModule(name: loaded.name, reason: .systemModule))
+                if loaded.isImportedDirectly {
+                    skippedModules.append(SkippedModule(name: loaded.name, reason: .systemModule))
+                }
 
             case .unresolved:
                 issues.append(Issue.unresolvedModule(loaded.name))

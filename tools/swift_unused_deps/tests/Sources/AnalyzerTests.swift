@@ -111,7 +111,7 @@ final class AnalyzerTests: XCTestCase {
 
         XCTAssertTrue(result.isClean)
         let system = result.skippedModules.filter { $0.reason == .systemModule }
-        XCTAssertEqual(system.count, 3)
+        XCTAssertEqual(system.map(\.name), ["Foundation", "UIKit"])
     }
 
     func testMultipleIssues() {
