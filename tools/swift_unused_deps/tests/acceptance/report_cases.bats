@@ -235,3 +235,72 @@ require_issues(
 require_skipped_modules("//cases/Targets/UnusedLibraryGroupDep:UnusedLibraryGroupDep", set())
 PY
 }
+
+@test "iOS cases report expected results with iOS build config" {
+  run_in_workspace bazel run //:swift_unused_deps -- --build-config unused-deps-ios //cases/Targets/CleanIOSTarget:CleanIOSTarget --json
+
+  assert_status 0
+
+  REPORT_JSON="${output}" python3 - <<'PY'
+import json
+import os
+import sys
+
+report = json.loads(os.environ["REPORT_JSON"])
+results = {result["target"]: result for result in report["results"]}
+target = "//cases/Targets/CleanIOSTarget:CleanIOSTarget"
+
+if set(results) != {target}:
+    print(f"expected only {target}, got {sorted(results)}", file=sys.stderr)
+    sys.exit(1)
+
+result = results[target]
+clean_modules = {dep.get("module_name") for dep in result.get("clean_deps", [])}
+if result.get("status") != "clean":
+    print(f"{target} should be clean, got {result.get('status')}", file=sys.stderr)
+    sys.exit(1)
+if clean_modules != {"iOSLib"}:
+    print(f"{target} clean deps mismatch: {sorted(clean_modules)}", file=sys.stderr)
+    sys.exit(1)
+if result.get("issues") or result.get("skipped_modules"):
+    print(f"{target} should not have issues or skipped modules", file=sys.stderr)
+    sys.exit(1)
+PY
+
+  run_in_workspace bazel run //:swift_unused_deps -- --build-config unused-deps-ios //cases/Targets/UnusedDepIOSTarget:UnusedDepIOSTarget --json
+
+  assert_status 1
+
+  REPORT_JSON="${output}" python3 - <<'PY'
+import json
+import os
+import sys
+
+report = json.loads(os.environ["REPORT_JSON"])
+results = {result["target"]: result for result in report["results"]}
+target = "//cases/Targets/UnusedDepIOSTarget:UnusedDepIOSTarget"
+
+if set(results) != {target}:
+    print(f"expected only {target}, got {sorted(results)}", file=sys.stderr)
+    sys.exit(1)
+
+result = results[target]
+clean_modules = {dep.get("module_name") for dep in result.get("clean_deps", [])}
+issues = {
+    (issue.get("kind"), issue.get("dep_module"))
+    for issue in result.get("issues", [])
+}
+if result.get("status") != "issues_found":
+    print(f"{target} should have issues_found, got {result.get('status')}", file=sys.stderr)
+    sys.exit(1)
+if clean_modules != {"iOSLib"}:
+    print(f"{target} clean deps mismatch: {sorted(clean_modules)}", file=sys.stderr)
+    sys.exit(1)
+if issues != {("unused_dep", "LibA")}:
+    print(f"{target} issues mismatch: {sorted(issues)}", file=sys.stderr)
+    sys.exit(1)
+if result.get("skipped_modules"):
+    print(f"{target} should not have skipped modules", file=sys.stderr)
+    sys.exit(1)
+PY
+}

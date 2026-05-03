@@ -3,3 +3,6 @@ build:unused-deps --features=swift.index_while_building
 build:unused-deps --features=swift.use_global_index_store
 build:unused-deps --output_groups=swift_deps_info,swift_index_store
 build:unused-deps --spawn_strategy=local
+
+build:unused-deps-ios --config=unused-deps
+build:unused-deps-ios --platforms=@apple_support//platforms:ios_sim_arm64
