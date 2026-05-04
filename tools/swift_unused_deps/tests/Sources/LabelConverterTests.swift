@@ -169,8 +169,7 @@ final class LabelConverterTests: XCTestCase {
             transitiveModuleMap: [
                 "SwiftSyntax": "@@swift-syntax+//:SwiftSyntax",
                 "A": "@@//Lib:A",
-            ],
-            traceFile: ""
+            ]
         )
 
         let converted = metadata.convertingLabels(with: converter)
@@ -181,7 +180,6 @@ final class LabelConverterTests: XCTestCase {
         XCTAssertEqual(converted.declaredDeps[0].kind, .dep)
         XCTAssertEqual(converted.transitiveModuleMap["SwiftSyntax"], "@swiftpkg_swift_syntax//:SwiftSyntax")
         XCTAssertEqual(converted.transitiveModuleMap["A"], "//Lib:A")
-        XCTAssertEqual(converted.traceFile, "")
     }
 
     func testMetadataConvertingLabelsWithBuildFileDisambiguation() {
@@ -198,8 +196,7 @@ final class LabelConverterTests: XCTestCase {
             declaredDeps: [
                 DeclaredDep(label: "@@swift-syntax+//:SwiftSyntax", moduleName: "SwiftSyntax", kind: .dep),
             ],
-            transitiveModuleMap: ["SwiftSyntax": "@@swift-syntax+//:SwiftSyntax"],
-            traceFile: ""
+            transitiveModuleMap: ["SwiftSyntax": "@@swift-syntax+//:SwiftSyntax"]
         )
 
         let converted = metadata.convertingLabels(with: converter, buildFileContent: buildFile)
@@ -215,8 +212,7 @@ final class LabelConverterTests: XCTestCase {
             schemaVersion: 2,
             target: TargetInfo(label: "@@//Lib:A", moduleName: "MyModule", isMixedSource: true, srcs: ["File.swift"]),
             declaredDeps: [],
-            transitiveModuleMap: [:],
-            traceFile: "some/path.trace.json"
+            transitiveModuleMap: [:]
         )
 
         let converted = metadata.convertingLabels(with: converter)
@@ -225,7 +221,6 @@ final class LabelConverterTests: XCTestCase {
         XCTAssertEqual(converted.target.moduleName, "MyModule")
         XCTAssertTrue(converted.target.isMixedSource)
         XCTAssertEqual(converted.target.srcs, ["File.swift"])
-        XCTAssertEqual(converted.traceFile, "some/path.trace.json")
     }
 
     // MARK: - End-to-end: canonical labels produce correct buildozer commands
@@ -241,8 +236,7 @@ final class LabelConverterTests: XCTestCase {
             declaredDeps: [
                 DeclaredDep(label: "@@swift-syntax+//:SwiftSyntax", moduleName: "SwiftSyntax", kind: .dep),
             ],
-            transitiveModuleMap: ["SwiftSyntax": "@@swift-syntax+//:SwiftSyntax"],
-            traceFile: ""
+            transitiveModuleMap: ["SwiftSyntax": "@@swift-syntax+//:SwiftSyntax"]
         )
         let converted = metadata.convertingLabels(with: converter)
 
@@ -275,8 +269,7 @@ final class LabelConverterTests: XCTestCase {
             ],
             transitiveModuleMap: [
                 "HTTPTypes": "@@swiftpkg_swift_http_types+//:HTTPTypes.rspm",
-            ],
-            traceFile: ""
+            ]
         )
         let converted = metadata.convertingLabels(with: converter)
 
@@ -300,8 +293,7 @@ final class LabelConverterTests: XCTestCase {
             declaredDeps: [],
             transitiveModuleMap: [
                 "HTTPTypes": "@@swiftpkg_swift_http_types+//:HTTPTypes.rspm",
-            ],
-            traceFile: ""
+            ]
         ).convertingLabels(with: converter)
         let missingResolver = ModuleResolver(transitiveModuleMap: missingMetadata.transitiveModuleMap)
         let missingResult = Analyzer.analyze(

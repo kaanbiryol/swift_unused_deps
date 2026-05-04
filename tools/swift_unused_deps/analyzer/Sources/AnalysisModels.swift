@@ -61,6 +61,18 @@ public struct SourceImportRemoval: Codable, Equatable, Hashable {
     }
 }
 
+public struct LoadedModule: Equatable {
+    public let name: String
+    public let isImportedDirectly: Bool
+    public let isSystem: Bool
+
+    public init(name: String, isImportedDirectly: Bool, isSystem: Bool = false) {
+        self.name = name
+        self.isImportedDirectly = isImportedDirectly
+        self.isSystem = isSystem
+    }
+}
+
 public enum IssueContext {
     case unusedDep(DeclaredDep)
     case unusedImport(DeclaredDep)

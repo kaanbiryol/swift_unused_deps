@@ -57,7 +57,6 @@ public struct TargetMetadata: Codable {
     public let target: TargetInfo
     public let declaredDeps: [DeclaredDep]
     public let transitiveModuleMap: [String: String]
-    public let traceFile: String
     public let indexStorePath: String?
 
     enum CodingKeys: String, CodingKey {
@@ -65,7 +64,6 @@ public struct TargetMetadata: Codable {
         case target
         case declaredDeps = "declared_deps"
         case transitiveModuleMap = "transitive_module_map"
-        case traceFile = "trace_file"
         case indexStorePath = "indexstore_path"
     }
 
@@ -74,14 +72,12 @@ public struct TargetMetadata: Codable {
         target: TargetInfo,
         declaredDeps: [DeclaredDep],
         transitiveModuleMap: [String: String],
-        traceFile: String,
         indexStorePath: String? = nil
     ) {
         self.schemaVersion = schemaVersion
         self.target = target
         self.declaredDeps = declaredDeps
         self.transitiveModuleMap = transitiveModuleMap
-        self.traceFile = traceFile
         self.indexStorePath = indexStorePath
     }
 
@@ -108,7 +104,6 @@ public struct TargetMetadata: Codable {
             transitiveModuleMap: Dictionary(uniqueKeysWithValues:
                 transitiveModuleMap.map { ($0.key, converter.convert($0.value, buildFileContent: buildFileContent)) }
             ),
-            traceFile: traceFile,
             indexStorePath: indexStorePath
         )
     }

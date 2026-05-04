@@ -1,7 +1,7 @@
 """Bazel aspect for detecting unused Swift dependencies.
 
-Propagates through deps and private_deps of swift_library targets, collects
-module traces, and emits per-target metadata for batch analysis.
+Propagates through deps and private_deps of swift_library targets and emits
+per-target metadata for batch analysis.
 
 Usage:
     bazel build //App/... --config=unused-deps
@@ -94,45 +94,6 @@ def _collect_transitive_modules(deps, private_deps, plugins = []):
                     modules[mod_name] = mod_label
     return modules
 
-def _create_trace_action(ctx, module_name, swiftmodule_file):
-    """Copy the loaded module trace to a declared output."""
-    trace_output = ctx.actions.declare_file(
-        "{}.trace.json".format(module_name),
-    )
-
-    trace_beside_module = swiftmodule_file.path[:swiftmodule_file.path.rfind(".swiftmodule")] + ".trace.json"
-    trace_at_root = module_name + ".trace.json"
-
-    ctx.actions.run_shell(
-        inputs = [swiftmodule_file],
-        outputs = [trace_output],
-        arguments = [
-            trace_at_root,
-            trace_beside_module,
-            trace_output.path,
-            module_name,
-        ],
-        command = """
-root="$1"
-beside="$2"
-dst="$3"
-module="$4"
-
-if [ -f "$root" ]; then
-    cp "$root" "$dst"
-elif [ -f "$beside" ]; then
-    cp "$beside" "$dst"
-else
-    echo '{}' > "$dst"
-fi
-""",
-        mnemonic = "SwiftDepsTrace",
-        progress_message = "Collecting module trace for %s" % module_name,
-        execution_requirements = {"no-sandbox": "1"},
-    )
-
-    return trace_output
-
 def _collect_passthrough_transitive_modules(ctx):
     """Collect transitive modules from deps of a non-Swift target.
 
@@ -178,7 +139,6 @@ def _swift_deps_aspect_impl(target, ctx):
 
     swiftmodule_file = _get_swiftmodule_file(target)
     indexstore_directory = _get_indexstore_directory(target)
-    trace_file = _create_trace_action(ctx, module_name, swiftmodule_file) if swiftmodule_file else None
 
     # Build transitive module tuples.
     self_module_tuple = "{}={}".format(module_name, str(ctx.label))
@@ -224,7 +184,7 @@ def _swift_deps_aspect_impl(target, ctx):
                 if f.extension == "swift":
                     srcs.append(f.basename)
 
-    # Action 2: Write metadata JSON.
+    # Write metadata JSON.
     metadata = {
         "schema_version": 1,
         "target": {
@@ -236,7 +196,6 @@ def _swift_deps_aspect_impl(target, ctx):
         },
         "declared_deps": declared_deps + declared_private_deps,
         "transitive_module_map": transitive_map,
-        "trace_file": trace_file.short_path if trace_file else "",
         "indexstore_path": indexstore_directory.short_path if indexstore_directory else "",
     }
 
@@ -264,10 +223,6 @@ def _swift_deps_aspect_impl(target, ctx):
             content = metadata_json,
         )
 
-    swift_deps_outputs = [metadata_file]
-    if trace_file:
-        swift_deps_outputs.append(trace_file)
-
     return [
         SwiftDepsInfo(
             target_label = ctx.label,
@@ -276,7 +231,7 @@ def _swift_deps_aspect_impl(target, ctx):
             transitive_modules = transitive_modules,
             direct_dep_modules = [],
         ),
-        OutputGroupInfo(swift_deps_info = depset(swift_deps_outputs)),
+        OutputGroupInfo(swift_deps_info = depset([metadata_file])),
     ]
 
 swift_deps_aspect = aspect(

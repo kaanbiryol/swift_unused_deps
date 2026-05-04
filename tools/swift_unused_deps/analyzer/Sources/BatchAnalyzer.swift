@@ -4,7 +4,6 @@ public enum BatchAnalyzer {
 
     private struct ArtifactCatalog {
         let metadataFiles: [URL]
-        let traceFileMap: [String: URL]
     }
 
     public struct Options {
@@ -56,9 +55,7 @@ public enum BatchAnalyzer {
         let results = artifacts.metadataFiles.compactMap { metadataFile in
             analyzeTarget(
                 metadataFile: metadataFile,
-                artifacts: artifacts,
                 bazelBin: options.bazelBin,
-                fileManager: fm,
                 extraSystemModules: options.extraSystemModules,
                 filter: filter,
                 labelConverter: options.labelConverter,
@@ -79,7 +76,6 @@ public enum BatchAnalyzer {
 
     private static func discoverArtifacts(in baseURL: URL, fileManager: FileManager) -> ArtifactCatalog {
         var metadataFiles: [URL] = []
-        var traceFileMap: [String: URL] = [:]
 
         if let enumerator = fileManager.enumerator(
             at: baseURL,
@@ -90,15 +86,12 @@ public enum BatchAnalyzer {
                 let name = url.lastPathComponent
                 if name.hasSuffix(".swift_deps_info.json") {
                     metadataFiles.append(url)
-                } else if name.hasSuffix(".trace.json") {
-                    let moduleName = String(name.dropLast(".trace.json".count))
-                    traceFileMap[moduleName] = url
                 }
             }
         }
 
         metadataFiles.sort { $0.path < $1.path }
-        return ArtifactCatalog(metadataFiles: metadataFiles, traceFileMap: traceFileMap)
+        return ArtifactCatalog(metadataFiles: metadataFiles)
     }
 
     private struct IndexStoreData {
@@ -174,9 +167,7 @@ public enum BatchAnalyzer {
 
     private static func analyzeTarget(
         metadataFile: URL,
-        artifacts: ArtifactCatalog,
         bazelBin: String,
-        fileManager: FileManager,
         extraSystemModules: Set<String>,
         filter: TargetFilter?,
         labelConverter: LabelConverter,
@@ -207,9 +198,6 @@ public enum BatchAnalyzer {
 
         guard let loadedModules = loadModules(
             for: metadata,
-            artifacts: artifacts,
-            bazelBin: bazelBin,
-            fileManager: fileManager,
             sourceFileUsage: sourceFileUsage,
             warnings: &warnings
         ) else {
@@ -256,23 +244,18 @@ public enum BatchAnalyzer {
 
     private static func loadModules(
         for metadata: TargetMetadata,
-        artifacts: ArtifactCatalog,
-        bazelBin: String,
-        fileManager: FileManager,
         sourceFileUsage: [SourceFileModuleUsage],
         warnings: inout [String]
     ) -> [LoadedModule]? {
-        if !sourceFileUsage.isEmpty {
-            return deriveLoadedModules(from: sourceFileUsage)
+        guard !sourceFileUsage.isEmpty else {
+            warnings.append(
+                "No index-store data found for \(metadata.target.label) (module: \(metadata.target.moduleName)). " +
+                    "Verify swift.index_while_building and swift.use_global_index_store are enabled."
+            )
+            return nil
         }
 
-        return loadTraceModules(
-            metadata: metadata,
-            traceFileMap: artifacts.traceFileMap,
-            bazelBin: bazelBin,
-            fm: fileManager,
-            warnings: &warnings
-        )
+        return deriveLoadedModules(from: sourceFileUsage)
     }
 
     /// Derive LoadedModule list from index store data.
@@ -340,32 +323,6 @@ public enum BatchAnalyzer {
                 targetLabel: metadata.target.label,
                 sourceImportRemovals: removals
             )
-        }
-    }
-
-    /// Fall back to trace-based module loading.
-    private static func loadTraceModules(
-        metadata: TargetMetadata,
-        traceFileMap: [String: URL],
-        bazelBin: String,
-        fm: FileManager,
-        warnings: inout [String]
-    ) -> [LoadedModule]? {
-        var traceURL = traceFileMap[metadata.target.moduleName]
-        if traceURL == nil && !metadata.traceFile.isEmpty {
-            let candidate = URL(fileURLWithPath: bazelBin).appendingPathComponent(metadata.traceFile)
-            if fm.fileExists(atPath: candidate.path) {
-                traceURL = candidate
-            }
-        }
-
-        guard let traceFile = traceURL else { return nil }
-
-        do {
-            return try TraceParser.parseTraceFile(at: traceFile, forModule: metadata.target.moduleName)
-        } catch {
-            warnings.append("Failed to parse trace for \(metadata.target.label): \(error)")
-            return nil
         }
     }
 

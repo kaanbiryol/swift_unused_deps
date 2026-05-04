@@ -235,8 +235,7 @@ final class CLITests: XCTestCase {
             schemaVersion: 1,
             target: TargetInfo(label: label, moduleName: moduleName),
             declaredDeps: [],
-            transitiveModuleMap: [:],
-            traceFile: ""
+            transitiveModuleMap: [:]
         )
         try JSONEncoder().encode(metadata).write(
             to: packageDirectory.appendingPathComponent("\(moduleName).swift_deps_info.json")

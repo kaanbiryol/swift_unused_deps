@@ -15,8 +15,7 @@ final class AnalyzerTests: XCTestCase {
             schemaVersion: 1,
             target: TargetInfo(label: label, moduleName: moduleName, isMixedSource: isMixed),
             declaredDeps: declaredDeps,
-            transitiveModuleMap: transitive,
-            traceFile: ""
+            transitiveModuleMap: transitive
         )
     }
 

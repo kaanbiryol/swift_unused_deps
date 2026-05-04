@@ -83,7 +83,7 @@ bazel run @swift_unused_deps//:swift_unused_deps -- //libraries/...
 bazel run @swift_unused_deps//:swift_unused_deps -- //App:App
 ```
 
-Each run automatically executes `bazel build <pattern> --config=<build-config>` first, then analyzes the produced metadata, index store, and trace artifacts. Bazel's normal cache handles incremental rebuilds.
+Each run automatically executes `bazel build <pattern> --config=<build-config>` first, then analyzes the produced metadata and index store. Bazel's normal cache handles incremental rebuilds.
 
 The default build config is `unused-deps`. For iOS-only targets or any workspace that uses a different analysis config name, pass `--build-config <name>`.
 
@@ -163,12 +163,11 @@ bazel run @swift_unused_deps//:swift_unused_deps -- --build-config unused-deps-i
 `bazel build --config=unused-deps` runs a Bazel [aspect](https://bazel.build/extending/aspects) on every Swift target. The aspect is the Bazel-native collection layer. For each target, it:
 
 1. **Collects metadata** - reads `SwiftInfo` from rules_swift to get module names, declared deps, and the transitive module map
-2. **Captures traces** - copies the Swift compiler's [loaded module trace](https://github.com/swiftlang/swift/blob/main/docs/LoadedModuleTrace.md), which records which `.swiftmodule` files were opened
-3. **Records index-store locations** - points the analyzer at the `rules_swift` global index store produced by `swift.index_while_building` + `swift.use_global_index_store`
+2. **Records index-store locations** - points the analyzer at the `rules_swift` global index store produced by `swift.index_while_building` + `swift.use_global_index_store`
 
 Everything is cached by Bazel. Re-running after no changes is instant.
 
-`bazel run @swift_unused_deps//:swift_unused_deps -- <pattern>` first builds the requested targets with `--config=<build-config>`, then the Swift analyzer reads those outputs and prints a human-readable summary. The analyzer prefers index-store data because it can distinguish direct imports from actual symbol references and can drive unused-import source edits. Loaded-module traces remain a fallback when index-store data is unavailable. With `--fix`, the Swift CLI removes unused imports, runs buildozer, rebuilds, and prints the post-fix results.
+`bazel run @swift_unused_deps//:swift_unused_deps -- <pattern>` first builds the requested targets with `--config=<build-config>`, then the Swift analyzer reads those outputs and prints a human-readable summary. The analyzer requires index-store data because it distinguishes direct imports from actual symbol references and drives unused-import source edits. With `--fix`, the Swift CLI removes unused imports, runs buildozer, rebuilds, and prints the post-fix results.
 
 ### Exit codes
 

@@ -15,8 +15,6 @@ swift_library(
         "Sources/SourceImportEditor.swift",
         "Sources/SwiftUnusedDepsCommand.swift",
         "Sources/TargetFilter.swift",
-        "Sources/TraceParser.swift",
-        "Sources/TraceModels.swift",
     ],
     module_name = "SwiftUnusedDepsLib",
     visibility = ["//tools/swift_unused_deps:__subpackages__"],
