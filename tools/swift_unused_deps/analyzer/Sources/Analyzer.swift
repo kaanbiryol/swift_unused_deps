@@ -14,6 +14,29 @@ public enum Analyzer {
         let skippedModules: [SkippedModule]
     }
 
+    private struct DeclaredDepGroupKey: Hashable {
+        let label: String
+        let kind: DepKind
+    }
+
+    private struct DeclaredDepGroup {
+        let key: DeclaredDepGroupKey
+        let deps: [DeclaredDep]
+
+        var representative: DeclaredDep {
+            deps.sorted { lhs, rhs in
+                if lhs.moduleName == rhs.moduleName {
+                    return lhs.label < rhs.label
+                }
+                return lhs.moduleName < rhs.moduleName
+            }[0]
+        }
+
+        var moduleNames: Set<String> {
+            Set(deps.map(\.moduleName))
+        }
+    }
+
     public static func analyze(
         metadata: TargetMetadata,
         loadedModules: [LoadedModule],
@@ -22,6 +45,7 @@ public enum Analyzer {
         let declaredByModule = Dictionary(
             uniqueKeysWithValues: metadata.declaredDeps.map { ($0.moduleName, $0) }
         )
+        let declaredGroups = declaredDepGroups(metadata.declaredDeps)
         let resolvedUsage = resolveLoadedModules(
             loadedModules,
             targetModuleName: metadata.target.moduleName,
@@ -33,7 +57,7 @@ public enum Analyzer {
             : []
         issues.append(contentsOf: resolvedUsage.issues)
         issues.append(contentsOf: unusedDepIssues(
-            declaredByModule: declaredByModule,
+            declaredGroups: declaredGroups,
             usedModulesByName: resolvedUsage.usedModulesByName,
             targetLabel: metadata.target.label
         ))
@@ -43,7 +67,7 @@ public enum Analyzer {
             usedModulesByName: resolvedUsage.usedModulesByName
         ))
         issues.append(contentsOf: candidatePrivateDepIssues(
-            declaredByModule: declaredByModule,
+            declaredGroups: declaredGroups,
             usedModulesByName: resolvedUsage.usedModulesByName,
             targetLabel: metadata.target.label
         ))
@@ -58,6 +82,21 @@ public enum Analyzer {
             ),
             skippedModules: resolvedUsage.skippedModules
         )
+    }
+
+    private static func declaredDepGroups(_ deps: [DeclaredDep]) -> [DeclaredDepGroup] {
+        Dictionary(grouping: deps) {
+            DeclaredDepGroupKey(label: $0.label, kind: $0.kind)
+        }
+        .map { key, deps in
+            DeclaredDepGroup(key: key, deps: deps)
+        }
+        .sorted { lhs, rhs in
+            if lhs.key.label == rhs.key.label {
+                return lhs.key.kind.rawValue < rhs.key.kind.rawValue
+            }
+            return lhs.key.label < rhs.key.label
+        }
     }
 
     private static func resolveLoadedModules(
@@ -116,16 +155,16 @@ public enum Analyzer {
     }
 
     private static func unusedDepIssues(
-        declaredByModule: [String: DeclaredDep],
+        declaredGroups: [DeclaredDepGroup],
         usedModulesByName: [String: UsedModule],
         targetLabel: String
     ) -> [Issue] {
-        declaredByModule
-            .sorted(by: { $0.key < $1.key })
-            .compactMap { moduleName, dep in
-                guard usedModulesByName[moduleName] == nil else { return nil }
-                return Issue.unusedDep(dep, targetLabel: targetLabel)
+        declaredGroups.compactMap { group in
+            guard group.moduleNames.isDisjoint(with: usedModulesByName.keys) else {
+                return nil
             }
+            return Issue.unusedDep(group.representative, targetLabel: targetLabel)
+        }
     }
 
     private static func missingDirectDepIssues(
@@ -151,16 +190,16 @@ public enum Analyzer {
     }
 
     private static func candidatePrivateDepIssues(
-        declaredByModule: [String: DeclaredDep],
+        declaredGroups: [DeclaredDepGroup],
         usedModulesByName: [String: UsedModule],
         targetLabel: String
     ) -> [Issue] {
-        declaredByModule
-            .sorted(by: { $0.key < $1.key })
-            .compactMap { moduleName, dep in
-                guard dep.kind == .dep else { return nil }
-                guard let info = usedModulesByName[moduleName], !info.isImportedDirectly else { return nil }
-                return Issue.candidatePrivateDep(dep, targetLabel: targetLabel)
-            }
+        declaredGroups.compactMap { group in
+            guard group.key.kind == .dep else { return nil }
+            let usedModules = group.moduleNames.compactMap { usedModulesByName[$0] }
+            guard !usedModules.isEmpty else { return nil }
+            guard usedModules.allSatisfy({ !$0.isImportedDirectly }) else { return nil }
+            return Issue.candidatePrivateDep(group.representative, targetLabel: targetLabel)
+        }
     }
 }

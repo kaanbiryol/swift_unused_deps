@@ -65,6 +65,43 @@ final class AnalyzerTests: XCTestCase {
         XCTAssertEqual(unused[0].buildozerCommand?.batchLine, "remove deps //Lib:B|//Lib:A")
     }
 
+    func testPartiallyUsedMultiModuleLabelIsNotRemoved() {
+        let metadata = makeMetadata(
+            label: "//Lib:A", moduleName: "A",
+            deps: [
+                ("//Lib:Group", "GroupA", .dep),
+                ("//Lib:Group", "GroupB", .dep),
+            ],
+            transitive: ["GroupA": "//Lib:Group", "GroupB": "//Lib:Group"]
+        )
+        let modules = makeModules([("GroupA", true)])
+        let resolver = ModuleResolver(transitiveModuleMap: metadata.transitiveModuleMap)
+
+        let result = Analyzer.analyze(metadata: metadata, loadedModules: modules, resolver: resolver)
+
+        let unused = result.issues.filter { $0.kind == .unusedDep }
+        XCTAssertTrue(unused.isEmpty)
+    }
+
+    func testUnusedMultiModuleLabelIsRemovedOnce() {
+        let metadata = makeMetadata(
+            label: "//Lib:A", moduleName: "A",
+            deps: [
+                ("//Lib:Group", "GroupA", .dep),
+                ("//Lib:Group", "GroupB", .dep),
+            ],
+            transitive: ["GroupA": "//Lib:Group", "GroupB": "//Lib:Group"]
+        )
+        let resolver = ModuleResolver(transitiveModuleMap: metadata.transitiveModuleMap)
+
+        let result = Analyzer.analyze(metadata: metadata, loadedModules: [], resolver: resolver)
+
+        let unused = result.issues.filter { $0.kind == .unusedDep }
+        XCTAssertEqual(unused.count, 1)
+        XCTAssertEqual(unused[0].depLabel, "//Lib:Group")
+        XCTAssertEqual(unused[0].buildozerCommand?.batchLine, "remove deps //Lib:Group|//Lib:A")
+    }
+
     func testMissingDirectDep() {
         let metadata = makeMetadata(
             label: "//Lib:A", moduleName: "A",

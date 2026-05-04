@@ -211,14 +211,13 @@ public struct SwiftUnusedDepsCommand: ParsableCommand {
             printErr("  remove import \(removal.moduleName) from \(removal.filePath)")
         }
 
-        if !sourceImportRemovals.isEmpty {
-            try SourceImportEditor.apply(
-                removals: sourceImportRemovals,
-                workspaceDirectory: workspace
-            )
-        }
+        let sourceImportEdits = try SourceImportEditor.plan(
+            removals: sourceImportRemovals,
+            workspaceDirectory: workspace
+        )
 
         if commands.isEmpty {
+            try SourceImportEditor.apply(edits: sourceImportEdits)
             printErr("Done: source import removal(s) applied.")
             return true
         }
@@ -228,6 +227,7 @@ public struct SwiftUnusedDepsCommand: ParsableCommand {
             workingDirectory: workspace
         )
         if result.success {
+            try SourceImportEditor.apply(edits: sourceImportEdits)
             printErr("Done: \(commands.count) BUILD fix(es) and \(sourceImportRemovals.count) source import removal(s) applied.")
             return true
         } else if result.noChanges {

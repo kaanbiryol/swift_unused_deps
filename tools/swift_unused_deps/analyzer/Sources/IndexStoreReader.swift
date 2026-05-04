@@ -14,6 +14,8 @@ public struct SourceFileModuleUsage {
     public let directImports: Set<String>
     /// Modules imported with `@_exported import`.
     public let reexportedImports: Set<String>
+    /// Modules imported inside conditional compilation blocks.
+    public let conditionalImports: Set<String>
 
     public init(
         sourceFile: String,
@@ -22,7 +24,8 @@ public struct SourceFileModuleUsage {
         loadedModules: Set<String> = [],
         systemModules: Set<String> = [],
         directImports: Set<String> = [],
-        reexportedImports: Set<String> = []
+        reexportedImports: Set<String> = [],
+        conditionalImports: Set<String> = []
     ) {
         self.sourceFile = sourceFile
         self.moduleName = moduleName
@@ -31,10 +34,16 @@ public struct SourceFileModuleUsage {
         self.systemModules = systemModules
         self.directImports = directImports
         self.reexportedImports = reexportedImports
+        self.conditionalImports = conditionalImports
     }
 }
 
 public enum IndexStoreReader {
+
+    private struct SourceUnitKey: Hashable {
+        let sourceFile: String
+        let moduleName: String
+    }
 
     public struct Result {
         public let usage: [SourceFileModuleUsage]
@@ -73,13 +82,16 @@ public enum IndexStoreReader {
             loadedModules: Set<String>,
             systemModules: Set<String>,
             directImports: Set<String>,
-            reexportedImports: Set<String>
+            reexportedImports: Set<String>,
+            conditionalImports: Set<String>
         )] = []
-        var seenFiles = Set<String>()
+        var seenSourceUnits = Set<SourceUnitKey>()
 
         for unitReader in store.units {
             if unitReader.mainFile.isEmpty { continue }
-            if seenFiles.contains(unitReader.mainFile) { continue }
+            let mod = unitReader.moduleName
+            let sourceUnitKey = SourceUnitKey(sourceFile: unitReader.mainFile, moduleName: mod)
+            if seenSourceUnits.contains(sourceUnitKey) { continue }
 
             guard let recordName = unitReader.recordName else { continue }
             let recordReader: RecordReader
@@ -93,11 +105,13 @@ public enum IndexStoreReader {
             var referencedUSRs = Set<String>()
             var directImports = Set<String>()
             var reexportedImports = Set<String>()
+            var conditionalImports = Set<String>()
             var importLineNumbers = Set<Int>()
 
             if let source = try? String(contentsOfFile: unitReader.mainFile, encoding: .utf8) {
                 directImports.formUnion(SourceImportEditor.importedModuleNames(in: source))
                 reexportedImports.formUnion(SourceImportEditor.reexportedImportModuleNames(in: source))
+                conditionalImports.formUnion(SourceImportEditor.conditionalImportModuleNames(in: source))
                 importLineNumbers = SourceImportEditor.importLineNumbers(in: source)
             }
 
@@ -129,15 +143,15 @@ public enum IndexStoreReader {
                 }
             })
 
-            let mod = unitReader.moduleName
             moduleDefinedUSRs[mod, default: []].formUnion(definedUSRs)
 
             if let filter = filterModules, !filter.contains(mod) { continue }
 
             sourceFileEntries.append((
-                unitReader.mainFile, mod, referencedUSRs, loadedModules, systemModules, directImports, reexportedImports
+                unitReader.mainFile, mod, referencedUSRs, loadedModules, systemModules, directImports, reexportedImports,
+                conditionalImports
             ))
-            seenFiles.insert(unitReader.mainFile)
+            seenSourceUnits.insert(sourceUnitKey)
         }
 
         // Pass 2: resolve referenced modules via USR cross-reference.
@@ -159,7 +173,8 @@ public enum IndexStoreReader {
                 loadedModules: entry.loadedModules,
                 systemModules: entry.systemModules,
                 directImports: entry.directImports,
-                reexportedImports: entry.reexportedImports
+                reexportedImports: entry.reexportedImports,
+                conditionalImports: entry.conditionalImports
             ))
         }
 

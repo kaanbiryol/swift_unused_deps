@@ -8,12 +8,19 @@ public enum SourceImportEditor {
         let lineNumber: Int
         let moduleName: String
         let isReexported: Bool
+        let isConditional: Bool
+    }
+
+    struct PlannedEdit {
+        let filePath: String
+        let updated: String
     }
 
     public enum Error: Swift.Error, CustomStringConvertible {
         case fileNotUTF8(path: String)
         case importNotFound(path: String, moduleName: String)
         case reexportedImportNotRemovable(path: String, moduleName: String)
+        case conditionalImportNotRemovable(path: String, moduleName: String)
 
         public var description: String {
             switch self {
@@ -23,6 +30,8 @@ public enum SourceImportEditor {
                 return "Did not find an import for module '\(moduleName)' in \(path)"
             case .reexportedImportNotRemovable(let path, let moduleName):
                 return "Refusing to remove re-exported import for module '\(moduleName)' in \(path)"
+            case .conditionalImportNotRemovable(let path, let moduleName):
+                return "Refusing to remove conditional import for module '\(moduleName)' in \(path)"
             }
         }
     }
@@ -31,9 +40,17 @@ public enum SourceImportEditor {
         removals: [SourceImportRemoval],
         workspaceDirectory: URL? = nil
     ) throws {
+        try apply(edits: plan(removals: removals, workspaceDirectory: workspaceDirectory))
+    }
+
+    static func plan(
+        removals: [SourceImportRemoval],
+        workspaceDirectory: URL? = nil
+    ) throws -> [PlannedEdit] {
         let grouped = Dictionary(grouping: Set(removals), by: \.filePath)
 
-        for (rawPath, fileRemovals) in grouped {
+        return try grouped.keys.sorted().compactMap { rawPath in
+            guard let fileRemovals = grouped[rawPath] else { return nil }
             let filePath = resolvePath(rawPath, workspaceDirectory: workspaceDirectory)
             let original = try readFile(at: filePath)
             let moduleNames = Set(fileRemovals.map(\.moduleName))
@@ -42,9 +59,13 @@ public enum SourceImportEditor {
                 filePath: filePath,
                 moduleNames: moduleNames
             )
-            if updated != original {
-                try updated.write(toFile: filePath, atomically: true, encoding: .utf8)
-            }
+            return updated == original ? nil : PlannedEdit(filePath: filePath, updated: updated)
+        }
+    }
+
+    static func apply(edits: [PlannedEdit]) throws {
+        for edit in edits {
+            try edit.updated.write(toFile: edit.filePath, atomically: true, encoding: .utf8)
         }
     }
 
@@ -54,7 +75,7 @@ public enum SourceImportEditor {
         moduleNames: Set<String>
     ) throws -> String {
         var foundModules = Set<String>()
-        var protectedModules = Set<String>()
+        var protectedModuleErrors: [String: Error] = [:]
         let hadTrailingNewline = source.hasSuffix("\n")
         let lines = source.split(separator: "\n", omittingEmptySubsequences: false)
         let importStatements = importStatements(in: source)
@@ -62,7 +83,17 @@ public enum SourceImportEditor {
             importStatements.compactMap { statement in
                 guard moduleNames.contains(statement.moduleName) else { return nil }
                 if statement.isReexported {
-                    protectedModules.insert(statement.moduleName)
+                    protectedModuleErrors[statement.moduleName] = .reexportedImportNotRemovable(
+                        path: filePath,
+                        moduleName: statement.moduleName
+                    )
+                    return nil
+                }
+                if statement.isConditional {
+                    protectedModuleErrors[statement.moduleName] = .conditionalImportNotRemovable(
+                        path: filePath,
+                        moduleName: statement.moduleName
+                    )
                     return nil
                 }
                 foundModules.insert(statement.moduleName)
@@ -75,11 +106,13 @@ public enum SourceImportEditor {
         }
         .map(\.element)
 
-        for moduleName in moduleNames where !foundModules.contains(moduleName) {
-            if protectedModules.contains(moduleName) {
-                throw Error.reexportedImportNotRemovable(path: filePath, moduleName: moduleName)
+        for moduleName in moduleNames {
+            if let error = protectedModuleErrors[moduleName] {
+                throw error
             }
-            throw Error.importNotFound(path: filePath, moduleName: moduleName)
+            if !foundModules.contains(moduleName) {
+                throw Error.importNotFound(path: filePath, moduleName: moduleName)
+            }
         }
 
         let updated = filteredLines.joined(separator: "\n")
@@ -91,7 +124,7 @@ public enum SourceImportEditor {
 
     static func importedModuleNames(in source: String) -> Set<String> {
         Set(
-            importStatements(in: source).map(\.moduleName)
+            importStatements(in: source).filter { !$0.isConditional }.map(\.moduleName)
         )
     }
 
@@ -101,6 +134,10 @@ public enum SourceImportEditor {
 
     static func reexportedImportModuleNames(in source: String) -> Set<String> {
         Set(importStatements(in: source).filter(\.isReexported).map(\.moduleName))
+    }
+
+    static func conditionalImportModuleNames(in source: String) -> Set<String> {
+        Set(importStatements(in: source).filter(\.isConditional).map(\.moduleName))
     }
 
     private static func readFile(at path: String) throws -> String {
@@ -119,29 +156,52 @@ public enum SourceImportEditor {
     private static func importStatements(in source: String) -> [ImportStatement] {
         let syntax = Parser.parse(source: source)
         let sourceLines = source.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
+        let collector = ImportStatementCollector(source: source, sourceLines: sourceLines)
+        collector.walk(syntax)
+        return collector.statements
+    }
 
-        return syntax.statements.compactMap { item in
-            guard let importDecl = item.item.as(ImportDeclSyntax.self) else {
-                return nil
-            }
+    private final class ImportStatementCollector: SyntaxVisitor {
+        private let source: String
+        private let sourceLines: [String]
+        private var conditionalDepth = 0
+        var statements: [ImportStatement] = []
 
+        init(source: String, sourceLines: [String]) {
+            self.source = source
+            self.sourceLines = sourceLines
+            super.init(viewMode: .sourceAccurate)
+        }
+
+        override func visit(_ node: IfConfigDeclSyntax) -> SyntaxVisitorContinueKind {
+            conditionalDepth += 1
+            return .visitChildren
+        }
+
+        override func visitPost(_ node: IfConfigDeclSyntax) {
+            conditionalDepth -= 1
+        }
+
+        override func visit(_ node: ImportDeclSyntax) -> SyntaxVisitorContinueKind {
             let lineNumber = lineNumber(
-                atUTF8Offset: importDecl.positionAfterSkippingLeadingTrivia.utf8Offset,
+                atUTF8Offset: node.positionAfterSkippingLeadingTrivia.utf8Offset,
                 in: source
             )
             guard sourceLines.indices.contains(lineNumber - 1) else {
-                return nil
+                return .skipChildren
             }
             let text = sourceLines[lineNumber - 1]
             guard let moduleName = importedModuleName(in: text) else {
-                return nil
+                return .skipChildren
             }
 
-            return ImportStatement(
+            statements.append(ImportStatement(
                 lineNumber: lineNumber,
                 moduleName: moduleName,
-                isReexported: isReexportedImport(text)
-            )
+                isReexported: isReexportedImport(text),
+                isConditional: conditionalDepth > 0
+            ))
+            return .skipChildren
         }
     }
 

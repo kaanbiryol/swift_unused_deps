@@ -95,6 +95,94 @@ final class BatchAnalyzerTests: XCTestCase {
         XCTAssertTrue(issues.isEmpty)
     }
 
+    func testUnusedImportFromPartiallyUsedMultiModuleLabelDoesNotRemoveDep() {
+        let metadata = makeMetadata(
+            label: "//Lib:A",
+            moduleName: "A",
+            deps: [
+                DeclaredDep(label: "//Lib:Group", moduleName: "GroupA", kind: .dep),
+                DeclaredDep(label: "//Lib:Group", moduleName: "GroupB", kind: .dep),
+            ]
+        )
+
+        let issues = BatchAnalyzer.unusedImportIssues(
+            metadata: metadata,
+            sourceFileUsage: [
+                SourceFileModuleUsage(
+                    sourceFile: "/tmp/A.swift",
+                    moduleName: "A",
+                    referencedModules: ["GroupA"],
+                    loadedModules: ["GroupA", "GroupB"],
+                    directImports: ["GroupA", "GroupB"]
+                ),
+            ]
+        )
+
+        XCTAssertEqual(issues.count, 1)
+        XCTAssertEqual(issues[0].depModule, "GroupB")
+        XCTAssertNil(issues[0].buildozerCommand)
+        XCTAssertEqual(issues[0].sourceImportRemovals, [
+            SourceImportRemoval(filePath: "/tmp/A.swift", moduleName: "GroupB"),
+        ])
+    }
+
+    func testUnusedImportsFromUnusedMultiModuleLabelRemoveDepOnce() {
+        let metadata = makeMetadata(
+            label: "//Lib:A",
+            moduleName: "A",
+            deps: [
+                DeclaredDep(label: "//Lib:Group", moduleName: "GroupA", kind: .dep),
+                DeclaredDep(label: "//Lib:Group", moduleName: "GroupB", kind: .dep),
+            ]
+        )
+
+        let issues = BatchAnalyzer.unusedImportIssues(
+            metadata: metadata,
+            sourceFileUsage: [
+                SourceFileModuleUsage(
+                    sourceFile: "/tmp/A.swift",
+                    moduleName: "A",
+                    referencedModules: [],
+                    loadedModules: ["GroupA", "GroupB"],
+                    directImports: ["GroupA", "GroupB"]
+                ),
+            ]
+        )
+
+        XCTAssertEqual(issues.count, 2)
+        XCTAssertEqual(issues.compactMap(\.buildozerCommand).map(\.batchLine), [
+            "remove deps //Lib:Group|//Lib:A",
+        ])
+        XCTAssertEqual(Set(issues.flatMap(\.sourceImportRemovals)), [
+            SourceImportRemoval(filePath: "/tmp/A.swift", moduleName: "GroupA"),
+            SourceImportRemoval(filePath: "/tmp/A.swift", moduleName: "GroupB"),
+        ])
+    }
+
+    func testUnusedImportIssuesSkipConditionalImports() {
+        let metadata = makeMetadata(
+            label: "//Lib:A",
+            moduleName: "A",
+            deps: [DeclaredDep(label: "//Lib:LibA", moduleName: "LibA", kind: .dep)]
+        )
+
+        let issues = BatchAnalyzer.unusedImportIssues(
+            metadata: metadata,
+            sourceFileUsage: [
+                SourceFileModuleUsage(
+                    sourceFile: "/tmp/A.swift",
+                    moduleName: "A",
+                    referencedModules: [],
+                    loadedModules: ["LibA"],
+                    directImports: ["LibA"],
+                    conditionalImports: ["LibA"]
+                ),
+            ]
+        )
+
+        XCTAssertTrue(issues.isEmpty)
+    }
+
     func testAnalyzeWarnsOnInvalidIndexStorePathAndSkipsTarget() throws {
         try withTemporaryDirectory { directory in
             try writeMetadata(

@@ -6,6 +6,20 @@ public enum BatchAnalyzer {
         let metadataFiles: [URL]
     }
 
+    private struct DeclaredDepGroupKey: Hashable {
+        let label: String
+        let kind: DepKind
+    }
+
+    private struct DeclaredDepGroup {
+        let key: DeclaredDepGroupKey
+        let deps: [DeclaredDep]
+
+        var moduleNames: Set<String> {
+            Set(deps.map(\.moduleName))
+        }
+    }
+
     public struct Options {
         public var bazelBin: String
         public var indexStorePath: String?
@@ -302,27 +316,56 @@ public enum BatchAnalyzer {
         let reexportedImportModules = sourceFileUsage.reduce(into: Set<String>()) { partial, usage in
             partial.formUnion(usage.reexportedImports)
         }
+        let conditionalImportModules = sourceFileUsage.reduce(into: Set<String>()) { partial, usage in
+            partial.formUnion(usage.conditionalImports)
+        }
 
-        return metadata.declaredDeps.sorted { $0.moduleName < $1.moduleName }.compactMap { dep in
-            guard !referencedModules.contains(dep.moduleName) else { return nil }
-            guard !reexportedImportModules.contains(dep.moduleName) else { return nil }
+        return declaredDepGroups(metadata.declaredDeps).flatMap { group -> [Issue] in
+            var shouldRemoveDep = group.moduleNames.isDisjoint(with: referencedModules)
+                && group.moduleNames.isDisjoint(with: reexportedImportModules)
+                && group.moduleNames.isDisjoint(with: conditionalImportModules)
 
-            let removals = sourceFileUsage.compactMap { usage -> SourceImportRemoval? in
-                guard usage.directImports.contains(dep.moduleName) else { return nil }
-                guard !usage.referencedModules.contains(dep.moduleName) else { return nil }
-                guard !usage.reexportedImports.contains(dep.moduleName) else { return nil }
-                return SourceImportRemoval(
-                    filePath: usage.sourceFile,
-                    moduleName: dep.moduleName
+            return group.deps.sorted { $0.moduleName < $1.moduleName }.compactMap { dep in
+                guard !referencedModules.contains(dep.moduleName) else { return nil }
+                guard !reexportedImportModules.contains(dep.moduleName) else { return nil }
+                guard !conditionalImportModules.contains(dep.moduleName) else { return nil }
+
+                let removals = sourceFileUsage.compactMap { usage -> SourceImportRemoval? in
+                    guard usage.directImports.contains(dep.moduleName) else { return nil }
+                    guard !usage.referencedModules.contains(dep.moduleName) else { return nil }
+                    guard !usage.reexportedImports.contains(dep.moduleName) else { return nil }
+                    guard !usage.conditionalImports.contains(dep.moduleName) else { return nil }
+                    return SourceImportRemoval(
+                        filePath: usage.sourceFile,
+                        moduleName: dep.moduleName
+                    )
+                }
+
+                guard !removals.isEmpty else { return nil }
+                let removeDep = shouldRemoveDep
+                shouldRemoveDep = false
+                return Issue.unusedImport(
+                    dep,
+                    targetLabel: metadata.target.label,
+                    sourceImportRemovals: removals,
+                    removeDep: removeDep
                 )
             }
+        }
+    }
 
-            guard !removals.isEmpty else { return nil }
-            return Issue.unusedImport(
-                dep,
-                targetLabel: metadata.target.label,
-                sourceImportRemovals: removals
-            )
+    private static func declaredDepGroups(_ deps: [DeclaredDep]) -> [DeclaredDepGroup] {
+        Dictionary(grouping: deps) {
+            DeclaredDepGroupKey(label: $0.label, kind: $0.kind)
+        }
+        .map { key, deps in
+            DeclaredDepGroup(key: key, deps: deps)
+        }
+        .sorted { lhs, rhs in
+            if lhs.key.label == rhs.key.label {
+                return lhs.key.kind.rawValue < rhs.key.kind.rawValue
+            }
+            return lhs.key.label < rhs.key.label
         }
     }
 

@@ -90,6 +90,38 @@ final class SourceImportEditorTests: XCTestCase {
         XCTAssertEqual(SourceImportEditor.importLineNumbers(in: source), [1, 3, 5])
     }
 
+    func testConditionalImportsAreTrackedAsNonRemovable() {
+        let source = """
+        import Foundation
+        #if canImport(LibA)
+        import LibA
+        #endif
+        import LibB
+        """
+
+        XCTAssertEqual(SourceImportEditor.importedModuleNames(in: source), ["Foundation", "LibB"])
+        XCTAssertEqual(SourceImportEditor.conditionalImportModuleNames(in: source), ["LibA"])
+        XCTAssertEqual(SourceImportEditor.importLineNumbers(in: source), [1, 3, 5])
+    }
+
+    func testRemoveImportsRefusesConditionalImport() {
+        let source = """
+        #if canImport(LibA)
+        import LibA
+        #endif
+        """
+
+        XCTAssertThrowsError(
+            try SourceImportEditor.removeImports(
+                in: source,
+                filePath: "/tmp/Demo.swift",
+                moduleNames: ["LibA"]
+            )
+        ) { error in
+            XCTAssertTrue("\(error)".contains("Refusing to remove conditional import"))
+        }
+    }
+
     func testRemoveImportsPreservesBlankLinesAndCommentsAroundRemovedImport() throws {
         let source = """
         import Foundation

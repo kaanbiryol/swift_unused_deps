@@ -139,7 +139,8 @@ public struct Issue {
     public static func unusedImport(
         _ dep: DeclaredDep,
         targetLabel: String,
-        sourceImportRemovals: [SourceImportRemoval]
+        sourceImportRemovals: [SourceImportRemoval],
+        removeDep: Bool = true
     ) -> Issue {
         let attrName = dep.kind == .privateDep ? "private_deps" : "deps"
         return Issue(
@@ -148,10 +149,12 @@ public struct Issue {
             reason: "Module '\(dep.moduleName)' is imported in source but no symbols from it are referenced",
             suggestedAction: .remove,
             context: .unusedImport(dep),
-            buildozerCommand: BuildozerCommand(
-                action: "remove \(attrName) \(dep.label)",
-                target: targetLabel
-            ),
+            buildozerCommand: removeDep
+                ? BuildozerCommand(
+                    action: "remove \(attrName) \(dep.label)",
+                    target: targetLabel
+                )
+                : nil,
             sourceImportRemovals: sourceImportRemovals.sorted {
                 if $0.filePath == $1.filePath {
                     return $0.moduleName < $1.moduleName
