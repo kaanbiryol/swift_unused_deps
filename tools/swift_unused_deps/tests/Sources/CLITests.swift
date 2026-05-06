@@ -3,176 +3,61 @@ import XCTest
 
 final class CLITests: XCTestCase {
 
-    func testRejectsBatchModeWithoutPattern() {
-        XCTAssertThrowsError(try SwiftUnusedDepsCommand.parseAsRoot([])) { error in
-            XCTAssertTrue("\(error)".contains("Batch mode requires a Bazel target pattern."))
+    func testParseAnalyzeSubcommand() throws {
+        let command = try XCTUnwrap(
+            try SwiftUnusedDepsCommand.parseAsRoot([
+                "analyze",
+                "--metadata-root", "/tmp/bazel-bin",
+                "--index-store-path", "/tmp/index-store",
+                "--filter", "//App/...",
+                "--fix-plan-output", "/tmp/fix_plan.json",
+                "--report-output", "/tmp/report.out",
+                "--exit-code-output", "/tmp/report.exit_code",
+            ]) as? SwiftUnusedDepsAnalyzeCommand
+        )
+
+        XCTAssertEqual(command.metadataRoot, "/tmp/bazel-bin")
+        XCTAssertEqual(command.indexStorePath, "/tmp/index-store")
+        XCTAssertEqual(command.filter, "//App/...")
+        XCTAssertEqual(command.fixPlanOutput, "/tmp/fix_plan.json")
+        XCTAssertEqual(command.reportOutput, "/tmp/report.out")
+        XCTAssertEqual(command.exitCodeOutput, "/tmp/report.exit_code")
+    }
+
+    func testParseAnalyzeRejectsEmptyMetadataRoot() {
+        XCTAssertThrowsError(try SwiftUnusedDepsCommand.parseAsRoot([
+            "analyze",
+            "--metadata-root", "",
+        ])) { error in
+            XCTAssertTrue("\(error)".contains("--metadata-root cannot be empty."))
         }
     }
 
-    func testParseBatchModeWithFilter() throws {
+    func testParseApplySubcommand() throws {
         let command = try XCTUnwrap(
             try SwiftUnusedDepsCommand.parseAsRoot([
-                "//App/Features/Login...",
-            ]) as? SwiftUnusedDepsCommand
+                "apply",
+                "--workspace-directory", "/tmp/workspace",
+                "/tmp/fix_plan.json",
+            ]) as? SwiftUnusedDepsApplyCommand
         )
 
-        XCTAssertEqual(command.filter, "//App/Features/Login...")
+        XCTAssertEqual(command.workspaceDirectory, "/tmp/workspace")
+        XCTAssertEqual(command.fixPlanPaths, ["/tmp/fix_plan.json"])
     }
 
-    func testParseBatchModeWithCustomBuildConfig() throws {
-        let command = try XCTUnwrap(
-            try SwiftUnusedDepsCommand.parseAsRoot([
-                "--build-config", "unused-deps-ios",
-                "//App:App",
-            ]) as? SwiftUnusedDepsCommand
-        )
-
-        XCTAssertEqual(command.buildConfig, "unused-deps-ios")
+    func testParseApplyRequiresFixPlanPath() {
+        XCTAssertThrowsError(try SwiftUnusedDepsCommand.parseAsRoot([
+            "apply",
+        ])) { error in
+            XCTAssertTrue("\(error)".contains("apply requires at least one fix plan path."))
+        }
     }
 
-    func testBuildArgumentsUseSelectedConfig() {
+    func testParseExtraSystemModulesTrimsEmptyValues() {
         XCTAssertEqual(
-            SwiftUnusedDepsCommand.bazelBuildArguments(
-                pattern: "//App:App",
-                config: "unused-deps-ios"
-            ),
-            [
-                "bazel", "build", "//App:App", "--config=unused-deps-ios",
-                "--features=swift.index_while_building",
-                "--features=swift.use_global_index_store",
-            ]
-        )
-    }
-
-    func testBuildArgumentsCanWriteBuildEventJSON() {
-        XCTAssertEqual(
-            SwiftUnusedDepsCommand.bazelBuildArguments(
-                pattern: "//App:App",
-                config: "unused-deps",
-                buildEventJSONFile: "/tmp/events.json"
-            ),
-            [
-                "bazel", "build", "//App:App", "--config=unused-deps",
-                "--features=swift.index_while_building",
-                "--features=swift.use_global_index_store",
-                "--build_event_json_file=/tmp/events.json",
-                "--build_event_json_file_path_conversion=false",
-            ]
-        )
-    }
-
-    func testDefaultIndexStorePathUsesGlobalBazelOutLocation() {
-        let workspace = URL(fileURLWithPath: "/tmp/workspace-one", isDirectory: true)
-
-        XCTAssertEqual(
-            SwiftUnusedDepsCommand.defaultIndexStorePath(
-                workspaceDirectory: workspace,
-                bazelInfo: BazelInfoProvider { _, _ in nil }
-            ),
-            "/tmp/workspace-one/bazel-out/_global_index_store"
-        )
-    }
-
-    func testDefaultIndexStorePathUsesBazelInfoOutputPathWhenAvailable() {
-        let workspace = URL(fileURLWithPath: "/tmp/workspace-one", isDirectory: true)
-        let outputPath = "/tmp/custom-output/execroot/_main/bazel-out"
-
-        let result = SwiftUnusedDepsCommand.defaultIndexStorePath(
-            workspaceDirectory: workspace,
-            bazelInfo: BazelInfoProvider { key, currentDirectory in
-                XCTAssertEqual(key, "output_path")
-                XCTAssertEqual(currentDirectory.path, workspace.path)
-                return outputPath
-            }
-        )
-
-        XCTAssertEqual(result, "/tmp/custom-output/execroot/_main/bazel-out/_global_index_store")
-    }
-
-    func testResolveMetadataRootUsesBazelInfoBazelBinWithoutSymlink() throws {
-        let directory = try makeTemporaryDirectory()
-        defer { try? FileManager.default.removeItem(at: directory) }
-
-        let workspace = directory.appendingPathComponent("workspace", isDirectory: true)
-        let bazelBin = directory.appendingPathComponent("custom-bin", isDirectory: true)
-        try writeMetadataFile(under: bazelBin)
-        var bazelBinOptions: [String]?
-
-        let result = SwiftUnusedDepsCommand.resolveMetadataRoot(
-            workspaceDirectory: workspace,
-            currentDirectory: directory,
-            fileManager: .default,
-            bazelInfo: BazelInfoProvider { key, _, options in
-                bazelBinOptions = options
-                return key == "bazel-bin" ? bazelBin.path : nil
-            },
-            bazelInfoOptions: ["--config=unused-deps-ios"]
-        )
-
-        XCTAssertEqual(result, bazelBin.path)
-        XCTAssertEqual(bazelBinOptions, ["--config=unused-deps-ios"])
-    }
-
-    func testResolveMetadataRootUsesBazelBinSymlinkWhenBazelInfoHasNoMetadata() throws {
-        let directory = try makeTemporaryDirectory()
-        defer { try? FileManager.default.removeItem(at: directory) }
-
-        let workspace = directory.appendingPathComponent("workspace", isDirectory: true)
-        let emptyBin = directory.appendingPathComponent("empty-bin", isDirectory: true)
-        let configBin = directory.appendingPathComponent("configured-bin", isDirectory: true)
-        try FileManager.default.createDirectory(at: workspace, withIntermediateDirectories: true)
-        try FileManager.default.createDirectory(at: emptyBin, withIntermediateDirectories: true)
-        try writeMetadataFile(under: configBin)
-        try FileManager.default.createSymbolicLink(
-            at: workspace.appendingPathComponent("bazel-bin"),
-            withDestinationURL: configBin
-        )
-
-        let result = SwiftUnusedDepsCommand.resolveMetadataRoot(
-            workspaceDirectory: workspace,
-            currentDirectory: directory,
-            fileManager: .default,
-            bazelInfo: BazelInfoProvider { key, _ in
-                switch key {
-                case "bazel-bin":
-                    return emptyBin.path
-                default:
-                    return nil
-                }
-            }
-        )
-
-        XCTAssertEqual(result, configBin.path)
-    }
-
-    func testMetadataRootFromBuildEventUsesReportedMetadataArtifact() throws {
-        let directory = try makeTemporaryDirectory()
-        defer { try? FileManager.default.removeItem(at: directory) }
-
-        let root = directory
-            .appendingPathComponent("execroot", isDirectory: true)
-            .appendingPathComponent("bazel-out", isDirectory: true)
-            .appendingPathComponent("ios-sim_arm64-fastbuild", isDirectory: true)
-            .appendingPathComponent("bin", isDirectory: true)
-        let metadata = root
-            .appendingPathComponent("App", isDirectory: true)
-            .appendingPathComponent("App.swift_deps_info.json")
-        let buildEvent = directory.appendingPathComponent("events.json")
-        try FileManager.default.createDirectory(
-            at: metadata.deletingLastPathComponent(),
-            withIntermediateDirectories: true
-        )
-        try "{}".write(to: metadata, atomically: true, encoding: .utf8)
-        try """
-        {"id":{"namedSet":{"id":"0"}},"namedSetOfFiles":{"files":[{"name":"App/App.swift_deps_info.json","uri":"\(metadata.absoluteString)"}]}}
-        """.write(to: buildEvent, atomically: true, encoding: .utf8)
-
-        XCTAssertEqual(
-            SwiftUnusedDepsCommand.metadataRootFromBuildEvent(
-                at: buildEvent,
-                fileManager: .default
-            ),
-            root.path
+            SwiftUnusedDepsCommand.parseExtraSystemModules(" Foundation,CustomKit, ,UIKit "),
+            ["Foundation", "CustomKit", "UIKit"]
         )
     }
 
@@ -205,40 +90,5 @@ final class CLITests: XCTestCase {
         )
 
         XCTAssertEqual(result?.path, workspace)
-    }
-
-    func testRejectsFixWithJson() {
-        XCTAssertThrowsError(try SwiftUnusedDepsCommand.parseAsRoot([
-            "//App:App",
-            "--fix",
-            "--json",
-        ])) { error in
-            XCTAssertTrue("\(error)".contains("--fix cannot be combined with --json."))
-        }
-    }
-
-    private func makeTemporaryDirectory() throws -> URL {
-        let directory = FileManager.default.temporaryDirectory
-            .appendingPathComponent(UUID().uuidString, isDirectory: true)
-        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        return directory
-    }
-
-    private func writeMetadataFile(
-        under root: URL,
-        label: String = "//pkg:target",
-        moduleName: String = "Target"
-    ) throws {
-        let packageDirectory = root.appendingPathComponent("pkg", isDirectory: true)
-        try FileManager.default.createDirectory(at: packageDirectory, withIntermediateDirectories: true)
-        let metadata = TargetMetadata(
-            schemaVersion: 1,
-            target: TargetInfo(label: label, moduleName: moduleName),
-            declaredDeps: [],
-            transitiveModuleMap: [:]
-        )
-        try JSONEncoder().encode(metadata).write(
-            to: packageDirectory.appendingPathComponent("\(moduleName).swift_deps_info.json")
-        )
     }
 }

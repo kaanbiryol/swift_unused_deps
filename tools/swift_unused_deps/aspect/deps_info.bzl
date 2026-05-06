@@ -1,17 +1,16 @@
 """Bazel aspect for detecting unused Swift dependencies.
 
 Propagates through deps and private_deps of swift_library targets and emits
-per-target metadata for batch analysis.
+per-target metadata for analysis.
 
-Usage:
-    bazel build //App/... --config=unused-deps
+Enable this aspect from Bazel, then run the Swift analyzer over the produced
+metadata and index store:
 
-    Or explicitly:
     bazel build //App/... \
         --features=swift.index_while_building \
         --features=swift.use_global_index_store \
-        --aspects=//tools/swift_unused_deps/aspect:deps_info.bzl%swift_deps_aspect \
-        --output_groups=swift_deps_info,swift_index_store \
+        --aspects=//tools/swift_unused_deps:defs.bzl%swift_unused_deps_aspect \
+        --output_groups=swift_unused_deps_metadata,swift_index_store \
         --spawn_strategy=local
 """
 
@@ -59,8 +58,8 @@ def _get_dep_module_name(dep):
             return module.name
     return None
 
-def _collect_dep_info(dep, kind):
-    """Collect declared dep info from a dependency.
+def _dep_info_entries(dep, kind):
+    """Return declared dep info entries from a dependency.
 
     Returns a list of dep info dicts. For normal swift_library targets this
     is a single-element list. For aggregation targets like swift_library_group
@@ -81,7 +80,7 @@ def _collect_dep_info(dep, kind):
 
     return []
 
-def _collect_transitive_modules(deps, private_deps, plugins = []):
+def _transitive_modules(deps, private_deps, plugins = []):
     modules = {}
     for dep in list(deps) + list(private_deps) + list(plugins):
         dep_module_name = _get_dep_module_name(dep)
@@ -94,8 +93,8 @@ def _collect_transitive_modules(deps, private_deps, plugins = []):
                     modules[mod_name] = mod_label
     return modules
 
-def _collect_passthrough_transitive_modules(ctx):
-    """Collect transitive modules from deps of a non-Swift target.
+def _passthrough_transitive_modules(ctx):
+    """Return transitive modules from deps of a non-Swift target.
 
     This ensures the transitive module map is not broken when a non-Swift
     target (e.g. objc_library, swift_library_group) sits between two Swift
@@ -129,13 +128,13 @@ def _collect_passthrough_transitive_modules(ctx):
 
 def _swift_deps_aspect_impl(target, ctx):
     if SwiftInfo not in target:
-        return _collect_passthrough_transitive_modules(ctx)
+        return _passthrough_transitive_modules(ctx)
 
     module_name = _get_module_name(target)
     if module_name == None:
         # Target has SwiftInfo but no direct Swift module (e.g. swift_library_group).
         # Still propagate transitive modules from deps.
-        return _collect_passthrough_transitive_modules(ctx)
+        return _passthrough_transitive_modules(ctx)
 
     swiftmodule_file = _get_swiftmodule_file(target)
     indexstore_directory = _get_indexstore_directory(target)
@@ -150,13 +149,13 @@ def _swift_deps_aspect_impl(target, ctx):
                     transitive_sets.append(dep[SwiftDepsInfo].transitive_modules)
     transitive_modules = depset(transitive = transitive_sets)
 
-    # Collect declared deps, deduplicating by module name (a module can
+    # Record declared deps, deduplicating by module name (a module can
     # appear through multiple swift_library_group expansions).
     seen_modules = {}
     declared_deps = []
     if hasattr(ctx.rule.attr, "deps"):
         for dep in ctx.rule.attr.deps:
-            for info in _collect_dep_info(dep, "dep"):
+            for info in _dep_info_entries(dep, "dep"):
                 if info["module_name"] not in seen_modules:
                     seen_modules[info["module_name"]] = True
                     declared_deps.append(info)
@@ -164,19 +163,19 @@ def _swift_deps_aspect_impl(target, ctx):
     declared_private_deps = []
     if hasattr(ctx.rule.attr, "private_deps"):
         for dep in ctx.rule.attr.private_deps:
-            for info in _collect_dep_info(dep, "private_dep"):
+            for info in _dep_info_entries(dep, "private_dep"):
                 if info["module_name"] not in seen_modules:
                     seen_modules[info["module_name"]] = True
                     declared_private_deps.append(info)
 
     # Build transitive module map.
-    transitive_map = _collect_transitive_modules(
+    transitive_map = _transitive_modules(
         ctx.rule.attr.deps if hasattr(ctx.rule.attr, "deps") else [],
         ctx.rule.attr.private_deps if hasattr(ctx.rule.attr, "private_deps") else [],
         ctx.rule.attr.plugins if hasattr(ctx.rule.attr, "plugins") else [],
     )
 
-    # Collect source file names.
+    # Record source file names.
     srcs = []
     if hasattr(ctx.rule.attr, "srcs"):
         for src in ctx.rule.attr.srcs:
@@ -215,7 +214,7 @@ def _swift_deps_aspect_impl(target, ctx):
                 metadata_json,
             ),
             mnemonic = "SwiftDepsMetadata",
-            progress_message = "Collecting deps metadata for %s" % module_name,
+            progress_message = "Emitting deps metadata for %s" % module_name,
         )
     else:
         ctx.actions.write(
@@ -231,7 +230,10 @@ def _swift_deps_aspect_impl(target, ctx):
             transitive_modules = transitive_modules,
             direct_dep_modules = [],
         ),
-        OutputGroupInfo(swift_deps_info = depset([metadata_file])),
+        OutputGroupInfo(
+            swift_deps_info = depset([metadata_file]),
+            swift_unused_deps_metadata = depset([metadata_file]),
+        ),
     ]
 
 swift_deps_aspect = aspect(
@@ -240,8 +242,7 @@ swift_deps_aspect = aspect(
 
     Produces per-target metadata files as Bazel outputs.
 
-    Usage:
-        bazel build //targets/... --config=unused-deps
+    For Bazel-first analysis workflows, request swift_unused_deps_metadata.
     """,
     attr_aspects = ["deps", "private_deps", "plugins"],
 )

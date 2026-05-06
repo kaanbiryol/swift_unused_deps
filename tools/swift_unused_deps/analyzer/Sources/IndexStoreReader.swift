@@ -73,7 +73,7 @@ public enum IndexStoreReader {
             throw Error.storeOpenFailed(path: storePath, underlying: error)
         }
 
-        // Pass 1: collect defined USRs per module and per-file data.
+        // Pass 1: gather defined USRs per module and per-file data.
         var moduleDefinedUSRs: [String: Set<String>] = [:]
         var sourceFileEntries: [(
             sourceFile: String,
@@ -131,7 +131,7 @@ public enum IndexStoreReader {
                 }
             }
 
-            // Collect loaded modules from unit dependencies.
+            // Gather loaded modules from unit dependencies.
             var loadedModules = Set<String>()
             var systemModules = Set<String>()
             unitReader.forEach(dependency: { dep in

@@ -3,3 +3,9 @@ alias(
     actual = "//tools/swift_unused_deps/analyzer:swift_unused_deps",
     visibility = ["//visibility:public"],
 )
+
+alias(
+    name = "swift_unused_deps_apply",
+    actual = "//tools/swift_unused_deps/analyzer:swift_unused_deps_apply",
+    visibility = ["//visibility:public"],
+)

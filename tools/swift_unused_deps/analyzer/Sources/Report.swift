@@ -62,7 +62,7 @@ public enum Report {
 
         if totalHigh > 0 {
             lines.append("")
-            lines.append("Run with --fix to automatically apply fixes.")
+            lines.append("Run with --fix-plan-output to write an explicit fix plan.")
         }
 
         return lines.joined(separator: "\n")

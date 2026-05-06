@@ -1,8 +1,8 @@
-build:unused-deps --aspects=@swift_unused_deps//tools/swift_unused_deps/aspect:deps_info.bzl%swift_deps_aspect
-build:unused-deps --features=swift.index_while_building
-build:unused-deps --features=swift.use_global_index_store
-build:unused-deps --output_groups=swift_deps_info,swift_index_store
-build:unused-deps --spawn_strategy=local
+build:swift-unused-deps --features=swift.index_while_building
+build:swift-unused-deps --features=swift.use_global_index_store
+build:swift-unused-deps --aspects=@swift_unused_deps//tools/swift_unused_deps:defs.bzl%swift_unused_deps_aspect
+build:swift-unused-deps --output_groups=swift_unused_deps_metadata,swift_index_store
+build:swift-unused-deps --spawn_strategy=local
 
-build:unused-deps-ios --config=unused-deps
-build:unused-deps-ios --platforms=@apple_support//platforms:ios_sim_arm64
+build:swift-unused-deps-ios --config=swift-unused-deps
+build:swift-unused-deps-ios --platforms=@apple_support//platforms:ios_sim_arm64

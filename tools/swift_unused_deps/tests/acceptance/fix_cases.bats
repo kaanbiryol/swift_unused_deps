@@ -18,7 +18,7 @@ teardown_file() {
   assert_file_contains "cases/Targets/UnusedImport/BUILD.bazel" "//cases/Deps/LibA"
   assert_file_contains "cases/Targets/UnusedImport/BUILD.bazel" "//cases/Deps/LibB"
 
-  run_swift_unused_deps_in_workspace //cases/Targets/UnusedImport:UnusedImport --fix --min-confidence high
+  run_swift_unused_deps_in_workspace //cases/Targets/UnusedImport:UnusedImport --apply-fix-plan --min-confidence high
 
   assert_status 0
   assert_output_contains "Summary: 1 target analyzed, 0 issues found."
@@ -32,7 +32,7 @@ teardown_file() {
   assert_file_contains "cases/Targets/MissingDirectDep/BUILD.bazel" "//cases/Deps/DirectDepWithTransitive"
   assert_file_not_contains "cases/Targets/MissingDirectDep/BUILD.bazel" "//cases/Deps/TransitiveDep"
 
-  run_swift_unused_deps_in_workspace //cases/Targets/MissingDirectDep:MissingDirectDep --fix --min-confidence high
+  run_swift_unused_deps_in_workspace //cases/Targets/MissingDirectDep:MissingDirectDep --apply-fix-plan --min-confidence high
 
   assert_status 0
   assert_output_contains "Summary: 1 target analyzed, 0 issues found."
@@ -42,12 +42,12 @@ teardown_file() {
 }
 
 @test "fix leaves low-confidence candidate private dep unchanged" {
-  run_swift_unused_deps_in_workspace //cases/Targets/CandidatePrivateDep:CandidatePrivateDep --fix --min-confidence high
+  run_swift_unused_deps_in_workspace //cases/Targets/CandidatePrivateDep:CandidatePrivateDep --apply-fix-plan --min-confidence high
 
   assert_status 0
   assert_output_contains "Summary: 1 target analyzed, 0 issues found."
-  if [[ "${stderr}" != *"No high-confidence fixes to apply."* ]]; then
-    echo "expected stderr to contain: No high-confidence fixes to apply." >&2
+  if [[ "${stderr}" != *"No fixes to apply."* ]]; then
+    echo "expected stderr to contain: No fixes to apply." >&2
     echo "--- stderr ---" >&2
     echo "${stderr}" >&2
     return 1
@@ -58,7 +58,7 @@ teardown_file() {
 }
 
 @test "fix removes multiple unused BUILD deps" {
-  run_swift_unused_deps_in_workspace //cases/Targets/MultipleUnusedDeps:MultipleUnusedDeps --fix --min-confidence high
+  run_swift_unused_deps_in_workspace //cases/Targets/MultipleUnusedDeps:MultipleUnusedDeps --apply-fix-plan --min-confidence high
 
   assert_status 0
   assert_output_contains "Summary: 1 target analyzed, 0 issues found."
@@ -71,7 +71,7 @@ teardown_file() {
 }
 
 @test "fix keeps custom module-name dep and removes unused BUILD dep" {
-  run_swift_unused_deps_in_workspace //cases/Targets/UnusedDepCustomModuleName:UnusedDepCustomModuleName --fix --min-confidence high
+  run_swift_unused_deps_in_workspace //cases/Targets/UnusedDepCustomModuleName:UnusedDepCustomModuleName --apply-fix-plan --min-confidence high
 
   assert_status 0
   assert_output_contains "Summary: 1 target analyzed, 0 issues found."
@@ -84,7 +84,7 @@ teardown_file() {
 }
 
 @test "fix removes attributed unused import and BUILD dep" {
-  run_swift_unused_deps_in_workspace //cases/Targets/UnusedAttributedImport:UnusedAttributedImport --fix --min-confidence high
+  run_swift_unused_deps_in_workspace //cases/Targets/UnusedAttributedImport:UnusedAttributedImport --apply-fix-plan --min-confidence high
 
   assert_status 0
   assert_output_contains "Summary: 1 target analyzed, 0 issues found."
@@ -96,7 +96,7 @@ teardown_file() {
 }
 
 @test "fix removes unused swift_library_group BUILD dep" {
-  run_swift_unused_deps_in_workspace //cases/Targets/UnusedLibraryGroupDep:UnusedLibraryGroupDep --fix --min-confidence high
+  run_swift_unused_deps_in_workspace //cases/Targets/UnusedLibraryGroupDep:UnusedLibraryGroupDep --apply-fix-plan --min-confidence high
 
   assert_status 0
   assert_output_contains "Summary: 1 target analyzed, 0 issues found."
@@ -106,7 +106,7 @@ teardown_file() {
 }
 
 @test "fix removes unused BUILD dep for iOS target" {
-  run_swift_unused_deps_in_workspace --build-config unused-deps-ios //cases/Targets/UnusedDepIOSTarget:UnusedDepIOSTarget --fix --min-confidence high
+  run_swift_unused_deps_in_workspace --build-config swift-unused-deps-ios //cases/Targets/UnusedDepIOSTarget:UnusedDepIOSTarget --apply-fix-plan --min-confidence high
 
   assert_status 0
   assert_output_contains "Summary: 1 target analyzed, 0 issues found."

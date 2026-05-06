@@ -31,17 +31,18 @@ build_swift_unused_deps_cli() {
   fi
 
   root="$(repo_root)"
-  SWIFT_UNUSED_DEPS_BINARY="${root}/bazel-bin/tools/swift_unused_deps/analyzer/swift_unused_deps"
-  if [[ -x "${SWIFT_UNUSED_DEPS_BINARY}" ]]; then
-    return 0
-  fi
-
-  (cd "${root}" && bazel build //:swift_unused_deps >/dev/null)
+  (cd "${root}" && bazel build //:swift_unused_deps //:swift_unused_deps_apply >/dev/null)
 
   bazel_bin="$(cd "${root}" && bazel info bazel-bin 2>/dev/null)"
   SWIFT_UNUSED_DEPS_BINARY="${bazel_bin}/tools/swift_unused_deps/analyzer/swift_unused_deps"
   if [[ ! -x "${SWIFT_UNUSED_DEPS_BINARY}" ]]; then
     echo "swift_unused_deps binary not found: ${SWIFT_UNUSED_DEPS_BINARY}" >&2
+    return 1
+  fi
+
+  SWIFT_UNUSED_DEPS_APPLY_BINARY="${bazel_bin}/tools/swift_unused_deps/analyzer/swift_unused_deps_apply"
+  if [[ ! -x "${SWIFT_UNUSED_DEPS_APPLY_BINARY}" ]]; then
+    echo "swift_unused_deps_apply binary not found: ${SWIFT_UNUSED_DEPS_APPLY_BINARY}" >&2
     return 1
   fi
 }
@@ -50,6 +51,7 @@ export_fixture_workspace() {
   export FIXTURE_TEMP_DIR
   export FIXTURE_WORKSPACE
   export SWIFT_UNUSED_DEPS_BINARY
+  export SWIFT_UNUSED_DEPS_APPLY_BINARY
 }
 
 cleanup_fixture_workspace() {
@@ -72,8 +74,90 @@ run_swift_unused_deps_in_workspace() {
     shift
     unset BUILD_WORKING_DIRECTORY
     export BUILD_WORKSPACE_DIRECTORY="$PWD"
-    "$@"
-  ' bash "${FIXTURE_WORKSPACE}" "${SWIFT_UNUSED_DEPS_BINARY}" "$@"
+
+    target=""
+    fix="false"
+    build_config="swift-unused-deps"
+    build_flags=()
+    analyzer_flags=()
+
+    while [[ $# -gt 0 ]]; do
+      case "$1" in
+        --build-config)
+          build_config="$2"
+          shift 2
+          ;;
+        --build-config=*)
+          build_config="${1#*=}"
+          shift
+          ;;
+        --platforms)
+          build_flags+=("--platforms=$2")
+          shift 2
+          ;;
+        --platforms=*)
+          build_flags+=("$1")
+          shift
+          ;;
+        --apply-fix-plan)
+          fix="true"
+          shift
+          ;;
+        --min-confidence|--extra-system-modules|--index-store-path)
+          analyzer_flags+=("$1" "$2")
+          shift 2
+          ;;
+        --min-confidence=*|--extra-system-modules=*|--index-store-path=*|--json)
+          analyzer_flags+=("$1")
+          shift
+          ;;
+        --*)
+          analyzer_flags+=("$1")
+          shift
+          ;;
+        *)
+          target="$1"
+          shift
+          ;;
+      esac
+    done
+
+    if [[ -z "${target}" ]]; then
+      echo "missing target pattern" >&2
+      exit 2
+    fi
+
+    run_analysis() {
+      local extra_args=("$@")
+      local bazel_bin
+      local output_path
+
+      bazel build --config="${build_config}" "${build_flags[@]}" "${target}" >/dev/null || return $?
+      bazel_bin="$(bazel info bazel-bin 2>/dev/null)"
+      output_path="$(bazel info output_path 2>/dev/null)"
+      "${SWIFT_UNUSED_DEPS_BINARY}" analyze \
+        --metadata-root "${bazel_bin}" \
+        --index-store-path "${output_path}/_global_index_store" \
+        --filter "${target}" \
+        --workspace-directory "$PWD" \
+        "${analyzer_flags[@]}" \
+        "${extra_args[@]}"
+    }
+
+    if [[ "${fix}" == "true" ]]; then
+      fix_plan="${TMPDIR:-/tmp}/swift-unused-deps-${RANDOM}.fix_plan.json"
+      run_analysis --fix-plan-output "${fix_plan}" >/dev/null
+      analysis_status=$?
+      if [[ "${analysis_status}" -ne 0 && "${analysis_status}" -ne 1 ]]; then
+        exit "${analysis_status}"
+      fi
+      "${SWIFT_UNUSED_DEPS_APPLY_BINARY}" "${fix_plan}" >&2 || exit $?
+      rm -f "${fix_plan}"
+      run_analysis
+    else
+      run_analysis
+    fi
+  ' bash "${FIXTURE_WORKSPACE}" "$@"
 }
 
 assert_status() {

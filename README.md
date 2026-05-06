@@ -9,14 +9,26 @@ Compares declared `deps` in BUILD files against what the Swift compiler actually
 ## Quick start
 
 ```sh
-# Analyze and print results (builds automatically)
-bazel run @swift_unused_deps//:swift_unused_deps -- //App/...
+# Build with the swift_unused_deps aspect enabled
+bazel build --config=swift-unused-deps //App/...
 
-# Auto-fix high-confidence issues
-bazel run @swift_unused_deps//:swift_unused_deps -- //App/... --fix
+# Analyze the produced artifacts
+bazel run //:swift_unused_deps -- analyze \
+  --metadata-root "$(bazel info bazel-bin)" \
+  --index-store-path "$(bazel info output_path)/_global_index_store" \
+  --filter //App/...
 
-# Analyze iOS-only targets with a dedicated Bazel config
-bazel run @swift_unused_deps//:swift_unused_deps -- --build-config unused-deps-ios //App:App
+# Produce an explicit fix plan, then apply it
+bazel run //:swift_unused_deps -- analyze \
+  --metadata-root "$(bazel info bazel-bin)" \
+  --index-store-path "$(bazel info output_path)/_global_index_store" \
+  --filter //App/... \
+  --fix-plan-output /tmp/swift-unused-deps.fix_plan.json
+bazel run //:swift_unused_deps_apply -- \
+  /tmp/swift-unused-deps.fix_plan.json
+
+# Analyze iOS-only targets
+bazel build --config=swift-unused-deps-ios //App/...
 ```
 
 ```
@@ -30,41 +42,26 @@ bazel run @swift_unused_deps//:swift_unused_deps -- --build-config unused-deps-i
 Summary: 10 targets analyzed, 1 issue found.
   1 high.
 
-Run with --fix to automatically apply fixes.
+Run with --fix-plan-output to produce an explicit fix plan.
 ```
 
 ## Setup
 
-### 1. Add the dependency
-
-In your `MODULE.bazel`, pin the GitHub release tag:
-
-```python
-bazel_dep(name = "swift_unused_deps", version = "0.1.0")
-
-git_override(
-    module_name = "swift_unused_deps",
-    remote = "https://github.com/kaanbiryol/swift_unused_deps.git",
-    tag = "v0.1.0",
-)
-```
-
-### 2. Configure your `.bazelrc`
+Configure a Bazel build config that enables rules_swift index-store output,
+attaches the aspect, and requests the metadata output group:
 
 ```
-build:unused-deps --features=swift.index_while_building
-build:unused-deps --features=swift.use_global_index_store
-build:unused-deps --aspects=@swift_unused_deps//tools/swift_unused_deps/aspect:deps_info.bzl%swift_deps_aspect
-build:unused-deps --output_groups=swift_deps_info,swift_index_store
-build:unused-deps --spawn_strategy=local
+build:swift-unused-deps --features=swift.index_while_building
+build:swift-unused-deps --features=swift.use_global_index_store
+build:swift-unused-deps --aspects=//tools/swift_unused_deps:defs.bzl%swift_unused_deps_aspect
+build:swift-unused-deps --output_groups=swift_unused_deps_metadata,swift_index_store
+build:swift-unused-deps --spawn_strategy=local
+
+build:swift-unused-deps-ios --config=swift-unused-deps
+build:swift-unused-deps-ios --platforms=@apple_support//platforms:ios_sim_arm64
 ```
 
-For iOS projects that require a platform setting:
-
-```
-build:unused-deps-ios --config=unused-deps
-build:unused-deps-ios --platforms=@apple_support//platforms:ios_sim_arm64
-```
+Use the iOS config only if your Swift targets require that platform.
 
 ### Prerequisites
 
@@ -76,46 +73,76 @@ build:unused-deps-ios --platforms=@apple_support//platforms:ios_sim_arm64
 ### Basic analysis
 
 ```sh
-# Analyze all targets under a path
-bazel run @swift_unused_deps//:swift_unused_deps -- //libraries/...
+TARGETS=//libraries/...
+CONFIG=swift-unused-deps
 
-# Analyze a specific target
-bazel run @swift_unused_deps//:swift_unused_deps -- //App:App
+bazel build --config="${CONFIG}" "${TARGETS}"
+
+bazel run //:swift_unused_deps -- analyze \
+  --metadata-root "$(bazel info bazel-bin)" \
+  --index-store-path "$(bazel info output_path)/_global_index_store" \
+  --filter "${TARGETS}"
 ```
 
-Each run automatically executes `bazel build <pattern> --config=<build-config>` first, then analyzes the produced metadata and index store. Bazel's normal cache handles incremental rebuilds.
+`analyze` never invokes `bazel build`; it only reads existing metadata and
+index-store artifacts. Bazel owns the aspect build, and the Swift analyzer owns
+Swift index-store interpretation.
 
-The default build config is `unused-deps`. For iOS-only targets or any workspace that uses a different analysis config name, pass `--build-config <name>`.
+For iOS-only targets, use `CONFIG=swift-unused-deps-ios`.
 
-### Auto-fix
+### Fix plans
 
-Use `--fix` to automatically apply high-confidence fixes using [buildozer](https://github.com/bazelbuild/buildtools/tree/master/buildozer):
+The preferred fix flow is explicit: write a structured fix plan, inspect it if needed, then apply it.
 
 ```sh
-bazel run @swift_unused_deps//:swift_unused_deps -- //libraries/... --fix
+TARGETS=//libraries/...
+CONFIG=swift-unused-deps
+FIX_PLAN=/tmp/swift-unused-deps.fix_plan.json
+
+bazel build --config="${CONFIG}" "${TARGETS}"
+
+bazel run //:swift_unused_deps -- analyze \
+  --metadata-root "$(bazel info bazel-bin)" \
+  --index-store-path "$(bazel info output_path)/_global_index_store" \
+  --filter "${TARGETS}" \
+  --fix-plan-output "${FIX_PLAN}"
+
+bazel run //:swift_unused_deps_apply -- \
+  "${FIX_PLAN}"
 ```
 
-This runs buildozer commands to:
+Fix plans contain source import removals and structured BUILD edits. The apply command uses [buildozer](https://github.com/bazelbuild/buildtools/tree/master/buildozer) for BUILD edits and applies Swift import removals directly.
+
+Fixes include:
 - Remove unused deps (`remove deps`)
 - Add missing direct deps (`add deps`)
 
-After applying fixes, the tool rebuilds and re-runs analysis so the printed report reflects the post-fix state.
+After applying fixes, rerun the `bazel build` and `analyze` commands to verify
+the final report.
 
 Only high-confidence issues are fixed. Low-confidence issues (like unresolved modules) are reported for manual investigation.
 
-If a module is imported in Swift source but no symbols from it are referenced anywhere in the target, `--fix` removes both the unused `import` statement(s) and the Bazel dep.
+If a module is imported in Swift source but no symbols from it are referenced anywhere in the target, the fix plan removes both the unused `import` statement(s) and the Bazel dep.
 
 ### JSON output
 
 ```sh
-bazel run @swift_unused_deps//:swift_unused_deps -- //libraries/... --json
+bazel run //:swift_unused_deps -- analyze \
+  --metadata-root "$(bazel info bazel-bin)" \
+  --index-store-path "$(bazel info output_path)/_global_index_store" \
+  --filter //libraries/... \
+  --json
 ```
 
 ### Filtering by confidence
 
 ```sh
 # Only show high-confidence issues
-bazel run @swift_unused_deps//:swift_unused_deps -- //libraries/... --min-confidence high
+bazel run //:swift_unused_deps -- analyze \
+  --metadata-root "$(bazel info bazel-bin)" \
+  --index-store-path "$(bazel info output_path)/_global_index_store" \
+  --filter //libraries/... \
+  --min-confidence high
 ```
 
 Values: `low` (default), `medium`, `high`.
@@ -126,28 +153,43 @@ The tool uses compiler/index-store metadata to skip system modules. If a custom
 toolchain or SDK module is not reported as system, add it explicitly:
 
 ```sh
-bazel run @swift_unused_deps//:swift_unused_deps -- //App/... --extra-system-modules MySystemModule,AnotherModule
+bazel run //:swift_unused_deps -- analyze \
+  --metadata-root "$(bazel info bazel-bin)" \
+  --index-store-path "$(bazel info output_path)/_global_index_store" \
+  --filter //App/... \
+  --extra-system-modules MySystemModule,AnotherModule
 ```
 
 ### Custom build config
 
-Use a different Bazel config for the automatic build step when needed, such as iOS-only targets:
+Use a different Bazel config for the aspect build when your workspace needs one:
 
 ```sh
-bazel run @swift_unused_deps//:swift_unused_deps -- --build-config unused-deps-ios //App/...
+CONFIG=swift-unused-deps-ios
+TARGETS=//App/...
+
+bazel build --config="${CONFIG}" "${TARGETS}"
+
+bazel run //:swift_unused_deps -- analyze \
+  --metadata-root "$(bazel info bazel-bin)" \
+  --index-store-path "$(bazel info output_path)/_global_index_store" \
+  --filter "${TARGETS}"
 ```
 
 ### All options
 
 | Option | Description |
 |--------|-------------|
-| `PATTERN` | Bazel target pattern to analyze (e.g. `//libraries/...`) |
-| `--fix` | Run buildozer to fix high-confidence issues |
+| `analyze` | Analyze already-produced metadata and index-store artifacts without invoking Bazel |
+| `apply FIX_PLAN` | Apply one or more structured fix-plan JSON files |
+| `--fix-plan-output` | Write high-confidence fixes as structured JSON |
 | `--json` | Output JSON instead of text |
 | `--min-confidence` | Minimum confidence level: `low`, `medium`, `high` (default: `low`) |
 | `--extra-system-modules` | Comma-separated module names to treat as system modules |
-| `--index-store-path` | Override path to Swift index store (default: Bazel-managed `bazel-out/_global_index_store`) |
-| `--build-config` | Bazel config for the automatic build step (default: `unused-deps`) |
+| `--metadata-root` | Root containing `.swift_deps_info.json` files |
+| `--index-store-path` | Path to the Swift index store |
+| `--filter` | Bazel target pattern to filter analysis results |
+| `--workspace-directory` | Workspace directory used for source paths and label conversion |
 
 ## What it detects
 
@@ -160,14 +202,19 @@ bazel run @swift_unused_deps//:swift_unused_deps -- --build-config unused-deps-i
 
 ## How it works
 
-`bazel build --config=unused-deps` runs a Bazel [aspect](https://bazel.build/extending/aspects) on every Swift target. The aspect is the Bazel-native collection layer. For each target, it:
+`bazel build --config=swift-unused-deps` runs a Bazel [aspect](https://bazel.build/extending/aspects) on every Swift target. For each target, the aspect:
 
-1. **Collects metadata** - reads `SwiftInfo` from rules_swift to get module names, declared deps, and the transitive module map
+1. **Emits metadata** - reads `SwiftInfo` from rules_swift to get module names, declared deps, and the transitive module map
 2. **Records index-store locations** - points the analyzer at the `rules_swift` global index store produced by `swift.index_while_building` + `swift.use_global_index_store`
 
 Everything is cached by Bazel. Re-running after no changes is instant.
 
-`bazel run @swift_unused_deps//:swift_unused_deps -- <pattern>` first builds the requested targets with `--config=<build-config>`, then the Swift analyzer reads those outputs and prints a human-readable summary. The analyzer requires index-store data because it distinguishes direct imports from actual symbol references and drives unused-import source edits. With `--fix`, the Swift CLI removes unused imports, runs buildozer, rebuilds, and prints the post-fix results.
+Bazel builds the requested targets with the configured aspect and index-store
+features. `analyze` reads those outputs and prints a report. The analyzer
+requires index-store data because it distinguishes direct imports from actual
+symbol references and drives unused-import source edits. Fixing is represented
+as a structured plan first; `swift_unused_deps_apply` is the explicit
+workspace-mutating step.
 
 ### Exit codes
 
@@ -179,11 +226,11 @@ Everything is cached by Bazel. Re-running after no changes is instant.
 
 ## Limitations
 
-- Requires `--spawn_strategy=local` (most iOS Bazel projects already use this)
+- Index-store generation uses `--spawn_strategy=local`; remote execution is not supported for index-store generation
 - Pure Swift targets only. Mixed Swift/ObjC targets emit a warning.
-- `@_exported import` re-exports are treated as non-removable by `--fix`
+- `@_exported import` re-exports are treated as non-removable by fix plans
 - Scoped imports like `import struct LibA.Button` are not analyzed reliably end to end yet
-- Unused Swift `import` statements are fixed only in batch mode, where the tool has index store data for per-file source edits
+- Unused Swift `import` statements are fixed only when the analyzer has index store data for per-file source edits
 
 ## Development Fixtures
 
@@ -215,7 +262,15 @@ To inspect a fixture manually:
 ```sh
 tools/swift_unused_deps/tests/helpers/materialize_fixture_workspace.sh cases_workspace /tmp/swift-unused-deps-cases
 cd /tmp/swift-unused-deps-cases
-bazel run //:swift_unused_deps -- //cases/Targets/UnusedImport:UnusedImport --fix
+TARGETS=//cases/Targets/UnusedImport:UnusedImport
+CONFIG=swift-unused-deps
+bazel build --config="${CONFIG}" "${TARGETS}"
+bazel run //:swift_unused_deps -- analyze \
+  --metadata-root "$(bazel info bazel-bin)" \
+  --index-store-path "$(bazel info output_path)/_global_index_store" \
+  --filter "${TARGETS}" \
+  --fix-plan-output /tmp/swift-unused-deps.fix_plan.json
+bazel run //:swift_unused_deps_apply -- /tmp/swift-unused-deps.fix_plan.json
 ```
 
 ## License

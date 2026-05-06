@@ -44,14 +44,10 @@ struct BazelInfoProvider {
     }
 }
 
-struct BazelBuildOutput {
-    let metadataRoot: String?
-}
-
-public struct SwiftUnusedDepsCommand: ParsableCommand {
+public struct SwiftUnusedDepsAnalyzeCommand: ParsableCommand {
     public static let configuration = CommandConfiguration(
-        commandName: "swift_unused_deps",
-        abstract: "Detect unused and missing direct Bazel deps for Swift targets."
+        commandName: "analyze",
+        abstract: "Analyze already-produced swift_unused_deps metadata and Swift index-store artifacts."
     )
 
     @Flag(help: "Output JSON.")
@@ -60,32 +56,39 @@ public struct SwiftUnusedDepsCommand: ParsableCommand {
     @Option(help: "Minimum confidence level to report: low, medium, high.")
     var minConfidence: String = "low"
 
-    @Flag(help: "Run buildozer to fix high-confidence issues.")
-    var fix = false
-
     @Option(help: "Comma-separated extra module names to treat as system modules.")
     var extraSystemModules: String?
 
-    @Option(help: "Override path to Swift index store instead of using rules_swift outputs.")
+    @Option(help: "Root containing .swift_deps_info.json files.")
+    var metadataRoot: String
+
+    @Option(help: "Path to the Swift index store.")
     var indexStorePath: String?
 
-    @Option(help: "Bazel config to use for the automatic build step in batch mode.")
-    var buildConfig: String = "unused-deps"
-
-    @Argument(help: "Bazel target pattern to analyze (e.g. //libraries/...).")
+    @Option(help: "Bazel target pattern to filter analysis results.")
     var filter: String?
+
+    @Option(help: "Workspace directory used for source paths and label conversion.")
+    var workspaceDirectory: String?
+
+    @Option(help: "Write a structured JSON fix plan for high-confidence issues.")
+    var fixPlanOutput: String?
+
+    @Option(help: "Write the rendered report to this file instead of stdout.")
+    var reportOutput: String?
+
+    @Option(help: "Write the analyzer exit code to this file and exit 0.")
+    var exitCodeOutput: String?
 
     public init() {}
 
     public func validate() throws {
-        if fix && json {
-            throw ValidationError("--fix cannot be combined with --json.")
+        if metadataRoot.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            throw ValidationError("--metadata-root cannot be empty.")
         }
-        if filter == nil {
-            throw ValidationError("Batch mode requires a Bazel target pattern.")
-        }
-        if buildConfig.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            throw ValidationError("--build-config cannot be empty.")
+        if let workspaceDirectory,
+           workspaceDirectory.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            throw ValidationError("--workspace-directory cannot be empty.")
         }
     }
 
@@ -94,68 +97,14 @@ public struct SwiftUnusedDepsCommand: ParsableCommand {
             throw ValidationError("Invalid confidence level '\(minConfidence)'. Use: low, medium, high")
         }
 
-        let extraSystem = parseExtraSystemModules(extraSystemModules)
-        try runBatch(confidence: confidence, extraSystem: extraSystem)
-    }
-
-    private func runBatch(confidence: Confidence, extraSystem: Set<String>) throws {
-        guard let pattern = filter else {
-            throw ValidationError("Batch mode requires a Bazel target pattern.")
-        }
-        let initialOutput = try analyzeBatch(pattern: pattern, extraSystem: extraSystem)
-        let output: BatchAnalyzer.Output
-
-        if fix && !json {
-            let didApplyFixes = try runFixes(results: initialOutput.results)
-            if didApplyFixes {
-                printErr("")
-                printErr("Re-running analysis after fixes...")
-                printErr("")
-                output = try analyzeBatch(pattern: pattern, extraSystem: extraSystem)
-            } else {
-                output = initialOutput
-            }
-        } else {
-            output = initialOutput
-        }
-
-        print(render(results: output.results, minConfidence: confidence))
-
-        let hasIssues = output.results.contains { result in
-            result.issues.contains { $0.confidence >= confidence }
-        }
-        if !output.warnings.isEmpty {
-            throw ExitCode(2)
-        }
-        if hasIssues {
-            throw ExitCode(1)
-        }
-    }
-
-    private func analyzeBatch(
-        pattern: String,
-        extraSystem: Set<String>
-    ) throws -> BatchAnalyzer.Output {
-        let workspace = Self.workspaceDirectory()
-        let buildOutput = try runBazelBuild(pattern: pattern, workspaceDirectory: workspace)
-
-        let metadataRoot = buildOutput.metadataRoot ?? Self.resolveDefaultMetadataRoot(
-            targetPattern: pattern,
-            buildConfig: buildConfig,
-            workspaceDirectory: workspace
-        )
-        guard !metadataRoot.isEmpty else {
-            printErr("ERROR: Could not determine metadata root.")
-            throw ExitCode(2)
-        }
-
+        let workspace = resolvedWorkspaceDirectory()
         let labelConverter = LabelConverter.loadFromBazel(workspaceDirectory: workspace?.path) ?? .identity
 
         let output = BatchAnalyzer.analyze(options: .init(
             bazelBin: metadataRoot,
-            indexStorePath: resolvedIndexStorePath(workspaceDirectory: workspace),
-            extraSystemModules: extraSystem,
-            filter: pattern,
+            indexStorePath: indexStorePath,
+            extraSystemModules: SwiftUnusedDepsCommand.parseExtraSystemModules(extraSystemModules),
+            filter: filter,
             labelConverter: labelConverter,
             workspaceDirectory: workspace
         ))
@@ -165,305 +114,131 @@ public struct SwiftUnusedDepsCommand: ParsableCommand {
         }
 
         if output.results.isEmpty && output.warnings.isEmpty {
-            printErr("ERROR: No metadata files found.")
-            printErr("Hint: verify your .bazelrc config named '\(buildConfig)' writes aspect outputs.")
+            printErr("ERROR: No metadata files found under \(metadataRoot).")
             throw ExitCode(2)
         }
 
-        if output.results.isEmpty {
-            printErr("ERROR: No analysis results found for \(pattern).")
-            throw ExitCode(2)
+        if let fixPlanOutput {
+            let plan = FixPlan.from(results: output.results)
+            try SwiftUnusedDepsCommand.write(FixPlan.formatJSON(plan), to: fixPlanOutput)
         }
 
-        return output
-    }
+        let rendered = json
+            ? Report.formatJSON(results: output.results, minConfidence: confidence)
+            : Report.formatText(results: output.results, minConfidence: confidence)
 
-    private func render(results: [AnalysisResult], minConfidence: Confidence) -> String {
-        if json {
-            return Report.formatJSON(results: results, minConfidence: minConfidence)
-        }
-        return Report.formatText(results: results, minConfidence: minConfidence)
-    }
-
-    private func runFixes(results: [AnalysisResult]) throws -> Bool {
-        let workspace = Self.workspaceDirectory()
-        let fixableIssues = results
-            .flatMap(\.issues)
-            .filter { $0.confidence >= .high }
-        let sourceImportRemovals = Array(Set(fixableIssues.flatMap(\.sourceImportRemovals))).sorted {
-            if $0.filePath == $1.filePath {
-                return $0.moduleName < $1.moduleName
-            }
-            return $0.filePath < $1.filePath
-        }
-        let commands = fixableIssues.compactMap(\.buildozerCommand)
-
-        guard !commands.isEmpty || !sourceImportRemovals.isEmpty else {
-            printErr("No high-confidence fixes to apply.")
-            return false
-        }
-
-        printErr("")
-        printErr("Applying \(commands.count) BUILD fix(es) and \(sourceImportRemovals.count) source import removal(s)...")
-        printErr("")
-
-        for removal in sourceImportRemovals {
-            printErr("  remove import \(removal.moduleName) from \(removal.filePath)")
-        }
-
-        let sourceImportEdits = try SourceImportEditor.plan(
-            removals: sourceImportRemovals,
-            workspaceDirectory: workspace
+        let exitCode = Self.exitCode(
+            output: output,
+            minConfidence: confidence
         )
 
-        if commands.isEmpty {
-            try SourceImportEditor.apply(edits: sourceImportEdits)
-            printErr("Done: source import removal(s) applied.")
-            return true
-        }
-
-        let result = Buildozer.runBatch(
-            commands: commands,
-            workingDirectory: workspace
-        )
-        if result.success {
-            try SourceImportEditor.apply(edits: sourceImportEdits)
-            printErr("Done: \(commands.count) BUILD fix(es) and \(sourceImportRemovals.count) source import removal(s) applied.")
-            return true
-        } else if result.noChanges {
-            printErr("WARNING: buildozer made no changes (\(commands.count) command(s) attempted).")
-            printErr("The labels in the commands may not match the label format in BUILD files.")
-            return false
+        if let reportOutput {
+            try SwiftUnusedDepsCommand.write(rendered, to: reportOutput)
         } else {
-            printErr("FAILED: \(result.output)")
-            throw ExitCode(1)
+            print(rendered)
+        }
+
+        if let exitCodeOutput {
+            try SwiftUnusedDepsCommand.write("\(exitCode)\n", to: exitCodeOutput)
+            return
+        }
+
+        if exitCode != 0 {
+            throw ExitCode(exitCode)
         }
     }
 
-    private func parseExtraSystemModules(_ rawValue: String?) -> Set<String> {
+    private func resolvedWorkspaceDirectory() -> URL? {
+        if let workspaceDirectory {
+            return URL(fileURLWithPath: workspaceDirectory, isDirectory: true)
+        }
+        return SwiftUnusedDepsCommand.workspaceDirectory()
+    }
+
+    private static func exitCode(
+        output: BatchAnalyzer.Output,
+        minConfidence: Confidence
+    ) -> Int32 {
+        if !output.warnings.isEmpty {
+            return 2
+        }
+        let hasIssues = output.results.contains { result in
+            result.issues.contains { $0.confidence >= minConfidence }
+        }
+        return hasIssues ? 1 : 0
+    }
+}
+
+public struct SwiftUnusedDepsApplyCommand: ParsableCommand {
+    public static let configuration = CommandConfiguration(
+        commandName: "apply",
+        abstract: "Apply a swift_unused_deps fix plan to the workspace."
+    )
+
+    @Option(help: "Workspace directory where source and BUILD edits should be applied.")
+    var workspaceDirectory: String?
+
+    @Argument(help: "One or more fix_plan.json files.")
+    var fixPlanPaths: [String] = []
+
+    public init() {}
+
+    public func validate() throws {
+        if fixPlanPaths.isEmpty {
+            throw ValidationError("apply requires at least one fix plan path.")
+        }
+        if let workspaceDirectory,
+           workspaceDirectory.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            throw ValidationError("--workspace-directory cannot be empty.")
+        }
+    }
+
+    public func run() throws {
+        let plans = try fixPlanPaths.map {
+            try FixPlan.read(from: URL(fileURLWithPath: $0))
+        }
+        let plan = FixPlan.merge(plans)
+        let workspace = resolvedWorkspaceDirectory()
+
+        printErr("Applying \(plan.buildEdits.count) BUILD fix(es) and \(plan.sourceImportRemovals.count) source import removal(s)...")
+        let result = try FixPlanApplier.apply(plan, workspaceDirectory: workspace)
+        if result.applied {
+            printErr("Done: \(result.buildFixCount) BUILD fix(es) and \(result.sourceImportRemovalCount) source import removal(s) applied.")
+        }
+    }
+
+    private func resolvedWorkspaceDirectory() -> URL? {
+        if let workspaceDirectory {
+            return URL(fileURLWithPath: workspaceDirectory, isDirectory: true)
+        }
+        return SwiftUnusedDepsCommand.workspaceDirectory()
+    }
+}
+
+public struct SwiftUnusedDepsCommand: ParsableCommand {
+    public static let configuration = CommandConfiguration(
+        commandName: "swift_unused_deps",
+        abstract: "Detect unused and missing direct Bazel deps for Swift targets.",
+        subcommands: [
+            SwiftUnusedDepsAnalyzeCommand.self,
+            SwiftUnusedDepsApplyCommand.self,
+        ]
+    )
+
+    public init() {}
+
+    static func parseExtraSystemModules(_ rawValue: String?) -> Set<String> {
         guard let rawValue else { return [] }
         return Set(rawValue.split(separator: ",").map {
             $0.trimmingCharacters(in: .whitespacesAndNewlines)
         }.filter { !$0.isEmpty })
     }
 
-    private func resolvedIndexStorePath(workspaceDirectory: URL?) -> String? {
-        if let indexStorePath {
-            return indexStorePath
-        }
-        return Self.defaultIndexStorePath(workspaceDirectory: workspaceDirectory)
-    }
-
-    static func defaultIndexStorePath(
-        workspaceDirectory: URL?,
-        bazelInfo: BazelInfoProvider = .process
-    ) -> String? {
-        guard let workspaceDirectory else { return nil }
-        if let outputPath = bazelInfo.lookup("output_path", currentDirectory: workspaceDirectory) {
-            return URL(fileURLWithPath: outputPath, isDirectory: true)
-                .appendingPathComponent("_global_index_store", isDirectory: true)
-                .path
-        }
-        return workspaceDirectory
-            .appendingPathComponent("bazel-out/_global_index_store", isDirectory: true)
-            .path
-    }
-
-    static func bazelBuildArguments(
-        pattern: String,
-        config: String,
-        buildEventJSONFile: String? = nil
-    ) -> [String] {
-        var arguments = [
-            "bazel", "build", pattern, "--config=\(config)",
-            "--features=swift.index_while_building",
-            "--features=swift.use_global_index_store",
-        ]
-        if let buildEventJSONFile {
-            arguments.append("--build_event_json_file=\(buildEventJSONFile)")
-            arguments.append("--build_event_json_file_path_conversion=false")
-        }
-        return arguments
-    }
-
-    private func runBazelBuild(pattern: String, workspaceDirectory: URL?) throws -> BazelBuildOutput {
-        guard let workspace = workspaceDirectory else {
-            printErr("WARNING: BUILD_WORKSPACE_DIRECTORY not set, skipping automatic build.")
-            return BazelBuildOutput(metadataRoot: nil)
-        }
-
-        let buildEventURL = FileManager.default.temporaryDirectory
-            .appendingPathComponent("swift-unused-deps-\(UUID().uuidString).bep.json")
-        defer { try? FileManager.default.removeItem(at: buildEventURL) }
-
-        printErr("Building \(pattern) with --config=\(buildConfig) ...")
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
-        process.arguments = Self.bazelBuildArguments(
-            pattern: pattern,
-            config: buildConfig,
-            buildEventJSONFile: buildEventURL.path
-        )
-        process.currentDirectoryURL = workspace
-        // Inherit stderr so the user sees build progress.
-        process.standardError = FileHandle.standardError
-        // Suppress stdout (build info lines).
-        process.standardOutput = FileHandle.nullDevice
-        try process.run()
-        process.waitUntilExit()
-        if process.terminationStatus != 0 {
-            printErr("ERROR: bazel build failed (exit \(process.terminationStatus)).")
-            throw ExitCode(2)
-        }
-
-        let metadataRoot = Self.metadataRootFromBuildEvent(
-            at: buildEventURL,
-            fileManager: .default
-        )
-        return BazelBuildOutput(metadataRoot: metadataRoot)
-    }
-
-    private static func resolveDefaultMetadataRoot(
-        targetPattern: String,
-        buildConfig: String,
-        workspaceDirectory: URL?
-    ) -> String {
-        resolveMetadataRoot(
-            workspaceDirectory: workspaceDirectory,
-            currentDirectory: URL(fileURLWithPath: FileManager.default.currentDirectoryPath),
-            fileManager: .default,
-            bazelInfo: .process,
-            targetPattern: targetPattern,
-            bazelInfoOptions: ["--config=\(buildConfig)"]
-        )
-    }
-
-    static func resolveMetadataRoot(
-        workspaceDirectory: URL?,
-        currentDirectory: URL,
-        fileManager fm: FileManager,
-        bazelInfo: BazelInfoProvider,
-        targetPattern: String? = nil,
-        bazelInfoOptions: [String] = []
-    ) -> String {
-        let wsURL = workspaceDirectory ?? currentDirectory
-        let targetFilter = targetPattern.map(TargetFilter.init)
-
-        // Ask Bazel first. Some workspaces use a custom output base and do not
-        // create the usual bazel-bin/bazel-out convenience symlinks.
-        if let bazelBin = bazelInfo.lookup(
-            "bazel-bin",
-            currentDirectory: wsURL,
-            options: bazelInfoOptions
-        ),
-           hasMetadataFiles(in: bazelBin, matching: targetFilter, fileManager: fm) {
-            return bazelBin
-        }
-
-        // Try bazel-bin symlink next.
-        let bazelBin = wsURL.appendingPathComponent("bazel-bin").path
-        if let resolved = try? fm.destinationOfSymbolicLink(atPath: bazelBin),
-           hasMetadataFiles(in: resolved, matching: targetFilter, fileManager: fm) {
-            return resolved
-        }
-
-        return (try? fm.destinationOfSymbolicLink(atPath: bazelBin)) ?? bazelBin
-    }
-
-    /// Check if a directory contains any `.swift_deps_info.json` files.
-    private static func hasMetadataFiles(
-        in path: String,
-        matching targetFilter: TargetFilter?,
-        fileManager: FileManager
-    ) -> Bool {
-        guard let enumerator = fileManager.enumerator(
-            at: URL(fileURLWithPath: path),
-            includingPropertiesForKeys: nil,
-            options: [.skipsHiddenFiles]
-        ) else { return false }
-
-        for case let url as URL in enumerator {
-            guard url.lastPathComponent.hasSuffix(".swift_deps_info.json") else {
-                continue
-            }
-
-            if let targetFilter {
-                guard
-                    let data = try? Data(contentsOf: url),
-                    let metadata = try? JSONDecoder().decode(TargetMetadata.self, from: data),
-                    targetFilter.matches(label: metadata.target.label)
-                else {
-                    continue
-                }
-            }
-
-            return true
-        }
-
-        return false
-    }
-
-    static func metadataRootFromBuildEvent(
-        at buildEventURL: URL,
-        fileManager: FileManager
-    ) -> String? {
-        guard
-            let data = fileManager.contents(atPath: buildEventURL.path),
-            let contents = String(data: data, encoding: .utf8)
-        else {
-            return nil
-        }
-
-        let decoder = JSONDecoder()
-        var rootCounts: [String: Int] = [:]
-        for line in contents.split(separator: "\n", omittingEmptySubsequences: true) {
-            guard let eventData = String(line).data(using: .utf8),
-                  let event = try? decoder.decode(BuildEvent.self, from: eventData),
-                  let files = event.namedSetOfFiles?.files else {
-                continue
-            }
-
-            for file in files {
-                guard let root = metadataRoot(from: file) else { continue }
-                rootCounts[root, default: 0] += 1
-            }
-        }
-
-        return rootCounts
-            .sorted {
-                if $0.value == $1.value {
-                    return $0.key < $1.key
-                }
-                return $0.value > $1.value
-            }
-            .first?
-            .key
-    }
-
-    private struct BuildEvent: Decodable {
-        let namedSetOfFiles: NamedSetOfFiles?
-    }
-
-    private struct NamedSetOfFiles: Decodable {
-        let files: [BuildEventFile]
-    }
-
-    private struct BuildEventFile: Decodable {
-        let name: String
-        let uri: String
-    }
-
-    private static func metadataRoot(from file: BuildEventFile) -> String? {
-        guard file.name.hasSuffix(".swift_deps_info.json"),
-              let fileURL = URL(string: file.uri),
-              fileURL.isFileURL else {
-            return nil
-        }
-
-        let path = fileURL.path
-        let suffix = "/" + file.name
-        guard path.hasSuffix(suffix) else { return nil }
-        return String(path.dropLast(suffix.count))
+    static func write(_ contents: String, to path: String) throws {
+        let url = URL(fileURLWithPath: path)
+        let parent = url.deletingLastPathComponent()
+        try FileManager.default.createDirectory(at: parent, withIntermediateDirectories: true)
+        try contents.write(to: url, atomically: true, encoding: .utf8)
     }
 
     static func workspaceDirectory(

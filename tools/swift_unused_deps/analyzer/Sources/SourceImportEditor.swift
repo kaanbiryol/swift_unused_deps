@@ -156,12 +156,12 @@ public enum SourceImportEditor {
     private static func importStatements(in source: String) -> [ImportStatement] {
         let syntax = Parser.parse(source: source)
         let sourceLines = source.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
-        let collector = ImportStatementCollector(source: source, sourceLines: sourceLines)
-        collector.walk(syntax)
-        return collector.statements
+        let visitor = ImportStatementVisitor(source: source, sourceLines: sourceLines)
+        visitor.walk(syntax)
+        return visitor.statements
     }
 
-    private final class ImportStatementCollector: SyntaxVisitor {
+    private final class ImportStatementVisitor: SyntaxVisitor {
         private let source: String
         private let sourceLines: [String]
         private var conditionalDepth = 0
