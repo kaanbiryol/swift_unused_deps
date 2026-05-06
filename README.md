@@ -6,21 +6,6 @@ Detect unused and missing direct Bazel dependencies for Swift targets.
 
 Compares declared `deps` in BUILD files against what the Swift compiler actually loaded during compilation. Finds deps you can safely remove and deps you should add.
 
-## Quick start
-
-After setup:
-
-```sh
-bazel build --config=swift-unused-deps //App/...
-
-bazel run @swift_unused_deps//:swift_unused_deps -- analyze //App/...
-
-bazel run @swift_unused_deps//:swift_unused_deps -- analyze //App/... \
-  --fix-output /tmp/swift-unused-deps.fix.json
-bazel run @swift_unused_deps//:swift_unused_deps_apply -- \
-  /tmp/swift-unused-deps.fix.json
-```
-
 ## Setup
 
 ### 1. Add the dependency
@@ -54,13 +39,21 @@ Use the iOS config only if your Swift targets require that platform.
 
 ## Usage
 
-### Analyze
+Set the Bazel target pattern you want to inspect:
 
 ```sh
 TARGETS=//libraries/...
+```
 
+First build the Swift dependency metadata:
+
+```sh
 bazel build --config=swift-unused-deps "${TARGETS}"
+```
 
+Then run the analyzer:
+
+```sh
 bazel run @swift_unused_deps//:swift_unused_deps -- analyze "${TARGETS}"
 ```
 
@@ -71,15 +64,13 @@ index-store interpretation.
 
 For iOS-only targets, use `--config=swift-unused-deps-ios` on the Bazel build.
 
-### Apply Fixes
+### Write and Apply Fixes
 
-The preferred fix flow is explicit: write structured fixes, inspect them if needed, then apply them.
+The preferred fix flow is explicit: write structured fixes, inspect them if
+needed, then apply them.
 
 ```sh
-TARGETS=//libraries/...
 FIX_OUTPUT=/tmp/swift-unused-deps.fix.json
-
-bazel build --config=swift-unused-deps "${TARGETS}"
 
 bazel run @swift_unused_deps//:swift_unused_deps -- analyze "${TARGETS}" \
   --fix-output "${FIX_OUTPUT}"
@@ -134,7 +125,7 @@ Run `bazel run @swift_unused_deps//:swift_unused_deps -- analyze --help` for the
 
 `bazel build --config=swift-unused-deps` runs a Bazel [aspect](https://bazel.build/extending/aspects) on Swift targets. The aspect reads `SwiftInfo` from rules_swift, emits per-target dependency metadata, and records the per-target index-store location produced by `swift.index_while_building`.
 
-`analyze` reads those Bazel outputs and interprets the Swift index store. It does not invoke Bazel. Fixing is represented as a structured plan first; `swift_unused_deps_apply` is the explicit workspace-mutating step.
+`analyze` reads those Bazel outputs and interprets the Swift index store. It does not invoke Bazel. Fixing is represented as structured JSON first; `swift_unused_deps_apply` is the explicit workspace-mutating step.
 
 ## Exit codes
 
