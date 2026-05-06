@@ -18,9 +18,7 @@ teardown() {
       --output_groups=swift_unused_deps_metadata \
       //App:App >/dev/null
 
-    bazel run @swift_unused_deps//:swift_unused_deps -- analyze \
-      --metadata-root "$(bazel info bazel-bin)" \
-      --filter //App:App \
+    bazel run @swift_unused_deps//:swift_unused_deps -- analyze //App:App \
       --json
   '
 

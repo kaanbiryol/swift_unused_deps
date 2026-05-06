@@ -103,11 +103,11 @@ run_swift_unused_deps_in_workspace() {
           fix="true"
           shift
           ;;
-        --min-confidence|--extra-system-modules|--index-store-path)
+        --min-report-confidence|--min-fix-confidence|--min-confidence|--fix-plan-min-confidence|--extra-system-modules|--index-store-path)
           analyzer_flags+=("$1" "$2")
           shift 2
           ;;
-        --min-confidence=*|--extra-system-modules=*|--index-store-path=*|--json)
+        --min-report-confidence=*|--min-fix-confidence=*|--min-confidence=*|--fix-plan-min-confidence=*|--extra-system-modules=*|--index-store-path=*|--json)
           analyzer_flags+=("$1")
           shift
           ;;
@@ -133,9 +133,8 @@ run_swift_unused_deps_in_workspace() {
 
       bazel build --config="${build_config}" "${build_flags[@]}" "${target}" >/dev/null || return $?
       bazel_bin="$(bazel info bazel-bin 2>/dev/null)"
-      "${SWIFT_UNUSED_DEPS_BINARY}" analyze \
+      "${SWIFT_UNUSED_DEPS_BINARY}" analyze "${target}" \
         --metadata-root "${bazel_bin}" \
-        --filter "${target}" \
         --workspace-directory "$PWD" \
         "${analyzer_flags[@]}" \
         "${extra_args[@]}"
@@ -143,7 +142,7 @@ run_swift_unused_deps_in_workspace() {
 
     if [[ "${fix}" == "true" ]]; then
       fix_plan="${TMPDIR:-/tmp}/swift-unused-deps-${RANDOM}.fix_plan.json"
-      run_analysis --fix-plan-output "${fix_plan}" >/dev/null
+      run_analysis --fix-output "${fix_plan}" >/dev/null
       analysis_status=$?
       if [[ "${analysis_status}" -ne 0 && "${analysis_status}" -ne 1 ]]; then
         exit "${analysis_status}"

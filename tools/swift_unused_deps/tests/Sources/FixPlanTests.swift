@@ -62,6 +62,32 @@ final class FixPlanTests: XCTestCase {
         XCTAssertEqual(decoded, plan)
     }
 
+    func testFixPlanCanIncludeLowConfidenceBuildEdits() {
+        let candidateDep = DeclaredDep(label: "//Lib:Candidate", moduleName: "Candidate", kind: .dep)
+        let result = AnalysisResult(
+            target: "//App:App",
+            moduleName: "App",
+            issues: [
+                .candidatePrivateDep(candidateDep, targetLabel: "//App:App"),
+            ],
+            cleanDeps: [],
+            skippedModules: []
+        )
+
+        let plan = FixPlan.from(results: [result], minConfidence: .low)
+
+        XCTAssertEqual(plan.sourceImportRemovals, [])
+        XCTAssertEqual(plan.buildEdits, [
+            BuildEdit(
+                operation: .move,
+                attribute: "deps",
+                label: "//Lib:Candidate",
+                target: "//App:App",
+                destinationAttribute: "private_deps"
+            ),
+        ])
+    }
+
     func testApplierCanApplySourceOnlyPlan() throws {
         let workspace = try makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: workspace) }

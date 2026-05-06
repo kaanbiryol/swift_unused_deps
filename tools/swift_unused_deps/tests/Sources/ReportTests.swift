@@ -37,4 +37,25 @@ final class ReportTests: XCTestCase {
         XCTAssertEqual(firstSkipped["module_name"] as? String, "Foundation")
         XCTAssertEqual(firstSkipped["reason"] as? String, SkippedModuleReason.systemModule.rawValue)
     }
+
+    func testFormatTextCanSuppressFixPlanHint() {
+        let dep = DeclaredDep(label: "//Lib:B", moduleName: "B", kind: .dep)
+        let result = AnalysisResult(
+            target: "//Lib:A",
+            moduleName: "A",
+            issues: [
+                Issue.unusedDep(dep, targetLabel: "//Lib:A"),
+            ],
+            cleanDeps: [],
+            skippedModules: []
+        )
+
+        let report = Report.formatText(
+            results: [result],
+            minConfidence: .low,
+            includesFixPlanHint: false
+        )
+
+        XCTAssertFalse(report.contains("Run with --fix-output"))
+    }
 }

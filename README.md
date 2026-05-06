@@ -13,16 +13,12 @@ After setup:
 ```sh
 bazel build --config=swift-unused-deps //App/...
 
-bazel run @swift_unused_deps//:swift_unused_deps -- analyze \
-  --metadata-root "$(bazel info bazel-bin)" \
-  --filter //App/...
+bazel run @swift_unused_deps//:swift_unused_deps -- analyze //App/...
 
-bazel run @swift_unused_deps//:swift_unused_deps -- analyze \
-  --metadata-root "$(bazel info bazel-bin)" \
-  --filter //App/... \
-  --fix-plan-output /tmp/swift-unused-deps.fix_plan.json
+bazel run @swift_unused_deps//:swift_unused_deps -- analyze //App/... \
+  --fix-output /tmp/swift-unused-deps.fix.json
 bazel run @swift_unused_deps//:swift_unused_deps_apply -- \
-  /tmp/swift-unused-deps.fix_plan.json
+  /tmp/swift-unused-deps.fix.json
 ```
 
 ## Setup
@@ -65,37 +61,34 @@ TARGETS=//libraries/...
 
 bazel build --config=swift-unused-deps "${TARGETS}"
 
-bazel run @swift_unused_deps//:swift_unused_deps -- analyze \
-  --metadata-root "$(bazel info bazel-bin)" \
-  --filter "${TARGETS}"
+bazel run @swift_unused_deps//:swift_unused_deps -- analyze "${TARGETS}"
 ```
 
-`analyze` never invokes `bazel build`; it only reads existing metadata and
-index-store artifacts. Bazel owns the aspect build, and the Swift analyzer owns
-Swift index-store interpretation.
+`analyze` never invokes `bazel build`; it reads existing metadata and
+index-store artifacts. By default it uses `bazel info bazel-bin` to locate those
+artifacts. Bazel owns the aspect build, and the Swift analyzer owns Swift
+index-store interpretation.
 
 For iOS-only targets, use `--config=swift-unused-deps-ios` on the Bazel build.
 
-### Apply fixes
+### Apply Fixes
 
-The preferred fix flow is explicit: write a structured fix plan, inspect it if needed, then apply it.
+The preferred fix flow is explicit: write structured fixes, inspect them if needed, then apply them.
 
 ```sh
 TARGETS=//libraries/...
-FIX_PLAN=/tmp/swift-unused-deps.fix_plan.json
+FIX_OUTPUT=/tmp/swift-unused-deps.fix.json
 
 bazel build --config=swift-unused-deps "${TARGETS}"
 
-bazel run @swift_unused_deps//:swift_unused_deps -- analyze \
-  --metadata-root "$(bazel info bazel-bin)" \
-  --filter "${TARGETS}" \
-  --fix-plan-output "${FIX_PLAN}"
+bazel run @swift_unused_deps//:swift_unused_deps -- analyze "${TARGETS}" \
+  --fix-output "${FIX_OUTPUT}"
 
 bazel run @swift_unused_deps//:swift_unused_deps_apply -- \
-  "${FIX_PLAN}"
+  "${FIX_OUTPUT}"
 ```
 
-Fix plans contain source import removals and structured BUILD edits. The apply command uses [buildozer](https://github.com/bazelbuild/buildtools/tree/master/buildozer) for BUILD edits and applies Swift import removals directly.
+Fix outputs contain source import removals and structured BUILD edits. The apply command uses [buildozer](https://github.com/bazelbuild/buildtools/tree/master/buildozer) for BUILD edits and applies Swift import removals directly.
 
 Fixes include:
 - Remove unused deps (`remove deps`)
@@ -104,20 +97,27 @@ Fixes include:
 After applying fixes, rerun the `bazel build` and `analyze` commands to verify
 the final report.
 
-Only high-confidence issues are fixed. Low-confidence issues (like unresolved modules) are reported for manual investigation.
+Only high-confidence issues are fixed by default. Pass
+`--min-fix-confidence low` to include low-confidence fixable suggestions
+such as `private_deps` moves. Low-confidence issues without an explicit fix
+command, like unresolved modules, are still reported for manual investigation.
 
-If a module is imported in Swift source but no symbols from it are referenced anywhere in the target, the fix plan removes both the unused `import` statement(s) and the Bazel dep.
+If a module is imported in Swift source but no symbols from it are referenced anywhere in the target, the fix output removes both the unused `import` statement(s) and the Bazel dep.
 
 ### Common options
 
 | Option | Use |
 |--------|-----|
-| `--fix-plan-output <path>` | Write high-confidence fixes as structured JSON |
+| `TARGET_PATTERN` | Limit analysis to matching Bazel targets |
+| `--fix-output <path>` | Write fixes as structured JSON |
 | `--json` | Print JSON instead of text |
-| `--min-confidence low|medium|high` | Hide lower-confidence issues |
-| `--extra-system-modules A,B` | Treat custom toolchain or SDK modules as system modules |
-| `--metadata-root <path>` | Root containing `.swift_deps_info.json` files |
-| `--filter <pattern>` | Limit the report to matching Bazel targets |
+| `--min-report-confidence low|medium|high` | Hide lower-confidence issues and ignore them for the analyze exit code |
+| `--min-fix-confidence low|medium|high` | Include lower-confidence fixes in `--fix-output` |
+
+Advanced options such as `--metadata-root`, `--index-store-path`,
+`--workspace-directory`, `--extra-system-modules`, `--report-output`, and
+`--exit-code-output` are still available for tests, debugging, and custom
+automation.
 
 Run `bazel run @swift_unused_deps//:swift_unused_deps -- analyze --help` for the full CLI reference.
 
@@ -148,7 +148,7 @@ Run `bazel run @swift_unused_deps//:swift_unused_deps -- analyze --help` for the
 
 - Per-target index-store analysis depends on `rules_swift` emitting readable index-store directories
 - Pure Swift targets only. Mixed Swift/ObjC targets emit a warning.
-- `@_exported import` re-exports are treated as non-removable by fix plans
+- `@_exported import` re-exports are treated as non-removable by fix outputs
 - Scoped imports like `import struct LibA.Button` are not analyzed reliably end to end yet
 - Unused Swift `import` statements are fixed only when the analyzer has index store data for per-file source edits
 

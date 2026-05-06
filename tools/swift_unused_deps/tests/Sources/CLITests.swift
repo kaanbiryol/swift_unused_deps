@@ -7,21 +7,45 @@ final class CLITests: XCTestCase {
         let command = try XCTUnwrap(
             try SwiftUnusedDepsCommand.parseAsRoot([
                 "analyze",
+                "//App/...",
                 "--metadata-root", "/tmp/bazel-bin",
                 "--index-store-path", "/tmp/index-store",
-                "--filter", "//App/...",
-                "--fix-plan-output", "/tmp/fix_plan.json",
+                "--fix-output", "/tmp/fix.json",
+                "--min-report-confidence", "medium",
+                "--min-fix-confidence", "low",
                 "--report-output", "/tmp/report.out",
                 "--exit-code-output", "/tmp/report.exit_code",
             ]) as? SwiftUnusedDepsAnalyzeCommand
         )
 
+        XCTAssertEqual(command.targetPattern, "//App/...")
         XCTAssertEqual(command.metadataRoot, "/tmp/bazel-bin")
         XCTAssertEqual(command.indexStorePath, "/tmp/index-store")
-        XCTAssertEqual(command.filter, "//App/...")
-        XCTAssertEqual(command.fixPlanOutput, "/tmp/fix_plan.json")
+        XCTAssertNil(command.filter)
+        XCTAssertEqual(command.fixOutput, "/tmp/fix.json")
+        XCTAssertEqual(command.minReportConfidence, "medium")
+        XCTAssertEqual(command.minFixConfidence, "low")
         XCTAssertEqual(command.reportOutput, "/tmp/report.out")
         XCTAssertEqual(command.exitCodeOutput, "/tmp/report.exit_code")
+    }
+
+    func testParseAnalyzeLegacyOptions() throws {
+        let command = try XCTUnwrap(
+            try SwiftUnusedDepsCommand.parseAsRoot([
+                "analyze",
+                "--metadata-root", "/tmp/bazel-bin",
+                "--filter", "//App/...",
+                "--fix-plan-output", "/tmp/fix_plan.json",
+                "--min-confidence", "high",
+                "--fix-plan-min-confidence", "low",
+            ]) as? SwiftUnusedDepsAnalyzeCommand
+        )
+
+        XCTAssertNil(command.targetPattern)
+        XCTAssertEqual(command.filter, "//App/...")
+        XCTAssertEqual(command.legacyFixPlanOutput, "/tmp/fix_plan.json")
+        XCTAssertEqual(command.legacyMinConfidence, "high")
+        XCTAssertEqual(command.legacyFixPlanMinConfidence, "low")
     }
 
     func testParseAnalyzeRejectsEmptyMetadataRoot() {
@@ -50,7 +74,7 @@ final class CLITests: XCTestCase {
         XCTAssertThrowsError(try SwiftUnusedDepsCommand.parseAsRoot([
             "apply",
         ])) { error in
-            XCTAssertTrue("\(error)".contains("apply requires at least one fix plan path."))
+            XCTAssertTrue("\(error)".contains("apply requires at least one fix file path."))
         }
     }
 

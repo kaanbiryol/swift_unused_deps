@@ -2,7 +2,11 @@ import Foundation
 
 public enum Report {
 
-    public static func formatText(results: [AnalysisResult], minConfidence: Confidence) -> String {
+    public static func formatText(
+        results: [AnalysisResult],
+        minConfidence: Confidence,
+        includesFixPlanHint: Bool = true
+    ) -> String {
         var lines: [String] = []
         lines.append("swift_unused_deps v0.1.0")
         lines.append("Analyzing \(results.count) target\(results.count == 1 ? "" : "s")...")
@@ -60,9 +64,9 @@ public enum Report {
             lines.append("  \(parts.joined(separator: ", ")).")
         }
 
-        if totalHigh > 0 {
+        if includesFixPlanHint && totalHigh > 0 {
             lines.append("")
-            lines.append("Run with --fix-plan-output to write an explicit fix plan.")
+            lines.append("Run with --fix-output <path> to write explicit fixes.")
         }
 
         return lines.joined(separator: "\n")
