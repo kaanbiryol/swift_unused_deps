@@ -23,4 +23,39 @@ final class IndexStoreReaderTests: XCTestCase {
         XCTAssertTrue(result.usage.isEmpty)
         XCTAssertTrue(result.indexedModules.isEmpty)
     }
+
+    func testModuleNameFromSwiftUSRReadsModulePayload() {
+        XCTAssertEqual(
+            IndexStoreReader.moduleName(
+                fromUSR: "s:14ArgumentParser8ExitCodeVyACs5Int32Vcfc"
+            ),
+            "ArgumentParser"
+        )
+    }
+
+    func testModuleNameFromClangModuleUSRReadsModuleName() {
+        XCTAssertEqual(
+            IndexStoreReader.moduleName(
+                fromUSR: "c:@M@Foundation"
+            ),
+            "Foundation"
+        )
+    }
+
+    func testModuleNameFromSwiftExtensionUSRScansForModulePayload() {
+        XCTAssertEqual(
+            IndexStoreReader.moduleName(
+                fromUSR: "s:e:s:13TransitiveDep4UserV"
+            ),
+            "TransitiveDep"
+        )
+    }
+
+    func testModuleNameFromUSRRejectsUnknownFormat() {
+        XCTAssertNil(
+            IndexStoreReader.moduleName(
+                fromUSR: "not-a-swift-or-clang-module-usr"
+            )
+        )
+    }
 }

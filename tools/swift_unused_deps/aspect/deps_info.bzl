@@ -8,10 +8,8 @@ metadata and index store:
 
     bazel build //App/... \
         --features=swift.index_while_building \
-        --features=swift.use_global_index_store \
         --aspects=//tools/swift_unused_deps:defs.bzl%swift_unused_deps_aspect \
-        --output_groups=swift_unused_deps_metadata,swift_index_store \
-        --spawn_strategy=local
+        --output_groups=swift_unused_deps_metadata
 """
 
 load("@build_bazel_rules_swift//swift:providers.bzl", "SwiftInfo")

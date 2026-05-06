@@ -166,6 +166,15 @@ public enum IndexStoreReader {
                 }
             }
 
+            for usr in entry.referencedUSRs {
+                guard let module = moduleName(fromUSR: usr) else {
+                    continue
+                }
+                if module != entry.moduleName {
+                    referencedModules.insert(module)
+                }
+            }
+
             results.append(SourceFileModuleUsage(
                 sourceFile: entry.sourceFile,
                 moduleName: entry.moduleName,
@@ -182,5 +191,46 @@ public enum IndexStoreReader {
             usage: results,
             indexedModules: Set(moduleDefinedUSRs.keys)
         )
+    }
+
+    static func moduleName(fromUSR usr: String) -> String? {
+        if usr.hasPrefix("c:@M@") {
+            return String(usr.dropFirst("c:@M@".count).prefix(while: isModuleNameCharacter))
+        }
+
+        var cursor = usr.startIndex
+        while cursor < usr.endIndex {
+            guard usr[cursor] == ":" else {
+                cursor = usr.index(after: cursor)
+                continue
+            }
+
+            let lengthStart = usr.index(after: cursor)
+            var lengthEnd = lengthStart
+            while lengthEnd < usr.endIndex, usr[lengthEnd].wholeNumberValue != nil {
+                lengthEnd = usr.index(after: lengthEnd)
+            }
+
+            guard lengthEnd > lengthStart,
+                  let length = Int(usr[lengthStart..<lengthEnd]),
+                  let moduleEnd = usr.index(lengthEnd, offsetBy: length, limitedBy: usr.endIndex)
+            else {
+                cursor = lengthStart
+                continue
+            }
+
+            let module = String(usr[lengthEnd..<moduleEnd])
+            if !module.isEmpty, module.allSatisfy(isModuleNameCharacter) {
+                return module
+            }
+
+            cursor = lengthEnd
+        }
+
+        return nil
+    }
+
+    private static func isModuleNameCharacter(_ character: Character) -> Bool {
+        character.isLetter || character.isNumber || character == "_"
     }
 }

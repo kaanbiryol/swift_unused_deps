@@ -130,14 +130,11 @@ run_swift_unused_deps_in_workspace() {
     run_analysis() {
       local extra_args=("$@")
       local bazel_bin
-      local output_path
 
       bazel build --config="${build_config}" "${build_flags[@]}" "${target}" >/dev/null || return $?
       bazel_bin="$(bazel info bazel-bin 2>/dev/null)"
-      output_path="$(bazel info output_path 2>/dev/null)"
       "${SWIFT_UNUSED_DEPS_BINARY}" analyze \
         --metadata-root "${bazel_bin}" \
-        --index-store-path "${output_path}/_global_index_store" \
         --filter "${target}" \
         --workspace-directory "$PWD" \
         "${analyzer_flags[@]}" \

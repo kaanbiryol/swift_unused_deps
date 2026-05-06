@@ -15,13 +15,11 @@ bazel build --config=swift-unused-deps //App/...
 # Analyze the produced artifacts
 bazel run //:swift_unused_deps -- analyze \
   --metadata-root "$(bazel info bazel-bin)" \
-  --index-store-path "$(bazel info output_path)/_global_index_store" \
   --filter //App/...
 
 # Produce an explicit fix plan, then apply it
 bazel run //:swift_unused_deps -- analyze \
   --metadata-root "$(bazel info bazel-bin)" \
-  --index-store-path "$(bazel info output_path)/_global_index_store" \
   --filter //App/... \
   --fix-plan-output /tmp/swift-unused-deps.fix_plan.json
 bazel run //:swift_unused_deps_apply -- \
@@ -52,10 +50,8 @@ attaches the aspect, and requests the metadata output group:
 
 ```
 build:swift-unused-deps --features=swift.index_while_building
-build:swift-unused-deps --features=swift.use_global_index_store
 build:swift-unused-deps --aspects=//tools/swift_unused_deps:defs.bzl%swift_unused_deps_aspect
-build:swift-unused-deps --output_groups=swift_unused_deps_metadata,swift_index_store
-build:swift-unused-deps --spawn_strategy=local
+build:swift-unused-deps --output_groups=swift_unused_deps_metadata
 
 build:swift-unused-deps-ios --config=swift-unused-deps
 build:swift-unused-deps-ios --platforms=@apple_support//platforms:ios_sim_arm64
@@ -80,7 +76,6 @@ bazel build --config="${CONFIG}" "${TARGETS}"
 
 bazel run //:swift_unused_deps -- analyze \
   --metadata-root "$(bazel info bazel-bin)" \
-  --index-store-path "$(bazel info output_path)/_global_index_store" \
   --filter "${TARGETS}"
 ```
 
@@ -103,7 +98,6 @@ bazel build --config="${CONFIG}" "${TARGETS}"
 
 bazel run //:swift_unused_deps -- analyze \
   --metadata-root "$(bazel info bazel-bin)" \
-  --index-store-path "$(bazel info output_path)/_global_index_store" \
   --filter "${TARGETS}" \
   --fix-plan-output "${FIX_PLAN}"
 
@@ -129,7 +123,6 @@ If a module is imported in Swift source but no symbols from it are referenced an
 ```sh
 bazel run //:swift_unused_deps -- analyze \
   --metadata-root "$(bazel info bazel-bin)" \
-  --index-store-path "$(bazel info output_path)/_global_index_store" \
   --filter //libraries/... \
   --json
 ```
@@ -140,7 +133,6 @@ bazel run //:swift_unused_deps -- analyze \
 # Only show high-confidence issues
 bazel run //:swift_unused_deps -- analyze \
   --metadata-root "$(bazel info bazel-bin)" \
-  --index-store-path "$(bazel info output_path)/_global_index_store" \
   --filter //libraries/... \
   --min-confidence high
 ```
@@ -155,7 +147,6 @@ toolchain or SDK module is not reported as system, add it explicitly:
 ```sh
 bazel run //:swift_unused_deps -- analyze \
   --metadata-root "$(bazel info bazel-bin)" \
-  --index-store-path "$(bazel info output_path)/_global_index_store" \
   --filter //App/... \
   --extra-system-modules MySystemModule,AnotherModule
 ```
@@ -172,7 +163,6 @@ bazel build --config="${CONFIG}" "${TARGETS}"
 
 bazel run //:swift_unused_deps -- analyze \
   --metadata-root "$(bazel info bazel-bin)" \
-  --index-store-path "$(bazel info output_path)/_global_index_store" \
   --filter "${TARGETS}"
 ```
 
@@ -187,7 +177,7 @@ bazel run //:swift_unused_deps -- analyze \
 | `--min-confidence` | Minimum confidence level: `low`, `medium`, `high` (default: `low`) |
 | `--extra-system-modules` | Comma-separated module names to treat as system modules |
 | `--metadata-root` | Root containing `.swift_deps_info.json` files |
-| `--index-store-path` | Path to the Swift index store |
+| `--index-store-path` | Override path to a Swift index store |
 | `--filter` | Bazel target pattern to filter analysis results |
 | `--workspace-directory` | Workspace directory used for source paths and label conversion |
 
@@ -205,7 +195,7 @@ bazel run //:swift_unused_deps -- analyze \
 `bazel build --config=swift-unused-deps` runs a Bazel [aspect](https://bazel.build/extending/aspects) on every Swift target. For each target, the aspect:
 
 1. **Emits metadata** - reads `SwiftInfo` from rules_swift to get module names, declared deps, and the transitive module map
-2. **Records index-store locations** - points the analyzer at the `rules_swift` global index store produced by `swift.index_while_building` + `swift.use_global_index_store`
+2. **Records index-store locations** - points the analyzer at the per-target index store produced by `swift.index_while_building`
 
 Everything is cached by Bazel. Re-running after no changes is instant.
 
@@ -226,7 +216,7 @@ workspace-mutating step.
 
 ## Limitations
 
-- Index-store generation uses `--spawn_strategy=local`; remote execution is not supported for index-store generation
+- Per-target index-store analysis depends on `rules_swift` emitting readable index-store directories
 - Pure Swift targets only. Mixed Swift/ObjC targets emit a warning.
 - `@_exported import` re-exports are treated as non-removable by fix plans
 - Scoped imports like `import struct LibA.Button` are not analyzed reliably end to end yet
@@ -267,7 +257,6 @@ CONFIG=swift-unused-deps
 bazel build --config="${CONFIG}" "${TARGETS}"
 bazel run //:swift_unused_deps -- analyze \
   --metadata-root "$(bazel info bazel-bin)" \
-  --index-store-path "$(bazel info output_path)/_global_index_store" \
   --filter "${TARGETS}" \
   --fix-plan-output /tmp/swift-unused-deps.fix_plan.json
 bazel run //:swift_unused_deps_apply -- /tmp/swift-unused-deps.fix_plan.json

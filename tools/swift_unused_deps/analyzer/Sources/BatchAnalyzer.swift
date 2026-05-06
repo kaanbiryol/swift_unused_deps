@@ -202,12 +202,17 @@ public enum BatchAnalyzer {
             return nil
         }
 
-        let sourceFileUsage = loadIndexStoreUsage(
+        let rawSourceFileUsage = loadIndexStoreUsage(
             for: metadata,
             bazelBin: bazelBin,
             overridePath: indexStoreOverridePath,
             cache: &indexStoreCache,
             warnings: &warnings
+        )
+        let sourceFileUsage = filterReferencedModules(
+            rawSourceFileUsage,
+            for: metadata,
+            extraSystemModules: extraSystemModules
         )
 
         guard let loadedModules = loadModules(
@@ -243,6 +248,30 @@ public enum BatchAnalyzer {
         )
     }
 
+    private static func filterReferencedModules(
+        _ sourceFileUsage: [SourceFileModuleUsage],
+        for metadata: TargetMetadata,
+        extraSystemModules: Set<String>
+    ) -> [SourceFileModuleUsage] {
+        let knownModules = Set(metadata.transitiveModuleMap.keys)
+            .union([metadata.target.moduleName])
+            .union(extraSystemModules)
+            .union(sourceFileUsage.flatMap(\.systemModules))
+
+        return sourceFileUsage.map { usage in
+            SourceFileModuleUsage(
+                sourceFile: usage.sourceFile,
+                moduleName: usage.moduleName,
+                referencedModules: usage.referencedModules.intersection(knownModules),
+                loadedModules: usage.loadedModules,
+                systemModules: usage.systemModules,
+                directImports: usage.directImports,
+                reexportedImports: usage.reexportedImports,
+                conditionalImports: usage.conditionalImports
+            )
+        }
+    }
+
     private static func loadMetadata(
         from metadataFile: URL,
         warnings: inout [String]
@@ -264,7 +293,7 @@ public enum BatchAnalyzer {
         guard !sourceFileUsage.isEmpty else {
             warnings.append(
                 "No index-store data found for \(metadata.target.label) (module: \(metadata.target.moduleName)). " +
-                    "Verify swift.index_while_building and swift.use_global_index_store are enabled."
+                    "Verify swift.index_while_building is enabled and the metadata indexstore_path exists."
             )
             return nil
         }
