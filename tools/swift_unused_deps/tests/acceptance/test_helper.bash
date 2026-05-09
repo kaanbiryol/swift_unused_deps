@@ -77,6 +77,7 @@ run_swift_unused_deps_in_workspace() {
 
     target=""
     fix="false"
+    direct_fix="false"
     build_config="swift-unused-deps"
     build_flags=()
     analyzer_flags=()
@@ -103,11 +104,15 @@ run_swift_unused_deps_in_workspace() {
           fix="true"
           shift
           ;;
-        --min-report-confidence|--min-fix-confidence|--min-confidence|--fix-plan-min-confidence|--extra-system-modules|--index-store-path)
+        --direct-fix)
+          direct_fix="true"
+          shift
+          ;;
+        --min-report-confidence|--min-fix-confidence|--min-confidence|--fix-plan-min-confidence|--extra-system-modules|--index-store-path|--report-output|--fix-output)
           analyzer_flags+=("$1" "$2")
           shift 2
           ;;
-        --min-report-confidence=*|--min-fix-confidence=*|--min-confidence=*|--fix-plan-min-confidence=*|--extra-system-modules=*|--index-store-path=*|--json)
+        --min-report-confidence=*|--min-fix-confidence=*|--min-confidence=*|--fix-plan-min-confidence=*|--extra-system-modules=*|--index-store-path=*|--report-output=*|--fix-output=*|--json)
           analyzer_flags+=("$1")
           shift
           ;;
@@ -140,7 +145,25 @@ run_swift_unused_deps_in_workspace() {
         "${extra_args[@]}"
     }
 
-    if [[ "${fix}" == "true" ]]; then
+    run_direct_fix() {
+      local bazel_bin
+
+      bazel build --config="${build_config}" "${build_flags[@]}" "${target}" >/dev/null || return $?
+      bazel_bin="$(bazel info bazel-bin 2>/dev/null)"
+      "${SWIFT_UNUSED_DEPS_BINARY}" fix "${target}" \
+        --metadata-root "${bazel_bin}" \
+        --workspace-directory "$PWD" \
+        "${analyzer_flags[@]}"
+    }
+
+    if [[ "${direct_fix}" == "true" ]]; then
+      run_direct_fix
+      fix_status=$?
+      if [[ "${fix_status}" -ne 0 ]]; then
+        exit "${fix_status}"
+      fi
+      run_analysis
+    elif [[ "${fix}" == "true" ]]; then
       fix_plan="${TMPDIR:-/tmp}/swift-unused-deps-${RANDOM}.fix_plan.json"
       run_analysis --fix-output "${fix_plan}" >/dev/null
       analysis_status=$?

@@ -44,13 +44,28 @@ struct BazelInfoProvider {
     }
 }
 
+struct AnalysisInvocation {
+    let targetPattern: String?
+    let filter: String?
+    let workspaceDirectory: String?
+    let metadataRoot: String?
+    let indexStorePath: String?
+    let extraSystemModules: String?
+}
+
+struct AnalysisRun {
+    let output: BatchAnalyzer.Output
+    let workspaceDirectory: URL?
+    let metadataRoot: String
+}
+
 public struct SwiftUnusedDepsAnalyzeCommand: ParsableCommand {
     public static let configuration = CommandConfiguration(
         commandName: "analyze",
         abstract: "Analyze already-produced swift_unused_deps metadata and Swift index-store artifacts."
     )
 
-    @Flag(help: "Output JSON.")
+    @Flag(help: .hidden)
     var json = false
 
     @Argument(help: "Bazel target pattern to analyze.")
@@ -59,15 +74,21 @@ public struct SwiftUnusedDepsAnalyzeCommand: ParsableCommand {
     @Option(name: .customLong("fix-output"), help: "Write a structured JSON fix file.")
     var fixOutput: String?
 
+    @Flag(
+        name: .customLong("include-low-confidence-fixes"),
+        help: "Include low-confidence fixes in --fix-output."
+    )
+    var includeLowConfidenceFixes = false
+
     @Option(
         name: .customLong("min-report-confidence"),
-        help: "Minimum confidence level to report and use for the analyze exit code: low, medium, high. Default: low."
+        help: .hidden
     )
     var minReportConfidence: String?
 
     @Option(
         name: .customLong("min-fix-confidence"),
-        help: "Minimum confidence level to include in fix output: low, medium, high. Default: high."
+        help: .hidden
     )
     var minFixConfidence: String?
 
@@ -95,7 +116,10 @@ public struct SwiftUnusedDepsAnalyzeCommand: ParsableCommand {
     @Option(help: .hidden)
     var workspaceDirectory: String?
 
-    @Option(help: .hidden)
+    @Option(
+        name: .customLong("report-output"),
+        help: "Write a JSON analysis report to a file while still printing the text report."
+    )
     var reportOutput: String?
 
     @Option(help: .hidden)
@@ -104,12 +128,14 @@ public struct SwiftUnusedDepsAnalyzeCommand: ParsableCommand {
     public init() {}
 
     public func validate() throws {
-        try Self.validateNonEmpty(metadataRoot, option: "--metadata-root")
-        try Self.validateNonEmpty(targetPattern, option: "TARGET_PATTERN")
-        try Self.validateNonEmpty(filter, option: "--filter")
-        try Self.validateNonEmpty(workspaceDirectory, option: "--workspace-directory")
-        try Self.validateNonEmpty(fixOutput, option: "--fix-output")
-        try Self.validateNonEmpty(legacyFixPlanOutput, option: "--fix-plan-output")
+        try SwiftUnusedDepsCommand.validateNonEmpty(metadataRoot, option: "--metadata-root")
+        try SwiftUnusedDepsCommand.validateNonEmpty(targetPattern, option: "TARGET_PATTERN")
+        try SwiftUnusedDepsCommand.validateNonEmpty(filter, option: "--filter")
+        try SwiftUnusedDepsCommand.validateNonEmpty(workspaceDirectory, option: "--workspace-directory")
+        try SwiftUnusedDepsCommand.validateNonEmpty(fixOutput, option: "--fix-output")
+        try SwiftUnusedDepsCommand.validateNonEmpty(legacyFixPlanOutput, option: "--fix-plan-output")
+        try SwiftUnusedDepsCommand.validateNonEmpty(reportOutput, option: "--report-output")
+        try SwiftUnusedDepsCommand.validateNonEmpty(exitCodeOutput, option: "--exit-code-output")
         if let targetPattern, let filter, targetPattern != filter {
             throw ValidationError("Provide either TARGET_PATTERN or --filter, not both.")
         }
@@ -122,65 +148,59 @@ public struct SwiftUnusedDepsAnalyzeCommand: ParsableCommand {
         if let minFixConfidence, let legacyFixPlanMinConfidence, minFixConfidence != legacyFixPlanMinConfidence {
             throw ValidationError("Provide either --min-fix-confidence or --fix-plan-min-confidence, not both.")
         }
+        try SwiftUnusedDepsCommand.validateLowConfidenceFixOptions(
+            includeLowConfidenceFixes: includeLowConfidenceFixes,
+            minFixConfidence: minFixConfidence,
+            legacyFixPlanMinConfidence: legacyFixPlanMinConfidence
+        )
     }
 
     public func run() throws {
-        let reportConfidence = try Self.confidence(
+        let reportConfidence = try SwiftUnusedDepsCommand.confidence(
             minReportConfidence ?? legacyMinConfidence ?? "low",
             option: "--min-report-confidence"
         )
-        let fixConfidence = try Self.confidence(
-            minFixConfidence ?? legacyFixPlanMinConfidence ?? "high",
-            option: "--min-fix-confidence"
+        let fixConfidence = try SwiftUnusedDepsCommand.fixConfidence(
+            includeLowConfidenceFixes: includeLowConfidenceFixes,
+            minFixConfidence: minFixConfidence,
+            legacyFixPlanMinConfidence: legacyFixPlanMinConfidence
         )
-
-        let workspace = resolvedWorkspaceDirectory()
-        let resolvedMetadataRoot = try self.resolvedMetadataRoot(workspace: workspace)
-        let resolvedFilter = targetPattern ?? filter
         let resolvedFixOutput = fixOutput ?? legacyFixPlanOutput
-        let labelConverter = LabelConverter.loadFromBazel(workspaceDirectory: workspace?.path) ?? .identity
 
-        let output = BatchAnalyzer.analyze(options: .init(
-            bazelBin: resolvedMetadataRoot,
+        let run = try SwiftUnusedDepsCommand.runAnalysis(AnalysisInvocation(
+            targetPattern: targetPattern,
+            filter: filter,
+            workspaceDirectory: workspaceDirectory,
+            metadataRoot: metadataRoot,
             indexStorePath: indexStorePath,
-            extraSystemModules: SwiftUnusedDepsCommand.parseExtraSystemModules(extraSystemModules),
-            filter: resolvedFilter,
-            labelConverter: labelConverter,
-            workspaceDirectory: workspace
+            extraSystemModules: extraSystemModules
         ))
+        SwiftUnusedDepsCommand.printWarnings(run.output)
+        try SwiftUnusedDepsCommand.validateFoundMetadata(run.output, metadataRoot: run.metadataRoot)
 
-        for warning in output.warnings {
-            printErr("WARNING: \(warning)")
-        }
-
-        if output.results.isEmpty && output.warnings.isEmpty {
-            printErr("ERROR: No metadata files found under \(resolvedMetadataRoot).")
-            throw ExitCode(2)
-        }
-
+        let jsonReport = Report.formatJSON(results: run.output.results, minConfidence: reportConfidence)
         if let resolvedFixOutput {
-            let plan = FixPlan.from(results: output.results, minConfidence: fixConfidence)
+            let plan = FixPlan.from(results: run.output.results, minConfidence: fixConfidence)
             try SwiftUnusedDepsCommand.write(FixPlan.formatJSON(plan), to: resolvedFixOutput)
+        }
+        if let reportOutput {
+            try SwiftUnusedDepsCommand.write(jsonReport, to: reportOutput)
         }
 
         let rendered = json
-            ? Report.formatJSON(results: output.results, minConfidence: reportConfidence)
+            ? jsonReport
             : Report.formatText(
-                results: output.results,
+                results: run.output.results,
                 minConfidence: reportConfidence,
                 includesFixPlanHint: resolvedFixOutput == nil
             )
 
-        let exitCode = Self.exitCode(
-            output: output,
+        let exitCode = SwiftUnusedDepsCommand.analysisExitCode(
+            output: run.output,
             minConfidence: reportConfidence
         )
 
-        if let reportOutput {
-            try SwiftUnusedDepsCommand.write(rendered, to: reportOutput)
-        } else {
-            print(rendered)
-        }
+        print(rendered)
 
         if let exitCodeOutput {
             try SwiftUnusedDepsCommand.write("\(exitCode)\n", to: exitCodeOutput)
@@ -191,63 +211,140 @@ public struct SwiftUnusedDepsAnalyzeCommand: ParsableCommand {
             throw ExitCode(exitCode)
         }
     }
+}
 
-    private func resolvedWorkspaceDirectory() -> URL? {
-        if let workspaceDirectory {
-            return URL(fileURLWithPath: workspaceDirectory, isDirectory: true)
+public struct SwiftUnusedDepsFixCommand: ParsableCommand {
+    public static let configuration = CommandConfiguration(
+        commandName: "fix",
+        abstract: "Analyze and apply swift_unused_deps fixes to the workspace."
+    )
+
+    @Argument(help: "Bazel target pattern to analyze and fix.")
+    var targetPattern: String?
+
+    @Option(name: .customLong("fix-output"), help: "Write the structured JSON fix file before applying it.")
+    var fixOutput: String?
+
+    @Flag(
+        name: .customLong("include-low-confidence-fixes"),
+        help: "Include low-confidence fixes when applying changes."
+    )
+    var includeLowConfidenceFixes = false
+
+    @Option(
+        name: .customLong("report-output"),
+        help: "Write a JSON analysis report to a file before applying fixes."
+    )
+    var reportOutput: String?
+
+    @Option(name: .customLong("min-report-confidence"), help: .hidden)
+    var minReportConfidence: String?
+
+    @Option(name: .customLong("min-fix-confidence"), help: .hidden)
+    var minFixConfidence: String?
+
+    @Option(name: .customLong("fix-plan-min-confidence"), help: .hidden)
+    var legacyFixPlanMinConfidence: String?
+
+    @Option(name: .customLong("fix-plan-output"), help: .hidden)
+    var legacyFixPlanOutput: String?
+
+    @Option(help: .hidden)
+    var extraSystemModules: String?
+
+    @Option(help: .hidden)
+    var metadataRoot: String?
+
+    @Option(help: .hidden)
+    var indexStorePath: String?
+
+    @Option(help: .hidden)
+    var filter: String?
+
+    @Option(help: .hidden)
+    var workspaceDirectory: String?
+
+    public init() {}
+
+    public func validate() throws {
+        try SwiftUnusedDepsCommand.validateNonEmpty(targetPattern, option: "TARGET_PATTERN")
+        try SwiftUnusedDepsCommand.validateNonEmpty(filter, option: "--filter")
+        try SwiftUnusedDepsCommand.validateNonEmpty(workspaceDirectory, option: "--workspace-directory")
+        try SwiftUnusedDepsCommand.validateNonEmpty(fixOutput, option: "--fix-output")
+        try SwiftUnusedDepsCommand.validateNonEmpty(legacyFixPlanOutput, option: "--fix-plan-output")
+        try SwiftUnusedDepsCommand.validateNonEmpty(reportOutput, option: "--report-output")
+        if let targetPattern, let filter, targetPattern != filter {
+            throw ValidationError("Provide either TARGET_PATTERN or --filter, not both.")
         }
-        return SwiftUnusedDepsCommand.workspaceDirectory()
+        if let fixOutput, let legacyFixPlanOutput, fixOutput != legacyFixPlanOutput {
+            throw ValidationError("Provide either --fix-output or --fix-plan-output, not both.")
+        }
+        if let minFixConfidence, let legacyFixPlanMinConfidence, minFixConfidence != legacyFixPlanMinConfidence {
+            throw ValidationError("Provide either --min-fix-confidence or --fix-plan-min-confidence, not both.")
+        }
+        try SwiftUnusedDepsCommand.validateLowConfidenceFixOptions(
+            includeLowConfidenceFixes: includeLowConfidenceFixes,
+            minFixConfidence: minFixConfidence,
+            legacyFixPlanMinConfidence: legacyFixPlanMinConfidence
+        )
     }
 
-    private func resolvedMetadataRoot(workspace: URL?) throws -> String {
-        if let metadataRoot {
-            return metadataRoot
+    public func run() throws {
+        let reportConfidence = try SwiftUnusedDepsCommand.confidence(
+            minReportConfidence ?? "low",
+            option: "--min-report-confidence"
+        )
+        let fixConfidence = try SwiftUnusedDepsCommand.fixConfidence(
+            includeLowConfidenceFixes: includeLowConfidenceFixes,
+            minFixConfidence: minFixConfidence,
+            legacyFixPlanMinConfidence: legacyFixPlanMinConfidence
+        )
+        let resolvedFixOutput = fixOutput ?? legacyFixPlanOutput
+
+        let run = try SwiftUnusedDepsCommand.runAnalysis(AnalysisInvocation(
+            targetPattern: targetPattern,
+            filter: filter,
+            workspaceDirectory: workspaceDirectory,
+            metadataRoot: metadataRoot,
+            indexStorePath: indexStorePath,
+            extraSystemModules: extraSystemModules
+        ))
+        SwiftUnusedDepsCommand.printWarnings(run.output)
+        try SwiftUnusedDepsCommand.validateFoundMetadata(run.output, metadataRoot: run.metadataRoot)
+
+        let textReport = Report.formatText(
+            results: run.output.results,
+            minConfidence: reportConfidence,
+            includesFixPlanHint: false
+        )
+        print(textReport)
+
+        if let reportOutput {
+            try SwiftUnusedDepsCommand.write(
+                Report.formatJSON(results: run.output.results, minConfidence: reportConfidence),
+                to: reportOutput
+            )
         }
 
-        let currentDirectory = bazelInfoCurrentDirectory(workspace: workspace)
-        if let bazelBin = BazelInfoProvider.process.lookup("bazel-bin", currentDirectory: currentDirectory) {
-            return bazelBin
+        let exitCode = SwiftUnusedDepsCommand.analysisExitCode(
+            output: run.output,
+            minConfidence: reportConfidence
+        )
+        if exitCode == 2 {
+            throw ExitCode(exitCode)
         }
 
-        throw ValidationError("Could not infer metadata root with 'bazel info bazel-bin'. Pass --metadata-root <path>.")
+        let plan = FixPlan.from(results: run.output.results, minConfidence: fixConfidence)
+        if let resolvedFixOutput {
+            try SwiftUnusedDepsCommand.write(FixPlan.formatJSON(plan), to: resolvedFixOutput)
+        }
+
+        printErr("Applying \(plan.buildEdits.count) BUILD fix(es) and \(plan.sourceImportRemovals.count) source import removal(s)...")
+        let result = try FixPlanApplier.apply(plan, workspaceDirectory: run.workspaceDirectory)
+        if result.applied {
+            printErr("Done: \(result.buildFixCount) BUILD fix(es) and \(result.sourceImportRemovalCount) source import removal(s) applied.")
+        }
     }
-
-    private func bazelInfoCurrentDirectory(workspace: URL?) -> URL {
-        if let workingDirectory = ProcessInfo.processInfo.environment["BUILD_WORKING_DIRECTORY"] {
-            return URL(fileURLWithPath: workingDirectory, isDirectory: true)
-        }
-        if let workspace {
-            return workspace
-        }
-        return URL(fileURLWithPath: FileManager.default.currentDirectoryPath, isDirectory: true)
-    }
-
-    private static func confidence(_ rawValue: String, option: String) throws -> Confidence {
-        guard let confidence = Confidence(rawValue: rawValue) else {
-            throw ValidationError("Invalid confidence level '\(rawValue)' for \(option). Use: low, medium, high")
-        }
-        return confidence
-    }
-
-    private static func validateNonEmpty(_ value: String?, option: String) throws {
-        if let value, value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            throw ValidationError("\(option) cannot be empty.")
-        }
-    }
-
-    private static func exitCode(
-        output: BatchAnalyzer.Output,
-        minConfidence: Confidence
-    ) -> Int32 {
-        if !output.warnings.isEmpty {
-            return 2
-        }
-        let hasIssues = output.results.contains { result in
-            result.issues.contains { $0.confidence >= minConfidence }
-        }
-        return hasIssues ? 1 : 0
-    }
-
 }
 
 public struct SwiftUnusedDepsApplyCommand: ParsableCommand {
@@ -302,6 +399,7 @@ public struct SwiftUnusedDepsCommand: ParsableCommand {
         abstract: "Detect unused and missing direct Bazel deps for Swift targets.",
         subcommands: [
             SwiftUnusedDepsAnalyzeCommand.self,
+            SwiftUnusedDepsFixCommand.self,
             SwiftUnusedDepsApplyCommand.self,
         ]
     )
@@ -337,5 +435,123 @@ public struct SwiftUnusedDepsCommand: ParsableCommand {
             return URL(fileURLWithPath: workspace, isDirectory: true)
         }
         return nil
+    }
+
+    static func runAnalysis(_ invocation: AnalysisInvocation) throws -> AnalysisRun {
+        let workspace = resolvedWorkspaceDirectory(invocation.workspaceDirectory)
+        let metadataRoot = try resolvedMetadataRoot(invocation.metadataRoot, workspace: workspace)
+        let filter = invocation.targetPattern ?? invocation.filter
+        let labelConverter = LabelConverter.loadFromBazel(workspaceDirectory: workspace?.path) ?? .identity
+
+        let output = BatchAnalyzer.analyze(options: .init(
+            bazelBin: metadataRoot,
+            indexStorePath: invocation.indexStorePath,
+            extraSystemModules: parseExtraSystemModules(invocation.extraSystemModules),
+            filter: filter,
+            labelConverter: labelConverter,
+            workspaceDirectory: workspace
+        ))
+
+        return AnalysisRun(
+            output: output,
+            workspaceDirectory: workspace,
+            metadataRoot: metadataRoot
+        )
+    }
+
+    static func printWarnings(_ output: BatchAnalyzer.Output) {
+        for warning in output.warnings {
+            printErr("WARNING: \(warning)")
+        }
+    }
+
+    static func validateFoundMetadata(_ output: BatchAnalyzer.Output, metadataRoot: String) throws {
+        if output.results.isEmpty && output.warnings.isEmpty {
+            printErr("ERROR: No metadata files found under \(metadataRoot).")
+            throw ExitCode(2)
+        }
+    }
+
+    static func confidence(_ rawValue: String, option: String) throws -> Confidence {
+        guard let confidence = Confidence(rawValue: rawValue) else {
+            throw ValidationError("Invalid confidence level '\(rawValue)' for \(option). Use: low, medium, high")
+        }
+        return confidence
+    }
+
+    static func fixConfidence(
+        includeLowConfidenceFixes: Bool,
+        minFixConfidence: String?,
+        legacyFixPlanMinConfidence: String?
+    ) throws -> Confidence {
+        let rawValue = includeLowConfidenceFixes
+            ? "low"
+            : minFixConfidence ?? legacyFixPlanMinConfidence ?? "high"
+        return try confidence(rawValue, option: "--min-fix-confidence")
+    }
+
+    static func validateLowConfidenceFixOptions(
+        includeLowConfidenceFixes: Bool,
+        minFixConfidence: String?,
+        legacyFixPlanMinConfidence: String?
+    ) throws {
+        guard includeLowConfidenceFixes else { return }
+        if let minFixConfidence, minFixConfidence != Confidence.low.rawValue {
+            throw ValidationError("Provide either --include-low-confidence-fixes or --min-fix-confidence, not both.")
+        }
+        if let legacyFixPlanMinConfidence, legacyFixPlanMinConfidence != Confidence.low.rawValue {
+            throw ValidationError(
+                "Provide either --include-low-confidence-fixes or --fix-plan-min-confidence, not both."
+            )
+        }
+    }
+
+    static func validateNonEmpty(_ value: String?, option: String) throws {
+        if let value, value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            throw ValidationError("\(option) cannot be empty.")
+        }
+    }
+
+    static func analysisExitCode(
+        output: BatchAnalyzer.Output,
+        minConfidence: Confidence
+    ) -> Int32 {
+        if !output.warnings.isEmpty {
+            return 2
+        }
+        let hasIssues = output.results.contains { result in
+            result.issues.contains { $0.confidence >= minConfidence }
+        }
+        return hasIssues ? 1 : 0
+    }
+
+    private static func resolvedWorkspaceDirectory(_ workspaceDirectory: String?) -> URL? {
+        if let workspaceDirectory {
+            return URL(fileURLWithPath: workspaceDirectory, isDirectory: true)
+        }
+        return SwiftUnusedDepsCommand.workspaceDirectory()
+    }
+
+    private static func resolvedMetadataRoot(_ metadataRoot: String?, workspace: URL?) throws -> String {
+        if let metadataRoot {
+            return metadataRoot
+        }
+
+        let currentDirectory = bazelInfoCurrentDirectory(workspace: workspace)
+        if let bazelBin = BazelInfoProvider.process.lookup("bazel-bin", currentDirectory: currentDirectory) {
+            return bazelBin
+        }
+
+        throw ValidationError("Could not infer metadata root with 'bazel info bazel-bin'. Pass --metadata-root <path>.")
+    }
+
+    private static func bazelInfoCurrentDirectory(workspace: URL?) -> URL {
+        if let workingDirectory = ProcessInfo.processInfo.environment["BUILD_WORKING_DIRECTORY"] {
+            return URL(fileURLWithPath: workingDirectory, isDirectory: true)
+        }
+        if let workspace {
+            return workspace
+        }
+        return URL(fileURLWithPath: FileManager.default.currentDirectoryPath, isDirectory: true)
     }
 }

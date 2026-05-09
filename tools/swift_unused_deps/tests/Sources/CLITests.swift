@@ -11,6 +11,7 @@ final class CLITests: XCTestCase {
                 "--metadata-root", "/tmp/bazel-bin",
                 "--index-store-path", "/tmp/index-store",
                 "--fix-output", "/tmp/fix.json",
+                "--include-low-confidence-fixes",
                 "--min-report-confidence", "medium",
                 "--min-fix-confidence", "low",
                 "--report-output", "/tmp/report.out",
@@ -23,6 +24,7 @@ final class CLITests: XCTestCase {
         XCTAssertEqual(command.indexStorePath, "/tmp/index-store")
         XCTAssertNil(command.filter)
         XCTAssertEqual(command.fixOutput, "/tmp/fix.json")
+        XCTAssertTrue(command.includeLowConfidenceFixes)
         XCTAssertEqual(command.minReportConfidence, "medium")
         XCTAssertEqual(command.minFixConfidence, "low")
         XCTAssertEqual(command.reportOutput, "/tmp/report.out")
@@ -55,6 +57,40 @@ final class CLITests: XCTestCase {
         ])) { error in
             XCTAssertTrue("\(error)".contains("--metadata-root cannot be empty."))
         }
+    }
+
+    func testParseAnalyzeRejectsConflictingLowConfidenceFixOptions() {
+        XCTAssertThrowsError(try SwiftUnusedDepsCommand.parseAsRoot([
+            "analyze",
+            "//App/...",
+            "--include-low-confidence-fixes",
+            "--min-fix-confidence", "high",
+        ])) { error in
+            XCTAssertTrue("\(error)".contains("--include-low-confidence-fixes"))
+        }
+    }
+
+    func testParseFixSubcommand() throws {
+        let command = try XCTUnwrap(
+            try SwiftUnusedDepsCommand.parseAsRoot([
+                "fix",
+                "//App/...",
+                "--metadata-root", "/tmp/bazel-bin",
+                "--index-store-path", "/tmp/index-store",
+                "--fix-output", "/tmp/fix.json",
+                "--include-low-confidence-fixes",
+                "--report-output", "/tmp/report.json",
+                "--workspace-directory", "/tmp/workspace",
+            ]) as? SwiftUnusedDepsFixCommand
+        )
+
+        XCTAssertEqual(command.targetPattern, "//App/...")
+        XCTAssertEqual(command.metadataRoot, "/tmp/bazel-bin")
+        XCTAssertEqual(command.indexStorePath, "/tmp/index-store")
+        XCTAssertEqual(command.fixOutput, "/tmp/fix.json")
+        XCTAssertTrue(command.includeLowConfidenceFixes)
+        XCTAssertEqual(command.reportOutput, "/tmp/report.json")
+        XCTAssertEqual(command.workspaceDirectory, "/tmp/workspace")
     }
 
     func testParseApplySubcommand() throws {

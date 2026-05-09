@@ -18,7 +18,7 @@ teardown_file() {
   assert_file_contains "cases/Targets/UnusedImport/BUILD.bazel" "//cases/Deps/LibA"
   assert_file_contains "cases/Targets/UnusedImport/BUILD.bazel" "//cases/Deps/LibB"
 
-  run_swift_unused_deps_in_workspace //cases/Targets/UnusedImport:UnusedImport --apply-fix-plan --min-report-confidence high
+  run_swift_unused_deps_in_workspace //cases/Targets/UnusedImport:UnusedImport --direct-fix --min-report-confidence high
 
   assert_status 0
   assert_output_contains "Summary: 1 target analyzed, 0 issues found."
@@ -58,7 +58,7 @@ teardown_file() {
 }
 
 @test "fix can apply low-confidence candidate private dep when requested" {
-  run_swift_unused_deps_in_workspace //cases/Targets/CandidatePrivateDep:CandidatePrivateDep --apply-fix-plan --min-fix-confidence low
+  run_swift_unused_deps_in_workspace //cases/Targets/CandidatePrivateDep:CandidatePrivateDep --apply-fix-plan --include-low-confidence-fixes
 
   assert_status 0
   assert_output_contains "Summary: 1 target analyzed, 0 issues found."
