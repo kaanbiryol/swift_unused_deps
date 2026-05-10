@@ -211,6 +211,26 @@ assert_output_not_contains() {
   fi
 }
 
+assert_stderr_contains() {
+  local expected="$1"
+  if [[ "${stderr}" != *"${expected}"* ]]; then
+    echo "expected stderr to contain: ${expected}" >&2
+    echo "--- stderr ---" >&2
+    echo "${stderr}" >&2
+    return 1
+  fi
+}
+
+assert_stderr_not_contains() {
+  local unexpected="$1"
+  if [[ "${stderr}" == *"${unexpected}"* ]]; then
+    echo "expected stderr not to contain: ${unexpected}" >&2
+    echo "--- stderr ---" >&2
+    echo "${stderr}" >&2
+    return 1
+  fi
+}
+
 assert_file_contains() {
   local file="$1"
   local expected="$2"

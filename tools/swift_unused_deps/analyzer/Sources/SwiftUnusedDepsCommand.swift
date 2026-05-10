@@ -339,7 +339,6 @@ public struct SwiftUnusedDepsFixCommand: ParsableCommand {
             try SwiftUnusedDepsCommand.write(FixPlan.formatJSON(plan), to: resolvedFixOutput)
         }
 
-        printErr("Applying \(plan.buildEdits.count) BUILD fix(es) and \(plan.sourceImportRemovals.count) source import removal(s)...")
         let result = try FixPlanApplier.apply(plan, workspaceDirectory: run.workspaceDirectory)
         if result.applied {
             printErr("Done: \(result.buildFixCount) BUILD fix(es) and \(result.sourceImportRemovalCount) source import removal(s) applied.")
@@ -378,7 +377,6 @@ public struct SwiftUnusedDepsApplyCommand: ParsableCommand {
         let plan = FixPlan.merge(plans)
         let workspace = resolvedWorkspaceDirectory()
 
-        printErr("Applying \(plan.buildEdits.count) BUILD fix(es) and \(plan.sourceImportRemovals.count) source import removal(s)...")
         let result = try FixPlanApplier.apply(plan, workspaceDirectory: workspace)
         if result.applied {
             printErr("Done: \(result.buildFixCount) BUILD fix(es) and \(result.sourceImportRemovalCount) source import removal(s) applied.")

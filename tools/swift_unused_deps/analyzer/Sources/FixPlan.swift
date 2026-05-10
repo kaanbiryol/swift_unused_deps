@@ -155,8 +155,44 @@ public struct FixPlan: Codable, Equatable {
         return String(decoding: data, as: UTF8.self)
     }
 
+    public static func formatSummary(_ plan: FixPlan) -> String {
+        var lines = ["Planned fixes:"]
+
+        if plan.buildEdits.isEmpty {
+            lines.append("  BUILD edits: none")
+        } else {
+            lines.append("  BUILD edits:")
+            for edit in plan.buildEdits {
+                lines.append("    \(formatBuildEdit(edit))")
+            }
+        }
+
+        if plan.sourceImportRemovals.isEmpty {
+            lines.append("  Source import removals: none")
+        } else {
+            lines.append("  Source import removals:")
+            for removal in plan.sourceImportRemovals {
+                lines.append("    remove import \(removal.moduleName) from \(removal.filePath)")
+            }
+        }
+
+        return lines.joined(separator: "\n")
+    }
+
     public static func read(from url: URL) throws -> FixPlan {
         let data = try Data(contentsOf: url)
         return try JSONDecoder().decode(FixPlan.self, from: data)
+    }
+
+    private static func formatBuildEdit(_ edit: BuildEdit) -> String {
+        switch edit.operation {
+        case .add:
+            return "add \(edit.label) to \(edit.attribute) of \(edit.target)"
+        case .remove:
+            return "remove \(edit.label) from \(edit.attribute) of \(edit.target)"
+        case .move:
+            let destination = edit.destinationAttribute ?? "<missing destination>"
+            return "move \(edit.label) from \(edit.attribute) to \(destination) of \(edit.target)"
+        }
     }
 }

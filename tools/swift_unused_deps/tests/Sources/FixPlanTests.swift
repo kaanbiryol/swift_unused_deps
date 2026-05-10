@@ -88,6 +88,38 @@ final class FixPlanTests: XCTestCase {
         ])
     }
 
+    func testFixPlanSummaryListsBuildAndSourceChanges() {
+        let plan = FixPlan(
+            sourceImportRemovals: [
+                SourceImportRemoval(filePath: "App/App.swift", moduleName: "LibA"),
+            ],
+            buildEdits: [
+                BuildEdit(operation: .remove, attribute: "deps", label: "//Lib:A", target: "//App:App"),
+                BuildEdit(operation: .add, attribute: "deps", label: "//Lib:B", target: "//App:App"),
+                BuildEdit(
+                    operation: .move,
+                    attribute: "deps",
+                    label: "//Lib:C",
+                    target: "//App:App",
+                    destinationAttribute: "private_deps"
+                ),
+            ]
+        )
+
+        XCTAssertEqual(
+            FixPlan.formatSummary(plan),
+            """
+            Planned fixes:
+              BUILD edits:
+                add //Lib:B to deps of //App:App
+                move //Lib:C from deps to private_deps of //App:App
+                remove //Lib:A from deps of //App:App
+              Source import removals:
+                remove import LibA from App/App.swift
+            """
+        )
+    }
+
     func testApplierCanApplySourceOnlyPlan() throws {
         let workspace = try makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: workspace) }

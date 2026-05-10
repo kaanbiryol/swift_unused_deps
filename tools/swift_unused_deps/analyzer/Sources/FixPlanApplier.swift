@@ -22,6 +22,9 @@ public enum FixPlanApplier {
             workspaceDirectory: workspaceDirectory
         )
 
+        printErr(FixPlan.formatSummary(plan))
+        printErr("Applying \(plan.buildEdits.count) BUILD fix(es) and \(plan.sourceImportRemovals.count) source import removal(s)...")
+
         if plan.buildozerCommands.isEmpty {
             try SourceImportEditor.apply(edits: sourceImportEdits)
             return Result(

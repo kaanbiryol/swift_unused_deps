@@ -22,6 +22,9 @@ teardown_file() {
 
   assert_status 0
   assert_output_contains "Summary: 1 target analyzed, 0 issues found."
+  assert_stderr_contains "Planned fixes:"
+  assert_stderr_contains "remove //cases/Deps/LibA:LibA from deps of //cases/Targets/UnusedImport:UnusedImport"
+  assert_stderr_contains "remove import LibA from ./cases/Targets/UnusedImport/UnusedImport.swift"
 
   assert_file_contains "cases/Targets/UnusedImport/UnusedImport.swift" "import LibB"
   assert_file_not_contains "cases/Targets/UnusedImport/UnusedImport.swift" "import LibA"
@@ -113,6 +116,24 @@ teardown_file() {
 
   assert_file_contains "cases/Targets/UnusedLibraryGroupDep/BUILD.bazel" "//cases/Deps/TransitiveDep"
   assert_file_not_contains "cases/Targets/UnusedLibraryGroupDep/BUILD.bazel" "//cases/Deps/LibraryGroup"
+}
+
+@test "fix removes unused transitive import and wrapper BUILD dep" {
+  assert_file_contains "cases/Targets/UnusedTransitiveImport/UnusedTransitiveImport.swift" "import TransitiveDep"
+  assert_file_contains "cases/Targets/UnusedTransitiveImport/BUILD.bazel" "//cases/Deps/DirectDepWithTransitive"
+  assert_file_not_contains "cases/Targets/UnusedTransitiveImport/BUILD.bazel" "//cases/Deps/TransitiveDep"
+
+  run_swift_unused_deps_in_workspace //cases/Targets/UnusedTransitiveImport:UnusedTransitiveImport --direct-fix --min-report-confidence high
+
+  assert_status 0
+  assert_output_contains "Summary: 1 target analyzed, 0 issues found."
+  assert_stderr_contains "remove //cases/Deps/DirectDepWithTransitive:DirectDepWithTransitive from deps of //cases/Targets/UnusedTransitiveImport:UnusedTransitiveImport"
+  assert_stderr_contains "remove import TransitiveDep from ./cases/Targets/UnusedTransitiveImport/UnusedTransitiveImport.swift"
+  assert_stderr_not_contains "add //cases/Deps/TransitiveDep:TransitiveDep to deps"
+
+  assert_file_not_contains "cases/Targets/UnusedTransitiveImport/UnusedTransitiveImport.swift" "import TransitiveDep"
+  assert_file_not_contains "cases/Targets/UnusedTransitiveImport/BUILD.bazel" "//cases/Deps/DirectDepWithTransitive"
+  assert_file_not_contains "cases/Targets/UnusedTransitiveImport/BUILD.bazel" "//cases/Deps/TransitiveDep"
 }
 
 @test "fix removes unused BUILD dep for iOS target" {

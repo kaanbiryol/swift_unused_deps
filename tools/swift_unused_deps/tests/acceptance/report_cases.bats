@@ -37,6 +37,7 @@ expected_reported_targets = {
     "//cases/Targets/UnusedDepCustomModuleName:UnusedDepCustomModuleName",
     "//cases/Targets/UnusedImport:UnusedImport",
     "//cases/Targets/UnusedLibraryGroupDep:UnusedLibraryGroupDep",
+    "//cases/Targets/UnusedTransitiveImport:UnusedTransitiveImport",
 }
 
 expected_incompatible_targets = {
@@ -234,6 +235,41 @@ require_issues(
     {("unused_dep", "LibraryGroup")},
 )
 require_skipped_modules("//cases/Targets/UnusedLibraryGroupDep:UnusedLibraryGroupDep", set())
+
+require_status("//cases/Targets/UnusedTransitiveImport:UnusedTransitiveImport", "issues_found")
+require_clean_modules("//cases/Targets/UnusedTransitiveImport:UnusedTransitiveImport", set())
+require_issues(
+    "//cases/Targets/UnusedTransitiveImport:UnusedTransitiveImport",
+    {
+        ("unused_dep", "DirectDepWithTransitive"),
+        ("unused_import", "TransitiveDep"),
+    },
+)
+require_skipped_modules("//cases/Targets/UnusedTransitiveImport:UnusedTransitiveImport", set())
+require_source_removal("//cases/Targets/UnusedTransitiveImport:UnusedTransitiveImport", "TransitiveDep")
+PY
+}
+
+@test "shorthand target pattern reports exact target" {
+  run_swift_unused_deps_in_workspace //cases/Targets/CleanTarget --json
+
+  assert_status 0
+
+  REPORT_JSON="${output}" python3 - <<'PY'
+import json
+import os
+import sys
+
+report = json.loads(os.environ["REPORT_JSON"])
+results = {result["target"]: result for result in report["results"]}
+target = "//cases/Targets/CleanTarget:CleanTarget"
+
+if set(results) != {target}:
+    print(f"expected only {target}, got {sorted(results)}", file=sys.stderr)
+    sys.exit(1)
+if results[target].get("status") != "clean":
+    print(f"{target} should be clean, got {results[target].get('status')}", file=sys.stderr)
+    sys.exit(1)
 PY
 }
 

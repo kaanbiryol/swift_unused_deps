@@ -1,0 +1,12 @@
+load("@build_bazel_rules_swift//swift:swift.bzl", "swift_library")
+
+# UNUSED TRANSITIVE IMPORT - TransitiveDep is imported directly through
+# DirectDepWithTransitive, but no TransitiveDep symbols are referenced.
+swift_library(
+    name = "UnusedTransitiveImport",
+    srcs = ["UnusedTransitiveImport.swift"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//cases/Deps/DirectDepWithTransitive",
+    ],
+)
