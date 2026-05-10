@@ -1,0 +1,8 @@
+load(":app_rule.bzl", "fixture_app")
+
+fixture_app(
+    name = "FixtureApp",
+    deps = [
+        "//cases/Targets/CandidatePrivateDep",
+    ],
+)

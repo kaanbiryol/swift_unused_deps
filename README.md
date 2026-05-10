@@ -67,7 +67,7 @@ for BUILD edits and applies Swift import removals directly.
 
 | Option | Use |
 |--------|-----|
-| `TARGET_PATTERN` | Limit analysis to matching Bazel targets |
+| `TARGET_PATTERN` | Top-level Bazel targets whose Swift dependency closure should be analyzed |
 | `--report-output <path>` | Write the analysis report as JSON while still printing text |
 | `--fix-output <path>` | Write fixes as structured JSON |
 | `--include-low-confidence-fixes` | Include low-confidence fixes, such as `private_deps` moves |
@@ -85,9 +85,9 @@ Run `bazel run @swift_unused_deps//:swift_unused_deps -- analyze --help` for the
 
 ## How it works
 
-`bazel build --config=swift-unused-deps` runs a Bazel [aspect](https://bazel.build/extending/aspects) on Swift targets. The aspect reads `SwiftInfo` from rules_swift, emits per-target dependency metadata, and records the per-target index-store location produced by `swift.index_while_building`.
+`bazel build --config=swift-unused-deps` runs a Bazel [aspect](https://bazel.build/extending/aspects) on Swift targets reachable from the requested top-level targets. The aspect reads `SwiftInfo` from rules_swift, emits per-target dependency metadata, and records the per-target index-store location produced by `swift.index_while_building`.
 
-`analyze` reads those Bazel outputs and interprets the Swift index store. Fixing can be represented as structured JSON first and applied with `swift_unused_deps_apply`, or applied directly with `swift_unused_deps fix`.
+`analyze` reads those Bazel outputs, resolves `TARGET_PATTERN` as a Bazel dependency closure, and interprets the Swift index store for matching Swift targets. This allows top-level targets such as applications to analyze their `swift_library` dependencies. Fixing can be represented as structured JSON first and applied with `swift_unused_deps_apply`, or applied directly with `swift_unused_deps fix`.
 
 ## Limitations
 

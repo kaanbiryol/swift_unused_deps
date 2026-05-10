@@ -26,6 +26,13 @@ report = json.loads(os.environ["REPORT_JSON"])
 results = {result["target"]: result for result in report["results"]}
 
 expected_reported_targets = {
+    "//cases/Deps/CustomModuleName:CustomModuleName",
+    "//cases/Deps/DirectDepWithTransitive:DirectDepWithTransitive",
+    "//cases/Deps/LibA:LibA",
+    "//cases/Deps/LibB:LibB",
+    "//cases/Deps/LibC:LibC",
+    "//cases/Deps/LibraryGroup:LibraryGroup_Impl",
+    "//cases/Deps/TransitiveDep:TransitiveDep",
     "//cases/Targets/CandidatePrivateDep:CandidatePrivateDep",
     "//cases/Targets/CleanLibraryGroupDep:CleanLibraryGroupDep",
     "//cases/Targets/CleanTarget:CleanTarget",
@@ -250,7 +257,39 @@ require_source_removal("//cases/Targets/UnusedTransitiveImport:UnusedTransitiveI
 PY
 }
 
-@test "shorthand target pattern reports exact target" {
+@test "app-like top-level target analyzes swift dependency closure" {
+  run_swift_unused_deps_in_workspace //cases/Apps:FixtureApp --json
+
+  assert_status 1
+
+  REPORT_JSON="${output}" python3 - <<'PY'
+import json
+import os
+import sys
+
+report = json.loads(os.environ["REPORT_JSON"])
+results = {result["target"]: result for result in report["results"]}
+expected_targets = {
+    "//cases/Deps/DirectDepWithTransitive:DirectDepWithTransitive",
+    "//cases/Deps/TransitiveDep:TransitiveDep",
+    "//cases/Targets/CandidatePrivateDep:CandidatePrivateDep",
+}
+
+if set(results) != expected_targets:
+    print(f"unexpected targets: {sorted(results)}", file=sys.stderr)
+    sys.exit(1)
+
+issues = {
+    (issue.get("kind"), issue.get("dep_module"))
+    for issue in results["//cases/Targets/CandidatePrivateDep:CandidatePrivateDep"].get("issues", [])
+}
+if issues != {("candidate_private_dep", "TransitiveDep")}:
+    print(f"unexpected issues: {sorted(issues)}", file=sys.stderr)
+    sys.exit(1)
+PY
+}
+
+@test "shorthand target pattern reports target dependency closure" {
   run_swift_unused_deps_in_workspace //cases/Targets/CleanTarget --json
 
   assert_status 0
@@ -263,9 +302,15 @@ import sys
 report = json.loads(os.environ["REPORT_JSON"])
 results = {result["target"]: result for result in report["results"]}
 target = "//cases/Targets/CleanTarget:CleanTarget"
+expected_targets = {
+    "//cases/Deps/DirectDepWithTransitive:DirectDepWithTransitive",
+    "//cases/Deps/LibB:LibB",
+    "//cases/Deps/TransitiveDep:TransitiveDep",
+    target,
+}
 
-if set(results) != {target}:
-    print(f"expected only {target}, got {sorted(results)}", file=sys.stderr)
+if set(results) != expected_targets:
+    print(f"expected target closure, got {sorted(results)}", file=sys.stderr)
     sys.exit(1)
 if results[target].get("status") != "clean":
     print(f"{target} should be clean, got {results[target].get('status')}", file=sys.stderr)
@@ -286,9 +331,13 @@ import sys
 report = json.loads(os.environ["REPORT_JSON"])
 results = {result["target"]: result for result in report["results"]}
 target = "//cases/Targets/CleanIOSTarget:CleanIOSTarget"
+expected_targets = {
+    "//cases/Deps/iOSLib:iOSLib",
+    target,
+}
 
-if set(results) != {target}:
-    print(f"expected only {target}, got {sorted(results)}", file=sys.stderr)
+if set(results) != expected_targets:
+    print(f"expected target closure, got {sorted(results)}", file=sys.stderr)
     sys.exit(1)
 
 result = results[target]
@@ -316,9 +365,14 @@ import sys
 report = json.loads(os.environ["REPORT_JSON"])
 results = {result["target"]: result for result in report["results"]}
 target = "//cases/Targets/UnusedDepIOSTarget:UnusedDepIOSTarget"
+expected_targets = {
+    "//cases/Deps/LibA:LibA",
+    "//cases/Deps/iOSLib:iOSLib",
+    target,
+}
 
-if set(results) != {target}:
-    print(f"expected only {target}, got {sorted(results)}", file=sys.stderr)
+if set(results) != expected_targets:
+    print(f"expected target closure, got {sorted(results)}", file=sys.stderr)
     sys.exit(1)
 
 result = results[target]

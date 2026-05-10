@@ -11,6 +11,7 @@ SwiftDepsInfo = provider(
         "target_label": "Label of the analyzed target.",
         "module_name": "Swift module name (read from SwiftInfo).",
         "metadata_file": "File containing the full metadata JSON.",
+        "transitive_metadata_files": "Depset of metadata JSON files for this target and its transitive Swift deps.",
         "transitive_modules": "Depset of 'module_name=label' strings for all transitive Swift deps.",
         "direct_dep_modules": "List of module names directly provided by this target's deps (for passthrough targets like swift_library_group).",
     },

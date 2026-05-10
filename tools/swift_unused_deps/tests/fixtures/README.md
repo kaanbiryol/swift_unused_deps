@@ -24,6 +24,7 @@ fixture packages from becoming Bazel packages in the repository checkout.
 | `//cases/Targets/UnusedAttributedImport:UnusedAttributedImport` | Reports `unused_import` for attributed `LibA` import | Bats asserts source-removal metadata and verifies fix/apply removes the attributed import and BUILD dep |
 | `//cases/Targets/CleanLibraryGroupDep:CleanLibraryGroupDep` | Reports clean for a used `swift_library_group` dep | Bats asserts clean `LibraryGroup` dep resolution |
 | `//cases/Targets/UnusedLibraryGroupDep:UnusedLibraryGroupDep` | Reports `unused_dep` for an unused `swift_library_group` dep | Bats asserts report metadata and verifies fix/apply removes the group BUILD dep |
+| `//cases/Apps:FixtureApp` | Simulates an app-like top-level target without `SwiftInfo` | Bats asserts the analyzer reports the Swift dependency closure |
 
 Use the materializer helper to inspect a fixture manually:
 

@@ -120,26 +120,34 @@ def _passthrough_transitive_modules(ctx):
     target's deps (vs deeply transitive ones).
     """
     transitive_sets = []
+    transitive_metadata_sets = []
     direct_dep_modules = []
     for attr_name in ["deps", "private_deps", "plugins"]:
         if hasattr(ctx.rule.attr, attr_name):
             for dep in getattr(ctx.rule.attr, attr_name):
                 if SwiftDepsInfo in dep:
                     transitive_sets.append(dep[SwiftDepsInfo].transitive_modules)
+                    transitive_metadata_sets.append(dep[SwiftDepsInfo].transitive_metadata_files)
 
                 # Record direct module names from deps that have SwiftInfo.
                 if SwiftInfo in dep:
                     for module in dep[SwiftInfo].direct_modules:
                         if module.swift:
                             direct_dep_modules.append(module.name)
-    if transitive_sets:
+    if transitive_sets or transitive_metadata_sets:
+        transitive_metadata_files = depset(transitive = transitive_metadata_sets)
         return [
             SwiftDepsInfo(
                 target_label = ctx.label,
                 module_name = None,
                 metadata_file = None,
+                transitive_metadata_files = transitive_metadata_files,
                 transitive_modules = depset(transitive = transitive_sets),
                 direct_dep_modules = direct_dep_modules,
+            ),
+            OutputGroupInfo(
+                swift_deps_info = transitive_metadata_files,
+                swift_unused_deps_metadata = transitive_metadata_files,
             ),
         ]
     return []
@@ -160,11 +168,13 @@ def _swift_deps_aspect_impl(target, ctx):
     # Build transitive module tuples.
     self_module_tuple = "{}={}".format(module_name, str(ctx.label))
     transitive_sets = [depset([self_module_tuple])]
+    transitive_metadata_sets = []
     for attr_name in ["deps", "private_deps", "plugins"]:
         if hasattr(ctx.rule.attr, attr_name):
             for dep in getattr(ctx.rule.attr, attr_name):
                 if SwiftDepsInfo in dep:
                     transitive_sets.append(dep[SwiftDepsInfo].transitive_modules)
+                    transitive_metadata_sets.append(dep[SwiftDepsInfo].transitive_metadata_files)
     transitive_modules = depset(transitive = transitive_sets)
 
     # Record declared deps, deduplicating by module name (a module can
@@ -245,17 +255,20 @@ def _swift_deps_aspect_impl(target, ctx):
             content = metadata_json,
         )
 
+    transitive_metadata_files = depset([metadata_file], transitive = transitive_metadata_sets)
+
     return [
         SwiftDepsInfo(
             target_label = ctx.label,
             module_name = module_name,
             metadata_file = metadata_file,
+            transitive_metadata_files = transitive_metadata_files,
             transitive_modules = transitive_modules,
             direct_dep_modules = [],
         ),
         OutputGroupInfo(
-            swift_deps_info = depset([metadata_file]),
-            swift_unused_deps_metadata = depset([metadata_file]),
+            swift_deps_info = transitive_metadata_files,
+            swift_unused_deps_metadata = transitive_metadata_files,
         ),
     ]
 

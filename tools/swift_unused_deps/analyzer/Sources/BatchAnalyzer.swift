@@ -11,6 +11,7 @@ public enum BatchAnalyzer {
         public var indexStorePath: String?
         public var extraSystemModules: Set<String>
         public var filter: String?
+        public var includedLabels: Set<String>?
         public var labelConverter: LabelConverter
         public var workspaceDirectory: URL?
 
@@ -19,6 +20,7 @@ public enum BatchAnalyzer {
             indexStorePath: String? = nil,
             extraSystemModules: Set<String> = [],
             filter: String? = nil,
+            includedLabels: Set<String>? = nil,
             labelConverter: LabelConverter = .identity,
             workspaceDirectory: URL? = nil
         ) {
@@ -26,6 +28,7 @@ public enum BatchAnalyzer {
             self.indexStorePath = indexStorePath
             self.extraSystemModules = extraSystemModules
             self.filter = filter
+            self.includedLabels = includedLabels
             self.labelConverter = labelConverter
             self.workspaceDirectory = workspaceDirectory
         }
@@ -58,6 +61,7 @@ public enum BatchAnalyzer {
                 bazelBin: options.bazelBin,
                 extraSystemModules: options.extraSystemModules,
                 filter: filter,
+                includedLabels: options.includedLabels,
                 labelConverter: options.labelConverter,
                 workspaceDirectory: options.workspaceDirectory,
                 indexStoreOverridePath: options.indexStorePath,
@@ -170,6 +174,7 @@ public enum BatchAnalyzer {
         bazelBin: String,
         extraSystemModules: Set<String>,
         filter: TargetFilter?,
+        includedLabels: Set<String>?,
         labelConverter: LabelConverter,
         workspaceDirectory: URL?,
         indexStoreOverridePath: String?,
@@ -184,7 +189,9 @@ public enum BatchAnalyzer {
             workspaceDirectory: workspaceDirectory
         )
         metadata = metadata.convertingLabels(with: labelConverter, buildFileContent: buildFileContent)
-        if let filter, !filter.matches(label: metadata.target.label) {
+        if let includedLabels {
+            guard includedLabels.contains(metadata.target.label) else { return nil }
+        } else if let filter, !filter.matches(label: metadata.target.label) {
             return nil
         }
 

@@ -44,6 +44,50 @@ struct BazelInfoProvider {
     }
 }
 
+struct BazelQueryProvider {
+    private let depsImpl: (String, URL) -> Set<String>?
+
+    init(_ deps: @escaping (String, URL) -> Set<String>?) {
+        self.depsImpl = deps
+    }
+
+    func deps(of targetPattern: String, currentDirectory: URL) -> Set<String>? {
+        depsImpl(targetPattern, currentDirectory)
+    }
+
+    static let process = BazelQueryProvider { targetPattern, currentDirectory in
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
+        process.arguments = [
+            "bazel",
+            "query",
+            "deps(\(targetPattern))",
+            "--output=label",
+        ]
+        process.currentDirectoryURL = currentDirectory
+
+        let stdout = Pipe()
+        process.standardOutput = stdout
+        process.standardError = FileHandle.nullDevice
+
+        do {
+            try process.run()
+            process.waitUntilExit()
+        } catch {
+            return nil
+        }
+
+        guard process.terminationStatus == 0 else { return nil }
+        let data = stdout.fileHandleForReading.readDataToEndOfFile()
+        guard let output = String(data: data, encoding: .utf8) else { return nil }
+        let labels = output
+            .split(separator: "\n")
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+        return Set(labels)
+    }
+}
+
 struct AnalysisInvocation {
     let targetPattern: String?
     let filter: String?
@@ -440,12 +484,18 @@ public struct SwiftUnusedDepsCommand: ParsableCommand {
         let metadataRoot = try resolvedMetadataRoot(invocation.metadataRoot, workspace: workspace)
         let filter = invocation.targetPattern ?? invocation.filter
         let labelConverter = LabelConverter.loadFromBazel(workspaceDirectory: workspace?.path) ?? .identity
+        let includedLabels = topLevelDependencyLabels(
+            for: filter,
+            workspace: workspace,
+            labelConverter: labelConverter
+        )
 
         let output = BatchAnalyzer.analyze(options: .init(
             bazelBin: metadataRoot,
             indexStorePath: invocation.indexStorePath,
             extraSystemModules: parseExtraSystemModules(invocation.extraSystemModules),
             filter: filter,
+            includedLabels: includedLabels,
             labelConverter: labelConverter,
             workspaceDirectory: workspace
         ))
@@ -455,6 +505,29 @@ public struct SwiftUnusedDepsCommand: ParsableCommand {
             workspaceDirectory: workspace,
             metadataRoot: metadataRoot
         )
+    }
+
+    private static func topLevelDependencyLabels(
+        for targetPattern: String?,
+        workspace: URL?,
+        labelConverter: LabelConverter,
+        bazelQuery: BazelQueryProvider = .process
+    ) -> Set<String>? {
+        guard let targetPattern, let workspace else { return nil }
+        let trimmedPattern = targetPattern.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedPattern.isEmpty else { return nil }
+        guard let labels = bazelQuery.deps(of: trimmedPattern, currentDirectory: workspace) else {
+            return nil
+        }
+
+        let includesExternalTargets = trimmedPattern.hasPrefix("@")
+        return Set(labels.compactMap { label in
+            let converted = labelConverter.convert(label)
+            if !includesExternalTargets && converted.hasPrefix("@") {
+                return nil
+            }
+            return converted
+        })
     }
 
     static func printWarnings(_ output: BatchAnalyzer.Output) {

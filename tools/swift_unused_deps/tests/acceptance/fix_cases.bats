@@ -21,7 +21,7 @@ teardown_file() {
   run_swift_unused_deps_in_workspace //cases/Targets/UnusedImport:UnusedImport --direct-fix --min-report-confidence high
 
   assert_status 0
-  assert_output_contains "Summary: 1 target analyzed, 0 issues found."
+  assert_output_contains "0 issues found."
   assert_stderr_contains "Planned fixes:"
   assert_stderr_contains "remove //cases/Deps/LibA:LibA from deps of //cases/Targets/UnusedImport:UnusedImport"
   assert_stderr_contains "remove import LibA from ./cases/Targets/UnusedImport/UnusedImport.swift"
@@ -38,7 +38,7 @@ teardown_file() {
   run_swift_unused_deps_in_workspace //cases/Targets/MissingDirectDep:MissingDirectDep --apply-fix-plan --min-report-confidence high
 
   assert_status 0
-  assert_output_contains "Summary: 1 target analyzed, 0 issues found."
+  assert_output_contains "0 issues found."
 
   assert_file_contains "cases/Targets/MissingDirectDep/BUILD.bazel" "//cases/Deps/DirectDepWithTransitive"
   assert_file_contains "cases/Targets/MissingDirectDep/BUILD.bazel" "//cases/Deps/TransitiveDep"
@@ -48,7 +48,7 @@ teardown_file() {
   run_swift_unused_deps_in_workspace //cases/Targets/CandidatePrivateDep:CandidatePrivateDep --apply-fix-plan --min-report-confidence high
 
   assert_status 0
-  assert_output_contains "Summary: 1 target analyzed, 0 issues found."
+  assert_output_contains "0 issues found."
   if [[ "${stderr}" != *"No fixes to apply."* ]]; then
     echo "expected stderr to contain: No fixes to apply." >&2
     echo "--- stderr ---" >&2
@@ -64,7 +64,7 @@ teardown_file() {
   run_swift_unused_deps_in_workspace //cases/Targets/CandidatePrivateDep:CandidatePrivateDep --apply-fix-plan --include-low-confidence-fixes
 
   assert_status 0
-  assert_output_contains "Summary: 1 target analyzed, 0 issues found."
+  assert_output_contains "0 issues found."
 
   assert_file_contains "cases/Targets/CandidatePrivateDep/BUILD.bazel" "private_deps"
   assert_file_contains "cases/Targets/CandidatePrivateDep/BUILD.bazel" "//cases/Deps/TransitiveDep"
@@ -74,7 +74,7 @@ teardown_file() {
   run_swift_unused_deps_in_workspace //cases/Targets/MultipleUnusedDeps:MultipleUnusedDeps --apply-fix-plan --min-report-confidence high
 
   assert_status 0
-  assert_output_contains "Summary: 1 target analyzed, 0 issues found."
+  assert_output_contains "0 issues found."
 
   assert_file_contains "cases/Targets/MultipleUnusedDeps/BUILD.bazel" "//cases/Deps/DirectDepWithTransitive"
   assert_file_contains "cases/Targets/MultipleUnusedDeps/BUILD.bazel" "//cases/Deps/TransitiveDep"
@@ -87,7 +87,7 @@ teardown_file() {
   run_swift_unused_deps_in_workspace //cases/Targets/UnusedDepCustomModuleName:UnusedDepCustomModuleName --apply-fix-plan --min-report-confidence high
 
   assert_status 0
-  assert_output_contains "Summary: 1 target analyzed, 0 issues found."
+  assert_output_contains "0 issues found."
 
   assert_file_contains "cases/Targets/UnusedDepCustomModuleName/UnusedDepCustomModuleName.swift" "import AppLogger"
   assert_file_contains "cases/Targets/UnusedDepCustomModuleName/BUILD.bazel" "//cases/Deps/CustomModuleName"
@@ -100,7 +100,7 @@ teardown_file() {
   run_swift_unused_deps_in_workspace //cases/Targets/UnusedAttributedImport:UnusedAttributedImport --apply-fix-plan --min-report-confidence high
 
   assert_status 0
-  assert_output_contains "Summary: 1 target analyzed, 0 issues found."
+  assert_output_contains "0 issues found."
 
   assert_file_contains "cases/Targets/UnusedAttributedImport/UnusedAttributedImport.swift" "import LibB"
   assert_file_not_contains "cases/Targets/UnusedAttributedImport/UnusedAttributedImport.swift" "@preconcurrency import LibA"
@@ -112,7 +112,7 @@ teardown_file() {
   run_swift_unused_deps_in_workspace //cases/Targets/UnusedLibraryGroupDep:UnusedLibraryGroupDep --apply-fix-plan --min-report-confidence high
 
   assert_status 0
-  assert_output_contains "Summary: 1 target analyzed, 0 issues found."
+  assert_output_contains "0 issues found."
 
   assert_file_contains "cases/Targets/UnusedLibraryGroupDep/BUILD.bazel" "//cases/Deps/TransitiveDep"
   assert_file_not_contains "cases/Targets/UnusedLibraryGroupDep/BUILD.bazel" "//cases/Deps/LibraryGroup"
@@ -126,7 +126,7 @@ teardown_file() {
   run_swift_unused_deps_in_workspace //cases/Targets/UnusedTransitiveImport:UnusedTransitiveImport --direct-fix --min-report-confidence high
 
   assert_status 0
-  assert_output_contains "Summary: 1 target analyzed, 0 issues found."
+  assert_output_contains "0 issues found."
   assert_stderr_contains "remove //cases/Deps/DirectDepWithTransitive:DirectDepWithTransitive from deps of //cases/Targets/UnusedTransitiveImport:UnusedTransitiveImport"
   assert_stderr_contains "remove import TransitiveDep from ./cases/Targets/UnusedTransitiveImport/UnusedTransitiveImport.swift"
   assert_stderr_not_contains "add //cases/Deps/TransitiveDep:TransitiveDep to deps"
@@ -140,7 +140,7 @@ teardown_file() {
   run_swift_unused_deps_in_workspace --platforms=@apple_support//platforms:ios_sim_arm64 //cases/Targets/UnusedDepIOSTarget:UnusedDepIOSTarget --apply-fix-plan --min-report-confidence high
 
   assert_status 0
-  assert_output_contains "Summary: 1 target analyzed, 0 issues found."
+  assert_output_contains "0 issues found."
 
   assert_file_contains "cases/Targets/UnusedDepIOSTarget/BUILD.bazel" "//cases/Deps/iOSLib"
   assert_file_not_contains "cases/Targets/UnusedDepIOSTarget/BUILD.bazel" "//cases/Deps/LibA"
