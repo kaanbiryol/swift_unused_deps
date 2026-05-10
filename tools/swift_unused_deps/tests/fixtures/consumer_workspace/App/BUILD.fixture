@@ -4,5 +4,5 @@ swift_library(
     name = "App",
     srcs = ["App.swift"],
     module_name = "App",
-    deps = ["//Lib:Lib"],
+    deps = ["//Lib"],
 )

@@ -6,20 +6,6 @@ public enum BatchAnalyzer {
         let metadataFiles: [URL]
     }
 
-    private struct DeclaredDepGroupKey: Hashable {
-        let label: String
-        let kind: DepKind
-    }
-
-    private struct DeclaredDepGroup {
-        let key: DeclaredDepGroupKey
-        let deps: [DeclaredDep]
-
-        var moduleNames: Set<String> {
-            Set(deps.map(\.moduleName))
-        }
-    }
-
     public struct Options {
         public var bazelBin: String
         public var indexStorePath: String?
@@ -236,13 +222,25 @@ public enum BatchAnalyzer {
             metadata: metadata,
             sourceFileUsage: sourceFileUsage
         )
-        guard !unusedImportIssues.isEmpty else { return baseResult }
+        return mergeUnusedImportIssues(
+            baseResult: baseResult,
+            unusedImportIssues: unusedImportIssues
+        )
+    }
 
+    static func mergeUnusedImportIssues(
+        baseResult: AnalysisResult,
+        unusedImportIssues: [Issue]
+    ) -> AnalysisResult {
+        guard !unusedImportIssues.isEmpty else { return baseResult }
         let unusedImportModules = Set(unusedImportIssues.compactMap(\.depModule))
+        let filteredBaseIssues = baseResult.issues.filter { issue in
+            !(issue.kind == .missingDirectDep && issue.depModule.map(unusedImportModules.contains) == true)
+        }
         return AnalysisResult(
             target: baseResult.target,
             moduleName: baseResult.moduleName,
-            issues: baseResult.issues + unusedImportIssues,
+            issues: filteredBaseIssues + unusedImportIssues,
             cleanDeps: baseResult.cleanDeps.filter { !unusedImportModules.contains($0.moduleName) },
             skippedModules: baseResult.skippedModules
         )
@@ -349,7 +347,7 @@ public enum BatchAnalyzer {
             partial.formUnion(usage.conditionalImports)
         }
 
-        return declaredDepGroups(metadata.declaredDeps).flatMap { group -> [Issue] in
+        return DeclaredDepGrouping.groups(metadata.declaredDeps).flatMap { group -> [Issue] in
             var shouldRemoveDep = group.moduleNames.isDisjoint(with: referencedModules)
                 && group.moduleNames.isDisjoint(with: reexportedImportModules)
                 && group.moduleNames.isDisjoint(with: conditionalImportModules)
@@ -380,22 +378,56 @@ public enum BatchAnalyzer {
                     removeDep: removeDep
                 )
             }
-        }
+        } + transitiveUnusedImportIssues(
+            metadata: metadata,
+            sourceFileUsage: sourceFileUsage,
+            referencedModules: referencedModules,
+            reexportedImportModules: reexportedImportModules,
+            conditionalImportModules: conditionalImportModules
+        )
     }
 
-    private static func declaredDepGroups(_ deps: [DeclaredDep]) -> [DeclaredDepGroup] {
-        Dictionary(grouping: deps) {
-            DeclaredDepGroupKey(label: $0.label, kind: $0.kind)
+    private static func transitiveUnusedImportIssues(
+        metadata: TargetMetadata,
+        sourceFileUsage: [SourceFileModuleUsage],
+        referencedModules: Set<String>,
+        reexportedImportModules: Set<String>,
+        conditionalImportModules: Set<String>
+    ) -> [Issue] {
+        let declaredModuleNames = Set(metadata.declaredDeps.map(\.moduleName))
+        let directImports = sourceFileUsage.reduce(into: Set<String>()) { partial, usage in
+            partial.formUnion(usage.directImports)
         }
-        .map { key, deps in
-            DeclaredDepGroup(key: key, deps: deps)
-        }
-        .sorted { lhs, rhs in
-            if lhs.key.label == rhs.key.label {
-                return lhs.key.kind.rawValue < rhs.key.kind.rawValue
+
+        return directImports
+            .subtracting(declaredModuleNames)
+            .subtracting(referencedModules)
+            .subtracting(reexportedImportModules)
+            .subtracting(conditionalImportModules)
+            .filter { $0 != metadata.target.moduleName }
+            .sorted()
+            .compactMap { moduleName -> Issue? in
+                guard let label = metadata.transitiveModuleMap[moduleName] else {
+                    return nil
+                }
+                let removals = sourceFileUsage.compactMap { usage -> SourceImportRemoval? in
+                    guard usage.directImports.contains(moduleName) else { return nil }
+                    guard !usage.referencedModules.contains(moduleName) else { return nil }
+                    guard !usage.reexportedImports.contains(moduleName) else { return nil }
+                    guard !usage.conditionalImports.contains(moduleName) else { return nil }
+                    return SourceImportRemoval(
+                        filePath: usage.sourceFile,
+                        moduleName: moduleName
+                    )
+                }
+                guard !removals.isEmpty else { return nil }
+                return Issue.unusedImport(
+                    DeclaredDep(label: label, moduleName: moduleName, kind: .dep),
+                    targetLabel: metadata.target.label,
+                    sourceImportRemovals: removals,
+                    removeDep: false
+                )
             }
-            return lhs.key.label < rhs.key.label
-        }
     }
 
     /// Read the BUILD file for a target label to help disambiguate apparent repo names.

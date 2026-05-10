@@ -5,8 +5,8 @@ load("@build_bazel_rules_swift//swift:swift.bzl", "swift_library")
 swift_library(
     name = "MissingDirectDep",
     srcs = ["MissingDirectDep.swift"],
+    visibility = ["//visibility:public"],
     deps = [
         "//cases/Deps/DirectDepWithTransitive",
     ],
-    visibility = ["//visibility:public"],
 )

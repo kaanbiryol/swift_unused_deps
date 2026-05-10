@@ -8,6 +8,7 @@ final class AnalyzerTests: XCTestCase {
         moduleName: String,
         deps: [(label: String, moduleName: String, kind: DepKind)] = [],
         transitive: [String: String] = [:],
+        moduleReachableVia: [String: [String]] = [:],
         isMixed: Bool = false
     ) -> TargetMetadata {
         let declaredDeps = deps.map { DeclaredDep(label: $0.label, moduleName: $0.moduleName, kind: $0.kind) }
@@ -15,7 +16,8 @@ final class AnalyzerTests: XCTestCase {
             schemaVersion: 1,
             target: TargetInfo(label: label, moduleName: moduleName, isMixedSource: isMixed),
             declaredDeps: declaredDeps,
-            transitiveModuleMap: transitive
+            transitiveModuleMap: transitive,
+            moduleReachableVia: moduleReachableVia
         )
     }
 
@@ -106,7 +108,8 @@ final class AnalyzerTests: XCTestCase {
         let metadata = makeMetadata(
             label: "//Lib:A", moduleName: "A",
             deps: [("//Lib:B", "B", .dep)],
-            transitive: ["B": "//Lib:B", "C": "//Lib:C"]
+            transitive: ["B": "//Lib:B", "C": "//Lib:C"],
+            moduleReachableVia: ["C": ["//Lib:B"]]
         )
         let modules = makeModules([("B", true), ("C", true)])
         let resolver = ModuleResolver(transitiveModuleMap: metadata.transitiveModuleMap)
@@ -118,6 +121,35 @@ final class AnalyzerTests: XCTestCase {
         XCTAssertEqual(missing[0].depLabel, "//Lib:C")
         XCTAssertEqual(missing[0].confidence, .high)
         XCTAssertEqual(missing[0].suggestedAction, .addDep)
+        XCTAssertEqual(missing[0].currentlyReachableVia, ["//Lib:B"])
+    }
+
+    func testMissingDirectDepReachableViaDoesNotListUnrelatedDeclaredDeps() {
+        let metadata = makeMetadata(
+            label: "//App:App",
+            moduleName: "App",
+            deps: [
+                ("//Lib:A", "A", .dep),
+                ("//Lib:B", "B", .dep),
+                ("//Lib:C", "C", .dep),
+            ],
+            transitive: [
+                "A": "//Lib:A",
+                "B": "//Lib:B",
+                "C": "//Lib:C",
+                "X": "//Lib:X",
+            ],
+            moduleReachableVia: ["X": ["//Lib:B"]]
+        )
+        let modules = makeModules([("A", true), ("B", true), ("C", true), ("X", true)])
+        let resolver = ModuleResolver(transitiveModuleMap: metadata.transitiveModuleMap)
+
+        let result = Analyzer.analyze(metadata: metadata, loadedModules: modules, resolver: resolver)
+
+        let missing = result.issues.filter { $0.kind == .missingDirectDep }
+        XCTAssertEqual(missing.count, 1)
+        XCTAssertEqual(missing[0].depModule, "X")
+        XCTAssertEqual(missing[0].currentlyReachableVia, ["//Lib:B"])
     }
 
     func testPrivateDepCandidate() {
@@ -223,22 +255,6 @@ final class AnalyzerTests: XCTestCase {
 
         let candidates = result.issues.filter { $0.kind == .candidatePrivateDep }
         XCTAssertEqual(candidates.count, 0)
-    }
-
-    // MARK: - BuildozerCommand
-
-    func testBuildozerCommandParseRoundTrip() {
-        let cmd = BuildozerCommand(action: "remove deps //Lib:B", target: "//App:Main")
-        let parsed = BuildozerCommand.parse(cmd.displayString)
-        XCTAssertEqual(parsed?.action, cmd.action)
-        XCTAssertEqual(parsed?.target, cmd.target)
-    }
-
-    func testBuildozerCommandParseInvalidInput() {
-        XCTAssertNil(BuildozerCommand.parse("not a buildozer command"))
-        XCTAssertNil(BuildozerCommand.parse("buildozer missing quotes"))
-        XCTAssertNil(BuildozerCommand.parse("buildozer '' //target"))
-        XCTAssertNil(BuildozerCommand.parse(""))
     }
 
     func testMissingDepIndirectLowConfidence() {

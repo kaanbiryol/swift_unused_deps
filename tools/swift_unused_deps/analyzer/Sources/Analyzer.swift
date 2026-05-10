@@ -14,29 +14,6 @@ public enum Analyzer {
         let skippedModules: [SkippedModule]
     }
 
-    private struct DeclaredDepGroupKey: Hashable {
-        let label: String
-        let kind: DepKind
-    }
-
-    private struct DeclaredDepGroup {
-        let key: DeclaredDepGroupKey
-        let deps: [DeclaredDep]
-
-        var representative: DeclaredDep {
-            deps.sorted { lhs, rhs in
-                if lhs.moduleName == rhs.moduleName {
-                    return lhs.label < rhs.label
-                }
-                return lhs.moduleName < rhs.moduleName
-            }[0]
-        }
-
-        var moduleNames: Set<String> {
-            Set(deps.map(\.moduleName))
-        }
-    }
-
     public static func analyze(
         metadata: TargetMetadata,
         loadedModules: [LoadedModule],
@@ -45,7 +22,7 @@ public enum Analyzer {
         let declaredByModule = Dictionary(
             uniqueKeysWithValues: metadata.declaredDeps.map { ($0.moduleName, $0) }
         )
-        let declaredGroups = declaredDepGroups(metadata.declaredDeps)
+        let declaredGroups = DeclaredDepGrouping.groups(metadata.declaredDeps)
         let resolvedUsage = resolveLoadedModules(
             loadedModules,
             targetModuleName: metadata.target.moduleName,
@@ -82,21 +59,6 @@ public enum Analyzer {
             ),
             skippedModules: resolvedUsage.skippedModules
         )
-    }
-
-    private static func declaredDepGroups(_ deps: [DeclaredDep]) -> [DeclaredDepGroup] {
-        Dictionary(grouping: deps) {
-            DeclaredDepGroupKey(label: $0.label, kind: $0.kind)
-        }
-        .map { key, deps in
-            DeclaredDepGroup(key: key, deps: deps)
-        }
-        .sorted { lhs, rhs in
-            if lhs.key.label == rhs.key.label {
-                return lhs.key.kind.rawValue < rhs.key.kind.rawValue
-            }
-            return lhs.key.label < rhs.key.label
-        }
     }
 
     private static func resolveLoadedModules(
@@ -173,7 +135,6 @@ public enum Analyzer {
         usedModulesByName: [String: UsedModule]
     ) -> [Issue] {
         let declaredModuleNames = Set(declaredByModule.keys)
-        let reachableVia = metadata.declaredDeps.map(\.label)
 
         return usedModulesByName
             .sorted(by: { $0.key < $1.key })
@@ -182,7 +143,7 @@ public enum Analyzer {
                 return Issue.missingDirectDep(
                     depLabel: info.label,
                     moduleName: moduleName,
-                    currentlyReachableVia: reachableVia,
+                    currentlyReachableVia: metadata.moduleReachableVia[moduleName] ?? [],
                     isImportedDirectly: info.isImportedDirectly,
                     targetLabel: metadata.target.label
                 )

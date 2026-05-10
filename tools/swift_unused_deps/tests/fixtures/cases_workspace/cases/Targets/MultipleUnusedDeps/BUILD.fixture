@@ -5,12 +5,12 @@ swift_library(
     name = "MultipleUnusedDeps",
     srcs = ["MultipleUnusedDeps.swift"],
     module_name = "MultipleUnusedDeps",
+    visibility = ["//cases:__subpackages__"],
     deps = [
         "//cases/Deps/DirectDepWithTransitive",
+        "//cases/Deps/LibA",  # Unused
+        "//cases/Deps/LibB",  # Unused
+        "//cases/Deps/LibC",  # Unused
         "//cases/Deps/TransitiveDep",
-        "//cases/Deps/LibA",    # Unused
-        "//cases/Deps/LibB",    # Unused
-        "//cases/Deps/LibC",    # Unused
     ],
-    visibility = ["//cases:__subpackages__"],
 )

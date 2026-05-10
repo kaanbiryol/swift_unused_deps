@@ -5,6 +5,6 @@ swift_library(
     name = "StdlibOnly",
     srcs = ["StdlibOnly.swift"],
     module_name = "StdlibOnly",
-    deps = [],
     visibility = ["//cases:__subpackages__"],
+    deps = [],
 )

@@ -8,7 +8,7 @@ swift_library(
     module_name = "UnusedLibraryGroupDep",
     visibility = ["//cases:__subpackages__"],
     deps = [
-        "//cases/Deps/TransitiveDep",
         "//cases/Deps/LibraryGroup",
+        "//cases/Deps/TransitiveDep",
     ],
 )

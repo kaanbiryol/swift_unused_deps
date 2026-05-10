@@ -14,15 +14,18 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Install Bazelisk
+      - name: Install tools
         run: |
-          brew install bazelisk
+          brew install bazelisk buildifier
           mkdir -p "$HOME/bin"
           ln -sf "$(brew --prefix)/bin/bazelisk" "$HOME/bin/bazel"
           echo "$HOME/bin" >> "$GITHUB_PATH"
 
       - name: Bazel version
         run: bazel version
+
+      - name: Buildifier
+        run: buildifier -mode=check $(git ls-files '*.bazel' '*.bzl' '*.fixture')
 
       - name: Build CLI
         run: bazel build //:swift_unused_deps

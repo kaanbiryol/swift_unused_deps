@@ -8,7 +8,7 @@ swift_library(
     srcs = ["UnusedImport.swift"],
     visibility = ["//visibility:public"],
     deps = [
-        "//cases/Deps/LibA",    # Unused - imported but no symbols referenced (index store detects this)
+        "//cases/Deps/LibA",  # Unused - imported but no symbols referenced (index store detects this)
         "//cases/Deps/LibB",
     ],
 )

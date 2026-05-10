@@ -57,6 +57,7 @@ public struct TargetMetadata: Codable {
     public let target: TargetInfo
     public let declaredDeps: [DeclaredDep]
     public let transitiveModuleMap: [String: String]
+    public let moduleReachableVia: [String: [String]]
     public let indexStorePath: String?
 
     enum CodingKeys: String, CodingKey {
@@ -64,6 +65,7 @@ public struct TargetMetadata: Codable {
         case target
         case declaredDeps = "declared_deps"
         case transitiveModuleMap = "transitive_module_map"
+        case moduleReachableVia = "module_reachable_via"
         case indexStorePath = "indexstore_path"
     }
 
@@ -72,13 +74,25 @@ public struct TargetMetadata: Codable {
         target: TargetInfo,
         declaredDeps: [DeclaredDep],
         transitiveModuleMap: [String: String],
+        moduleReachableVia: [String: [String]] = [:],
         indexStorePath: String? = nil
     ) {
         self.schemaVersion = schemaVersion
         self.target = target
         self.declaredDeps = declaredDeps
         self.transitiveModuleMap = transitiveModuleMap
+        self.moduleReachableVia = moduleReachableVia
         self.indexStorePath = indexStorePath
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        schemaVersion = try container.decode(Int.self, forKey: .schemaVersion)
+        target = try container.decode(TargetInfo.self, forKey: .target)
+        declaredDeps = try container.decode([DeclaredDep].self, forKey: .declaredDeps)
+        transitiveModuleMap = try container.decode([String: String].self, forKey: .transitiveModuleMap)
+        moduleReachableVia = try container.decodeIfPresent([String: [String]].self, forKey: .moduleReachableVia) ?? [:]
+        indexStorePath = try container.decodeIfPresent(String.self, forKey: .indexStorePath)
     }
 
     /// Returns a new instance with all Bazel labels converted from canonical to apparent form.
@@ -103,6 +117,14 @@ public struct TargetMetadata: Codable {
             },
             transitiveModuleMap: Dictionary(uniqueKeysWithValues:
                 transitiveModuleMap.map { ($0.key, converter.convert($0.value, buildFileContent: buildFileContent)) }
+            ),
+            moduleReachableVia: Dictionary(uniqueKeysWithValues:
+                moduleReachableVia.map { moduleName, directDeps in
+                    (
+                        moduleName,
+                        directDeps.map { converter.convert($0, buildFileContent: buildFileContent) }.sorted()
+                    )
+                }
             ),
             indexStorePath: indexStorePath
         )

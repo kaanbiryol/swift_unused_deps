@@ -5,10 +5,10 @@ swift_library(
     name = "CleanTarget",
     srcs = ["CleanTarget.swift"],
     module_name = "CleanTarget",
+    visibility = ["//cases:__subpackages__"],
     deps = [
-        "//cases/Deps/TransitiveDep",
         "//cases/Deps/DirectDepWithTransitive",
         "//cases/Deps/LibB",
+        "//cases/Deps/TransitiveDep",
     ],
-    visibility = ["//cases:__subpackages__"],
 )

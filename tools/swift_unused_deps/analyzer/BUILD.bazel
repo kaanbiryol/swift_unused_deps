@@ -7,6 +7,7 @@ swift_library(
         "Sources/Analyzer.swift",
         "Sources/BatchAnalyzer.swift",
         "Sources/Buildozer.swift",
+        "Sources/DeclaredDepGrouping.swift",
         "Sources/FixPlan.swift",
         "Sources/FixPlanApplier.swift",
         "Sources/IndexStoreReader.swift",
@@ -21,31 +22,25 @@ swift_library(
     module_name = "SwiftUnusedDepsLib",
     visibility = ["//tools/swift_unused_deps:__subpackages__"],
     deps = [
+        "@SwiftSyntax",
+        "@SwiftSyntax//:SwiftParser",
         "@swift-index-store//:IndexStore",
         "@swift_argument_parser//:ArgumentParser",
-        "@SwiftSyntax//:SwiftParser",
-        "@SwiftSyntax//:SwiftSyntax",
     ],
-)
-
-alias(
-    name = "cli",
-    actual = ":swift_unused_deps",
-    visibility = ["//visibility:public"],
 )
 
 swift_binary(
     name = "swift_unused_deps",
     srcs = ["Sources/Main.swift"],
     data = ["@buildozer_binary//:buildozer.exe"],
-    deps = [":SwiftUnusedDepsLib"],
     visibility = ["//visibility:public"],
+    deps = [":SwiftUnusedDepsLib"],
 )
 
 swift_binary(
     name = "swift_unused_deps_apply",
     srcs = ["Sources/ApplyMain.swift"],
     data = ["@buildozer_binary//:buildozer.exe"],
-    deps = [":SwiftUnusedDepsLib"],
     visibility = ["//visibility:public"],
+    deps = [":SwiftUnusedDepsLib"],
 )

@@ -5,6 +5,6 @@ swift_library(
     name = "DirectDepWithTransitive",
     srcs = ["DirectDepWithTransitive.swift"],
     module_name = "DirectDepWithTransitive",
-    deps = ["//cases/Deps/TransitiveDep"],
     visibility = ["//cases:__subpackages__"],
+    deps = ["//cases/Deps/TransitiveDep"],
 )

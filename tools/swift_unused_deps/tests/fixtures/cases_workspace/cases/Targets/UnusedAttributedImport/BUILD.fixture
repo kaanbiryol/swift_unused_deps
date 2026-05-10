@@ -5,9 +5,9 @@ swift_library(
     name = "UnusedAttributedImport",
     srcs = ["UnusedAttributedImport.swift"],
     module_name = "UnusedAttributedImport",
+    visibility = ["//cases:__subpackages__"],
     deps = [
-        "//cases/Deps/LibA",    # Unused - imported with an attribute but no symbols referenced
+        "//cases/Deps/LibA",  # Unused - imported with an attribute but no symbols referenced
         "//cases/Deps/LibB",
     ],
-    visibility = ["//cases:__subpackages__"],
 )

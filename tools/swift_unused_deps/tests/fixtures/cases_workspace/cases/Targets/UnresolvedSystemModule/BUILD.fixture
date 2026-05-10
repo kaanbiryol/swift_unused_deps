@@ -5,6 +5,6 @@ load("@build_bazel_rules_swift//swift:swift.bzl", "swift_library")
 swift_library(
     name = "UnresolvedSystemModule",
     srcs = ["UnresolvedSystemModule.swift"],
-    deps = [],
     visibility = ["//visibility:public"],
+    deps = [],
 )

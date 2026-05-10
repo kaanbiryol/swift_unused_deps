@@ -6,9 +6,9 @@ load("@build_bazel_rules_swift//swift:swift.bzl", "swift_library")
 swift_library(
     name = "CandidatePrivateDep",
     srcs = ["CandidatePrivateDep.swift"],
+    visibility = ["//visibility:public"],
     deps = [
         "//cases/Deps/DirectDepWithTransitive",
         "//cases/Deps/TransitiveDep",
     ],
-    visibility = ["//visibility:public"],
 )

@@ -91,6 +91,26 @@ def _transitive_modules(deps, private_deps, plugins = []):
                     modules[mod_name] = mod_label
     return modules
 
+def _add_reachable_via(module_reachable_via, module_name, direct_dep_label):
+    if module_name not in module_reachable_via:
+        module_reachable_via[module_name] = []
+    if direct_dep_label not in module_reachable_via[module_name]:
+        module_reachable_via[module_name].append(direct_dep_label)
+
+def _module_reachable_via(deps, private_deps):
+    """Return module name -> direct dep labels that expose that module."""
+    module_reachable_via = {}
+    for dep in list(deps) + list(private_deps):
+        direct_dep_label = str(dep.label)
+        dep_module_name = _get_dep_module_name(dep)
+        if dep_module_name:
+            _add_reachable_via(module_reachable_via, dep_module_name, direct_dep_label)
+        if SwiftDepsInfo in dep:
+            for module_tuple in dep[SwiftDepsInfo].transitive_modules.to_list():
+                mod_name, _ = module_tuple.split("=", 1)
+                _add_reachable_via(module_reachable_via, mod_name, direct_dep_label)
+    return module_reachable_via
+
 def _passthrough_transitive_modules(ctx):
     """Return transitive modules from deps of a non-Swift target.
 
@@ -172,6 +192,10 @@ def _swift_deps_aspect_impl(target, ctx):
         ctx.rule.attr.private_deps if hasattr(ctx.rule.attr, "private_deps") else [],
         ctx.rule.attr.plugins if hasattr(ctx.rule.attr, "plugins") else [],
     )
+    module_reachable_via = _module_reachable_via(
+        ctx.rule.attr.deps if hasattr(ctx.rule.attr, "deps") else [],
+        ctx.rule.attr.private_deps if hasattr(ctx.rule.attr, "private_deps") else [],
+    )
 
     # Record source file names.
     srcs = []
@@ -193,6 +217,7 @@ def _swift_deps_aspect_impl(target, ctx):
         },
         "declared_deps": declared_deps + declared_private_deps,
         "transitive_module_map": transitive_map,
+        "module_reachable_via": module_reachable_via,
         "indexstore_path": indexstore_directory.short_path if indexstore_directory else "",
     }
 

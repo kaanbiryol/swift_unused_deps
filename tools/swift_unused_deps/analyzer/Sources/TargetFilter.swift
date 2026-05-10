@@ -22,7 +22,10 @@ public struct TargetFilter: Equatable {
                 || normalizedLabel.hasPrefix("\(normalizedPrefix):")
                 || normalizedLabel.hasPrefix("\(normalizedPrefix)/")
         }
-        return normalizedLabel == normalizedPrefix
+        if normalizedLabel == normalizedPrefix {
+            return true
+        }
+        return Self.expandShorthandTarget(normalizedPrefix) == normalizedLabel
     }
 
     static func normalize(_ value: String) -> String {
@@ -37,5 +40,17 @@ public struct TargetFilter: Equatable {
             normalized.removeFirst()
         }
         return normalized
+    }
+
+    private static func expandShorthandTarget(_ value: String) -> String? {
+        guard let slashSlash = value.range(of: "//") else { return nil }
+        let package = value[slashSlash.upperBound...]
+        guard !package.isEmpty, !package.contains(":"), !package.hasSuffix("/") else {
+            return nil
+        }
+        guard let targetName = package.split(separator: "/").last else {
+            return nil
+        }
+        return "\(value):\(targetName)"
     }
 }

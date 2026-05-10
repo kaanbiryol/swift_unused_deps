@@ -169,6 +169,9 @@ final class LabelConverterTests: XCTestCase {
             transitiveModuleMap: [
                 "SwiftSyntax": "@@swift-syntax+//:SwiftSyntax",
                 "A": "@@//Lib:A",
+            ],
+            moduleReachableVia: [
+                "SwiftSyntax": ["@@//Lib:Wrapper"],
             ]
         )
 
@@ -180,6 +183,7 @@ final class LabelConverterTests: XCTestCase {
         XCTAssertEqual(converted.declaredDeps[0].kind, .dep)
         XCTAssertEqual(converted.transitiveModuleMap["SwiftSyntax"], "@swiftpkg_swift_syntax//:SwiftSyntax")
         XCTAssertEqual(converted.transitiveModuleMap["A"], "//Lib:A")
+        XCTAssertEqual(converted.moduleReachableVia["SwiftSyntax"], ["//Lib:Wrapper"])
     }
 
     func testMetadataConvertingLabelsWithBuildFileDisambiguation() {

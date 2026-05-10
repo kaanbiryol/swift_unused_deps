@@ -12,6 +12,6 @@ swift_library(
 # rules_swift_package_manager exposes Swift packages.
 swift_library_group(
     name = "LibraryGroup",
-    deps = [":LibraryGroup_Impl"],
     visibility = ["//cases:__subpackages__"],
+    deps = [":LibraryGroup_Impl"],
 )

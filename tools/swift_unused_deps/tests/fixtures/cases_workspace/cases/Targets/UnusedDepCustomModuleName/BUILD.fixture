@@ -6,11 +6,11 @@ swift_library(
     name = "UnusedDepCustomModuleName",
     srcs = ["UnusedDepCustomModuleName.swift"],
     module_name = "UnusedDepCustomModuleName",
-    deps = [
-        "//cases/Deps/DirectDepWithTransitive",
-        "//cases/Deps/LibA",              # Unused - never imported
-        "//cases/Deps/TransitiveDep",
-        "//cases/Deps/CustomModuleName",  # Used via `import AppLogger`
-    ],
     visibility = ["//cases:__subpackages__"],
+    deps = [
+        "//cases/Deps/CustomModuleName",  # Used via `import AppLogger`
+        "//cases/Deps/DirectDepWithTransitive",
+        "//cases/Deps/LibA",  # Unused - never imported
+        "//cases/Deps/TransitiveDep",
+    ],
 )

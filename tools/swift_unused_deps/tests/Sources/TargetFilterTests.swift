@@ -17,6 +17,19 @@ final class TargetFilterTests: XCTestCase {
         XCTAssertFalse(filter.matches(label: "//App:AppTests"))
     }
 
+    func testExactShorthandTargetMatchesExplicitTargetName() {
+        let filter = TargetFilter("//cases/Targets/CleanTarget")
+
+        XCTAssertTrue(filter.matches(label: "//cases/Targets/CleanTarget:CleanTarget"))
+        XCTAssertFalse(filter.matches(label: "//cases/Targets/CleanTarget:Other"))
+    }
+
+    func testExactExternalShorthandTargetMatchesExplicitTargetName() {
+        let filter = TargetFilter("@repo//pkg/Lib")
+
+        XCTAssertTrue(filter.matches(label: "@@repo//pkg/Lib:Lib"))
+    }
+
     func testDoesNotMatchDifferentSubtree() {
         let filter = TargetFilter("//App/Features/Login...")
 

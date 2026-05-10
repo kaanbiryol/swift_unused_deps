@@ -2,7 +2,6 @@ module(name = "swift_unused_deps_consumer")
 
 bazel_dep(name = "rules_swift", version = "3.6.0", repo_name = "build_bazel_rules_swift")
 bazel_dep(name = "swift_unused_deps", version = "0.1.0")
-
 local_path_override(
     module_name = "swift_unused_deps",
     path = "__SWIFT_UNUSED_DEPS_PATH__",

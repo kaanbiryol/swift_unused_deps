@@ -264,5 +264,4 @@ public struct AnalysisResult {
     public let skippedModules: [SkippedModule]
 
     public var isClean: Bool { issues.isEmpty }
-    public var status: String { isClean ? "clean" : "issues_found" }
 }

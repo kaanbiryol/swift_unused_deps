@@ -9,7 +9,7 @@ swift_library(
     target_compatible_with = ["@platforms//os:ios"],
     visibility = ["//cases:__subpackages__"],
     deps = [
+        "//cases/Deps/LibA",  # Unused
         "//cases/Deps/iOSLib",
-        "//cases/Deps/LibA",    # Unused
     ],
 )

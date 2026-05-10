@@ -183,6 +183,75 @@ final class BatchAnalyzerTests: XCTestCase {
         XCTAssertTrue(issues.isEmpty)
     }
 
+    func testUnusedImportIssuesIncludeUnreferencedTransitiveDirectImport() {
+        let metadata = makeMetadata(
+            label: "//Lib:A",
+            moduleName: "A",
+            deps: [DeclaredDep(label: "//Lib:Wrapper", moduleName: "Wrapper", kind: .dep)],
+            transitiveModuleMap: [
+                "Wrapper": "//Lib:Wrapper",
+                "TransitiveDep": "//Lib:TransitiveDep",
+            ]
+        )
+
+        let issues = BatchAnalyzer.unusedImportIssues(
+            metadata: metadata,
+            sourceFileUsage: [
+                SourceFileModuleUsage(
+                    sourceFile: "/tmp/A.swift",
+                    moduleName: "A",
+                    referencedModules: [],
+                    loadedModules: ["TransitiveDep"],
+                    directImports: ["TransitiveDep"]
+                ),
+            ]
+        )
+
+        XCTAssertEqual(issues.count, 1)
+        XCTAssertEqual(issues[0].kind, .unusedImport)
+        XCTAssertEqual(issues[0].depModule, "TransitiveDep")
+        XCTAssertEqual(issues[0].depLabel, "//Lib:TransitiveDep")
+        XCTAssertNil(issues[0].buildozerCommand)
+        XCTAssertEqual(issues[0].sourceImportRemovals, [
+            SourceImportRemoval(filePath: "/tmp/A.swift", moduleName: "TransitiveDep"),
+        ])
+    }
+
+    func testMergeUnusedImportIssuesSuppressesMatchingMissingDirectDep() {
+        let missingDep = DeclaredDep(label: "//Lib:TransitiveDep", moduleName: "TransitiveDep", kind: .dep)
+        let baseResult = AnalysisResult(
+            target: "//Lib:A",
+            moduleName: "A",
+            issues: [
+                Issue.missingDirectDep(
+                    depLabel: missingDep.label,
+                    moduleName: missingDep.moduleName,
+                    currentlyReachableVia: ["//Lib:Wrapper"],
+                    isImportedDirectly: true,
+                    targetLabel: "//Lib:A"
+                ),
+            ],
+            cleanDeps: [],
+            skippedModules: []
+        )
+        let unusedImport = Issue.unusedImport(
+            missingDep,
+            targetLabel: "//Lib:A",
+            sourceImportRemovals: [
+                SourceImportRemoval(filePath: "/tmp/A.swift", moduleName: "TransitiveDep"),
+            ],
+            removeDep: false
+        )
+
+        let result = BatchAnalyzer.mergeUnusedImportIssues(
+            baseResult: baseResult,
+            unusedImportIssues: [unusedImport]
+        )
+
+        XCTAssertEqual(result.issues.map(\.kind), [.unusedImport])
+        XCTAssertEqual(result.issues[0].depModule, "TransitiveDep")
+    }
+
     func testAnalyzeWarnsOnInvalidIndexStorePathAndSkipsTarget() throws {
         try withTemporaryDirectory { directory in
             try writeMetadata(
