@@ -268,7 +268,7 @@ if result.get("issues") or result.get("skipped_modules"):
     sys.exit(1)
 PY
 
-  run_swift_unused_deps_in_workspace --build-config swift-unused-deps-ios //cases/Targets/UnusedDepIOSTarget:UnusedDepIOSTarget --json
+  run_swift_unused_deps_in_workspace --platforms=@apple_support//platforms:ios_sim_arm64 //cases/Targets/UnusedDepIOSTarget:UnusedDepIOSTarget --json
 
   assert_status 1
 

@@ -26,9 +26,6 @@ git_override(
 build:swift-unused-deps --features=swift.index_while_building
 build:swift-unused-deps --aspects=@swift_unused_deps//tools/swift_unused_deps:defs.bzl%swift_unused_deps_aspect
 build:swift-unused-deps --output_groups=swift_unused_deps_metadata
-
-build:swift-unused-deps-ios --config=swift-unused-deps
-build:swift-unused-deps-ios --platforms=@apple_support//platforms:ios_sim_arm64
 ```
 
 ### Prerequisites
@@ -43,7 +40,14 @@ bazel build --config=swift-unused-deps "${TARGETS}"
 bazel run @swift_unused_deps//:swift_unused_deps -- analyze "${TARGETS}"
 ```
 
-> For iOS targets, use `--config=swift-unused-deps-ios` on the Bazel build.
+For iOS targets, pass the iOS platform on the metadata build:
+
+```sh
+bazel build \
+  --config=swift-unused-deps \
+  --platforms=@apple_support//platforms:ios_sim_arm64 \
+  "${TARGETS}"
+```
 
 ### Commands
 

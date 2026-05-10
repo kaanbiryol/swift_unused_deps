@@ -116,7 +116,7 @@ teardown_file() {
 }
 
 @test "fix removes unused BUILD dep for iOS target" {
-  run_swift_unused_deps_in_workspace --build-config swift-unused-deps-ios //cases/Targets/UnusedDepIOSTarget:UnusedDepIOSTarget --apply-fix-plan --min-report-confidence high
+  run_swift_unused_deps_in_workspace --platforms=@apple_support//platforms:ios_sim_arm64 //cases/Targets/UnusedDepIOSTarget:UnusedDepIOSTarget --apply-fix-plan --min-report-confidence high
 
   assert_status 0
   assert_output_contains "Summary: 1 target analyzed, 0 issues found."
