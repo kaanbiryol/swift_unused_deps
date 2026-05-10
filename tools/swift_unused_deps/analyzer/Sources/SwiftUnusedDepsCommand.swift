@@ -61,7 +61,9 @@ struct BazelQueryProvider {
         process.arguments = [
             "bazel",
             "query",
-            "deps(\(targetPattern))",
+            "--notool_deps",
+            "--noimplicit_deps",
+            "kind(\".* rule\", deps(\(targetPattern)))",
             "--output=label",
         ]
         process.currentDirectoryURL = currentDirectory
