@@ -4,7 +4,8 @@
 
 Detect unused and missing direct Bazel dependencies for Swift targets.
 
-Compares declared `deps` in BUILD files against what the Swift compiler actually loaded during compilation. Finds deps you can safely remove and deps you should add.
+The Bazel-native API is a test/report rule. Bazel owns configuration, platform
+selection, aspect application, declared outputs, and test failure reporting.
 
 ## Setup
 
@@ -20,12 +21,10 @@ git_override(
 )
 ```
 
-### 2. Configure your `.bazelrc`
+### 2. Enable Swift indexing for analysis builds
 
-```
+```text
 build:swift-unused-deps --features=swift.index_while_building
-build:swift-unused-deps --aspects=@swift_unused_deps//tools/swift_unused_deps:defs.bzl%swift_unused_deps_aspect
-build:swift-unused-deps --output_groups=swift_unused_deps_metadata
 ```
 
 ### Prerequisites
@@ -34,67 +33,129 @@ build:swift-unused-deps --output_groups=swift_unused_deps_metadata
 
 ## Usage
 
-```sh
-TARGETS=//libraries/...
-bazel build --config=swift-unused-deps "${TARGETS}"
-bazel run @swift_unused_deps//:swift_unused_deps -- analyze "${TARGETS}"
+Define one analysis target with the macro:
+
+```python
+load("@swift_unused_deps//tools/swift_unused_deps:defs.bzl", "swift_unused_deps")
+
+swift_unused_deps(
+    name = "swift_unused_deps",
+    targets = [
+        "//apps/Example:ExampleApp",
+    ],
+)
 ```
 
-For iOS targets, pass the iOS platform on the metadata build:
+This creates three targets:
+
+| Target | Command | Use |
+|--------|---------|-----|
+| `:swift_unused_deps` | `bazel test` | Check deps and fail on findings |
+| `:swift_unused_deps_report` | `bazel build` | Emit merged report and fix artifacts |
+| `:swift_unused_deps_fix` | `bazel run` | Apply the generated fix plan |
+
+Run the check like any other Bazel test:
 
 ```sh
-bazel build \
-  --config=swift-unused-deps \
+bazel test --config=swift-unused-deps //tools:swift_unused_deps
+```
+
+For iOS or other configured builds, pass the platform to Bazel:
+
+```sh
+bazel test --config=swift-unused-deps \
   --platforms=@apple_support//platforms:ios_sim_arm64 \
-  "${TARGETS}"
+  //tools:swift_unused_deps
 ```
 
-### Commands
+The test prints a merged text report and fails when findings meet
+`min_report_confidence`.
 
-| Task | Command |
-|------|---------|
-| Report findings | `bazel run @swift_unused_deps//:swift_unused_deps -- analyze "${TARGETS}"` |
-| Output findings as JSON | `bazel run @swift_unused_deps//:swift_unused_deps -- analyze "${TARGETS}" --report-output report.json` |
-| Output fix plan | `bazel run @swift_unused_deps//:swift_unused_deps -- analyze "${TARGETS}" --fix-output fix.json` |
-| Apply a fix plan | `bazel run @swift_unused_deps//:swift_unused_deps_apply -- fix.json` |
-| Auto-apply fixes | `bazel run @swift_unused_deps//:swift_unused_deps -- fix "${TARGETS}"` |
+## Report And Fix Targets
 
-Fix plans contain source import removals and structured BUILD edits. Applying
-fixes uses [buildozer](https://github.com/bazelbuild/buildtools/tree/master/buildozer)
-for BUILD edits and applies Swift import removals directly.
+```sh
+bazel build --config=swift-unused-deps //tools:swift_unused_deps_report
+```
 
-### Options
+This produces:
 
-| Option | Use |
-|--------|-----|
-| `TARGET_PATTERN` | Top-level Bazel targets whose Swift dependency closure should be analyzed |
-| `--report-output <path>` | Write the analysis report as JSON while still printing text |
-| `--fix-output <path>` | Write fixes as structured JSON |
-| `--include-low-confidence-fixes` | Include low-confidence fixes, such as `private_deps` moves |
+- `*.swift_unused_deps.report.json`
+- `*.swift_unused_deps.report.txt`
+- `*.swift_unused_deps.fix.json`
+- `*.swift_unused_deps.exit_code`
 
-Run `bazel run @swift_unused_deps//:swift_unused_deps -- analyze --help` for the full CLI reference.
+Common macro attributes:
 
-## What it detects
+| Attribute | Use |
+|-----------|-----|
+| `targets` | Top-level Bazel targets whose Swift dependency closure should be analyzed |
+| `min_report_confidence` | `low`, `medium`, or `high`; controls reporting and test failure |
+| `include_low_confidence_fixes` | Include low-confidence fixes in the merged fix plan |
+
+Apply generated fixes with the macro-generated fix target:
+
+```sh
+bazel run --config=swift-unused-deps //tools:swift_unused_deps_fix
+```
+
+Applying fixes mutates source and BUILD files, so it intentionally stays outside
+normal Bazel build/test actions.
+
+## Low-Level Output Groups
+
+The aspect also exposes per-target artifacts through output groups for debugging
+and custom integrations:
+
+```sh
+bazel build --features=swift.index_while_building \
+  --aspects=@swift_unused_deps//tools/swift_unused_deps:defs.bzl%swift_unused_deps_aspect \
+  --output_groups=swift_unused_deps_reports,swift_unused_deps_fix_high \
+  //apps/Example:ExampleApp
+```
+
+Available output groups:
+
+- `swift_unused_deps_reports`
+- `swift_unused_deps_fix_high`
+- `swift_unused_deps_fix_low`
+- `swift_unused_deps_metadata`
+
+## Debug CLI
+
+The Swift executable is used by Bazel actions. `analyze --metadata-root` remains
+available only for debugging already-produced metadata:
+
+```sh
+bazel run @swift_unused_deps//:swift_unused_deps -- analyze //apps/Example:ExampleApp \
+  --metadata-root /path/to/bazel-bin
+```
+
+Normal CI and local checks should use the `swift_unused_deps` macro instead.
+
+## What It Detects
 
 | Issue | Description | Confidence |
 |-------|-------------|------------|
 | **Unused dep** | Declared in BUILD but module never loaded by compiler | High |
 | **Unused import** | Imported in Swift source but no symbols from that module are referenced anywhere in the target | High |
-| **Missing direct dep** | Imported in source but not declared, only reachable transitively | High (if directly imported) / Low (if indirect) |
+| **Missing direct dep** | Imported in source but not declared, only reachable transitively | High if directly imported, low if indirect |
 | **private_deps candidate** | Loaded by compiler but not explicitly imported in source | Low |
 
-## How it works
+## How It Works
 
-`bazel build --config=swift-unused-deps` runs a Bazel [aspect](https://bazel.build/extending/aspects) on Swift targets reachable from the requested top-level targets. The aspect reads `SwiftInfo` from rules_swift, emits per-target dependency metadata, and records the per-target index-store location produced by `swift.index_while_building`.
-
-`analyze` reads those Bazel outputs, resolves `TARGET_PATTERN` as a Bazel dependency closure, and interprets the Swift index store for matching Swift targets. This allows top-level targets such as applications to analyze their `swift_library` dependencies. Fixing can be represented as structured JSON first and applied with `swift_unused_deps_apply`, or applied directly with `swift_unused_deps fix`.
+The `swift_unused_deps` macro creates test, report, and fix targets. Under the
+macro, Bazel rules apply an aspect to the requested targets. The aspect reads
+`SwiftInfo`, writes per-target metadata, and runs the analyzer as declared Bazel
+actions. The aggregation rule consumes the aspect's `SwiftDepsInfo` provider
+directly and merges declared report/fix artifacts without invoking Bazel from
+inside the analyzer.
 
 ## Limitations
 
 - Pure Swift targets only. Mixed Swift/ObjC targets emit a warning.
-- `@_exported import` re-exports are treated as non-removable by fix outputs
-- Scoped imports like `import struct LibA.Button` are not analyzed reliably end to end yet
-- Unused Swift `import` statements are fixed only when the analyzer has index store data for per-file source edits
+- `@_exported import` re-exports are treated as non-removable by fix outputs.
+- Scoped imports like `import struct LibA.Button` are not analyzed reliably end to end yet.
+- Unused Swift `import` statements are fixed only when the analyzer has index store data for per-file source edits.
 
 ## Development
 
@@ -117,9 +178,7 @@ tools/swift_unused_deps/tests/helpers/materialize_fixture_workspace.sh \
 
 cd "${FIXTURE_WORKSPACE}"
 
-TARGETS=//cases/Targets/UnusedImport:UnusedImport
-bazel build --config=swift-unused-deps "${TARGETS}"
-bazel run @swift_unused_deps//:swift_unused_deps -- analyze "${TARGETS}"
+bazel test --features=swift.index_while_building //:candidate_private_dep_unused_deps
 ```
 
 ## License

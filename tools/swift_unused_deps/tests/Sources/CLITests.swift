@@ -93,6 +93,29 @@ final class CLITests: XCTestCase {
         XCTAssertEqual(command.workspaceDirectory, "/tmp/workspace")
     }
 
+    func testParseMergeReportsSubcommand() throws {
+        let command = try XCTUnwrap(
+            try SwiftUnusedDepsCommand.parseAsRoot([
+                "merge-reports",
+                "--report-input", "/tmp/a.report.json",
+                "--fix-input", "/tmp/a.fix.json",
+                "--min-report-confidence", "high",
+                "--report-output", "/tmp/merged.report.json",
+                "--text-output", "/tmp/merged.report.txt",
+                "--fix-output", "/tmp/merged.fix.json",
+                "--exit-code-output", "/tmp/merged.exit_code",
+            ]) as? SwiftUnusedDepsMergeReportsCommand
+        )
+
+        XCTAssertEqual(command.reportInputs, ["/tmp/a.report.json"])
+        XCTAssertEqual(command.fixInputs, ["/tmp/a.fix.json"])
+        XCTAssertEqual(command.minReportConfidence, "high")
+        XCTAssertEqual(command.reportOutput, "/tmp/merged.report.json")
+        XCTAssertEqual(command.textOutput, "/tmp/merged.report.txt")
+        XCTAssertEqual(command.fixOutput, "/tmp/merged.fix.json")
+        XCTAssertEqual(command.exitCodeOutput, "/tmp/merged.exit_code")
+    }
+
     func testParseApplySubcommand() throws {
         let command = try XCTUnwrap(
             try SwiftUnusedDepsCommand.parseAsRoot([

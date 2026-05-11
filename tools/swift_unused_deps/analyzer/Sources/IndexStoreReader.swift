@@ -3,6 +3,7 @@ import IndexStore
 
 public struct SourceFileModuleUsage {
     public let sourceFile: String
+    public let isGenerated: Bool
     public let moduleName: String
     /// Modules whose symbols are actually referenced (USR cross-reference).
     public let referencedModules: Set<String>
@@ -19,6 +20,7 @@ public struct SourceFileModuleUsage {
 
     public init(
         sourceFile: String,
+        isGenerated: Bool = false,
         moduleName: String,
         referencedModules: Set<String>,
         loadedModules: Set<String> = [],
@@ -28,6 +30,7 @@ public struct SourceFileModuleUsage {
         conditionalImports: Set<String> = []
     ) {
         self.sourceFile = sourceFile
+        self.isGenerated = isGenerated
         self.moduleName = moduleName
         self.referencedModules = referencedModules
         self.loadedModules = loadedModules
@@ -62,9 +65,95 @@ public enum IndexStoreReader {
         }
     }
 
+    private struct ResolvedSourceFile {
+        let readablePath: String?
+        let reportPath: String
+        let isGenerated: Bool
+    }
+
+    private struct SourceFileLookup {
+        let sourceFiles: [SourceFileMetadata]
+        let fileManager = FileManager.default
+
+        func resolve(_ indexStorePath: String) -> ResolvedSourceFile {
+            if let exact = bestSourceFileMatch(for: indexStorePath) {
+                return ResolvedSourceFile(
+                    readablePath: readablePath(for: exact) ?? readableIndexStorePath(indexStorePath),
+                    reportPath: reportPath(for: exact),
+                    isGenerated: exact.isGenerated || exact.shortPath.hasPrefix("../")
+                )
+            }
+
+            if fileManager.fileExists(atPath: indexStorePath) {
+                return ResolvedSourceFile(
+                    readablePath: indexStorePath,
+                    reportPath: indexStorePath,
+                    isGenerated: false
+                )
+            }
+
+            let basename = URL(fileURLWithPath: indexStorePath).lastPathComponent
+            let basenameMatches = sourceFiles.filter { $0.basename == basename }
+            if basenameMatches.count == 1, let match = basenameMatches.first {
+                return ResolvedSourceFile(
+                    readablePath: readablePath(for: match),
+                    reportPath: reportPath(for: match),
+                    isGenerated: match.isGenerated || match.shortPath.hasPrefix("../")
+                )
+            }
+
+            return ResolvedSourceFile(
+                readablePath: nil,
+                reportPath: indexStorePath,
+                isGenerated: false
+            )
+        }
+
+        private func bestSourceFileMatch(for indexStorePath: String) -> SourceFileMetadata? {
+            let normalizedIndexPath = normalize(indexStorePath)
+            return sourceFiles
+                .filter { source in
+                    let candidates = [source.path, source.shortPath].map(normalize)
+                    return candidates.contains { candidate in
+                        normalizedIndexPath == candidate || normalizedIndexPath.hasSuffix("/" + candidate)
+                    }
+                }
+                .max { lhs, rhs in
+                    max(lhs.path.count, lhs.shortPath.count) < max(rhs.path.count, rhs.shortPath.count)
+                }
+        }
+
+        private func readablePath(for source: SourceFileMetadata) -> String? {
+            for path in [source.path, source.shortPath] where fileManager.fileExists(atPath: path) {
+                return path
+            }
+            return nil
+        }
+
+        private func readableIndexStorePath(_ path: String) -> String? {
+            fileManager.fileExists(atPath: path) ? path : nil
+        }
+
+        private func reportPath(for source: SourceFileMetadata) -> String {
+            if !source.shortPath.isEmpty {
+                if source.shortPath.hasPrefix("./") {
+                    return String(source.shortPath.dropFirst(2))
+                }
+                return source.shortPath
+            }
+            return source.path
+        }
+
+        private func normalize(_ path: String) -> String {
+            path.replacingOccurrences(of: "\\", with: "/")
+                .trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        }
+    }
+
     public static func readModuleUsage(
         storePath: String,
-        filterModules: Set<String>? = nil
+        filterModules: Set<String>? = nil,
+        sourceFiles: [SourceFileMetadata] = []
     ) throws -> Result {
         let store: IndexStore
         do {
@@ -75,8 +164,10 @@ public enum IndexStoreReader {
 
         // Pass 1: gather defined USRs per module and per-file data.
         var moduleDefinedUSRs: [String: Set<String>] = [:]
+        let sourceLookup = SourceFileLookup(sourceFiles: sourceFiles)
         var sourceFileEntries: [(
             sourceFile: String,
+            isGenerated: Bool,
             moduleName: String,
             referencedUSRs: Set<String>,
             loadedModules: Set<String>,
@@ -107,8 +198,10 @@ public enum IndexStoreReader {
             var reexportedImports = Set<String>()
             var conditionalImports = Set<String>()
             var importLineNumbers = Set<Int>()
+            let resolvedSource = sourceLookup.resolve(unitReader.mainFile)
 
-            if let source = try? String(contentsOfFile: unitReader.mainFile, encoding: .utf8) {
+            if let readablePath = resolvedSource.readablePath,
+               let source = try? String(contentsOfFile: readablePath, encoding: .utf8) {
                 directImports.formUnion(SourceImportEditor.importedModuleNames(in: source))
                 reexportedImports.formUnion(SourceImportEditor.reexportedImportModuleNames(in: source))
                 conditionalImports.formUnion(SourceImportEditor.conditionalImportModuleNames(in: source))
@@ -148,7 +241,7 @@ public enum IndexStoreReader {
             if let filter = filterModules, !filter.contains(mod) { continue }
 
             sourceFileEntries.append((
-                unitReader.mainFile, mod, referencedUSRs, loadedModules, systemModules, directImports, reexportedImports,
+                resolvedSource.reportPath, resolvedSource.isGenerated, mod, referencedUSRs, loadedModules, systemModules, directImports, reexportedImports,
                 conditionalImports
             ))
             seenSourceUnits.insert(sourceUnitKey)
@@ -177,6 +270,7 @@ public enum IndexStoreReader {
 
             results.append(SourceFileModuleUsage(
                 sourceFile: entry.sourceFile,
+                isGenerated: entry.isGenerated,
                 moduleName: entry.moduleName,
                 referencedModules: referencedModules,
                 loadedModules: entry.loadedModules,

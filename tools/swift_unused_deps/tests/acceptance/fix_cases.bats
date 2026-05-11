@@ -24,7 +24,7 @@ teardown_file() {
   assert_output_contains "0 issues found."
   assert_stderr_contains "Planned fixes:"
   assert_stderr_contains "remove //cases/Deps/LibA:LibA from deps of //cases/Targets/UnusedImport:UnusedImport"
-  assert_stderr_contains "remove import LibA from ./cases/Targets/UnusedImport/UnusedImport.swift"
+  assert_stderr_contains "remove import LibA from cases/Targets/UnusedImport/UnusedImport.swift"
 
   assert_file_contains "cases/Targets/UnusedImport/UnusedImport.swift" "import LibB"
   assert_file_not_contains "cases/Targets/UnusedImport/UnusedImport.swift" "import LibA"
@@ -128,7 +128,7 @@ teardown_file() {
   assert_status 0
   assert_output_contains "0 issues found."
   assert_stderr_contains "remove //cases/Deps/DirectDepWithTransitive:DirectDepWithTransitive from deps of //cases/Targets/UnusedTransitiveImport:UnusedTransitiveImport"
-  assert_stderr_contains "remove import TransitiveDep from ./cases/Targets/UnusedTransitiveImport/UnusedTransitiveImport.swift"
+  assert_stderr_contains "remove import TransitiveDep from cases/Targets/UnusedTransitiveImport/UnusedTransitiveImport.swift"
   assert_stderr_not_contains "add //cases/Deps/TransitiveDep:TransitiveDep to deps"
 
   assert_file_not_contains "cases/Targets/UnusedTransitiveImport/UnusedTransitiveImport.swift" "import TransitiveDep"

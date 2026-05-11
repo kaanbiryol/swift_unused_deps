@@ -1,5 +1,15 @@
-alias(
-    name = "swift_unused_deps",
-    actual = "@swift_unused_deps//:swift_unused_deps",
-    visibility = ["//visibility:public"],
+load(
+    "@swift_unused_deps//tools/swift_unused_deps:defs.bzl",
+    "swift_unused_deps",
+)
+
+swift_unused_deps(
+    name = "candidate_private_dep_unused_deps",
+    min_report_confidence = "high",
+    targets = ["//cases/Targets/CandidatePrivateDep:CandidatePrivateDep"],
+)
+
+swift_unused_deps(
+    name = "unused_import_unused_deps",
+    targets = ["//cases/Targets/UnusedImport:UnusedImport"],
 )

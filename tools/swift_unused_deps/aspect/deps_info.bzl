@@ -15,6 +15,12 @@ metadata and index store:
 load("@build_bazel_rules_swift//swift:providers.bzl", "SwiftInfo")
 load(":providers.bzl", "SwiftDepsInfo")
 
+def _label_string(label):
+    value = str(label)
+    if value.startswith("@@//"):
+        return value[2:]
+    return value
+
 def _get_module_name(target):
     """Get the Swift module name from SwiftInfo."""
     for module in target[SwiftInfo].direct_modules:
@@ -66,14 +72,14 @@ def _dep_info_entries(dep, kind):
     """
     module_name = _get_dep_module_name(dep)
     if module_name:
-        return [{"label": str(dep.label), "module_name": module_name, "kind": kind}]
+        return [{"label": _label_string(dep.label), "module_name": module_name, "kind": kind}]
 
     # Target has no direct Swift module (e.g. swift_library_group).
     # Use the group's direct child modules with the group's own label.
     if SwiftDepsInfo in dep and dep[SwiftDepsInfo].direct_dep_modules:
         result = []
         for mod_name in dep[SwiftDepsInfo].direct_dep_modules:
-            result.append({"label": str(dep.label), "module_name": mod_name, "kind": kind})
+            result.append({"label": _label_string(dep.label), "module_name": mod_name, "kind": kind})
         return result
 
     return []
@@ -83,7 +89,7 @@ def _transitive_modules(deps, private_deps, plugins = []):
     for dep in list(deps) + list(private_deps) + list(plugins):
         dep_module_name = _get_dep_module_name(dep)
         if dep_module_name:
-            modules[dep_module_name] = str(dep.label)
+            modules[dep_module_name] = _label_string(dep.label)
         if SwiftDepsInfo in dep:
             for module_tuple in dep[SwiftDepsInfo].transitive_modules.to_list():
                 mod_name, mod_label = module_tuple.split("=", 1)
@@ -101,7 +107,7 @@ def _module_reachable_via(deps, private_deps):
     """Return module name -> direct dep labels that expose that module."""
     module_reachable_via = {}
     for dep in list(deps) + list(private_deps):
-        direct_dep_label = str(dep.label)
+        direct_dep_label = _label_string(dep.label)
         dep_module_name = _get_dep_module_name(dep)
         if dep_module_name:
             _add_reachable_via(module_reachable_via, dep_module_name, direct_dep_label)
@@ -121,6 +127,9 @@ def _passthrough_transitive_modules(ctx):
     """
     transitive_sets = []
     transitive_metadata_sets = []
+    transitive_report_sets = []
+    transitive_fix_high_sets = []
+    transitive_fix_low_sets = []
     direct_dep_modules = []
     for attr_name in ["deps", "private_deps", "plugins"]:
         if hasattr(ctx.rule.attr, attr_name):
@@ -128,26 +137,42 @@ def _passthrough_transitive_modules(ctx):
                 if SwiftDepsInfo in dep:
                     transitive_sets.append(dep[SwiftDepsInfo].transitive_modules)
                     transitive_metadata_sets.append(dep[SwiftDepsInfo].transitive_metadata_files)
+                    transitive_report_sets.append(dep[SwiftDepsInfo].transitive_report_files)
+                    transitive_fix_high_sets.append(dep[SwiftDepsInfo].transitive_fix_high_files)
+                    transitive_fix_low_sets.append(dep[SwiftDepsInfo].transitive_fix_low_files)
 
                 # Record direct module names from deps that have SwiftInfo.
                 if SwiftInfo in dep:
                     for module in dep[SwiftInfo].direct_modules:
                         if module.swift:
                             direct_dep_modules.append(module.name)
-    if transitive_sets or transitive_metadata_sets:
+    if transitive_sets or transitive_metadata_sets or transitive_report_sets:
         transitive_metadata_files = depset(transitive = transitive_metadata_sets)
+        transitive_report_files = depset(transitive = transitive_report_sets)
+        transitive_fix_high_files = depset(transitive = transitive_fix_high_sets)
+        transitive_fix_low_files = depset(transitive = transitive_fix_low_sets)
         return [
             SwiftDepsInfo(
                 target_label = ctx.label,
                 module_name = None,
                 metadata_file = None,
+                report_file = None,
+                fix_high_file = None,
+                fix_low_file = None,
                 transitive_metadata_files = transitive_metadata_files,
+                transitive_report_files = transitive_report_files,
+                transitive_fix_high_files = transitive_fix_high_files,
+                transitive_fix_low_files = transitive_fix_low_files,
                 transitive_modules = depset(transitive = transitive_sets),
                 direct_dep_modules = direct_dep_modules,
             ),
             OutputGroupInfo(
                 swift_deps_info = transitive_metadata_files,
                 swift_unused_deps_metadata = transitive_metadata_files,
+                swift_unused_deps_reports = transitive_report_files,
+                swift_unused_deps_fix_high = transitive_fix_high_files,
+                swift_unused_deps_fix_low = transitive_fix_low_files,
+                swift_unused_deps_fix_plans = transitive_fix_high_files,
             ),
         ]
     return []
@@ -166,15 +191,21 @@ def _swift_deps_aspect_impl(target, ctx):
     indexstore_directory = _get_indexstore_directory(target)
 
     # Build transitive module tuples.
-    self_module_tuple = "{}={}".format(module_name, str(ctx.label))
+    self_module_tuple = "{}={}".format(module_name, _label_string(ctx.label))
     transitive_sets = [depset([self_module_tuple])]
     transitive_metadata_sets = []
+    transitive_report_sets = []
+    transitive_fix_high_sets = []
+    transitive_fix_low_sets = []
     for attr_name in ["deps", "private_deps", "plugins"]:
         if hasattr(ctx.rule.attr, attr_name):
             for dep in getattr(ctx.rule.attr, attr_name):
                 if SwiftDepsInfo in dep:
                     transitive_sets.append(dep[SwiftDepsInfo].transitive_modules)
                     transitive_metadata_sets.append(dep[SwiftDepsInfo].transitive_metadata_files)
+                    transitive_report_sets.append(dep[SwiftDepsInfo].transitive_report_files)
+                    transitive_fix_high_sets.append(dep[SwiftDepsInfo].transitive_fix_high_files)
+                    transitive_fix_low_sets.append(dep[SwiftDepsInfo].transitive_fix_low_files)
     transitive_modules = depset(transitive = transitive_sets)
 
     # Record declared deps, deduplicating by module name (a module can
@@ -207,21 +238,33 @@ def _swift_deps_aspect_impl(target, ctx):
         ctx.rule.attr.private_deps if hasattr(ctx.rule.attr, "private_deps") else [],
     )
 
-    # Record source file names.
+    # Record source file names and declared source paths. The richer source
+    # metadata lets the analyzer action read inputs through Bazel's declared
+    # inputs instead of relying on absolute paths captured in the index store.
     srcs = []
+    source_files = []
+    source_inputs = []
     if hasattr(ctx.rule.attr, "srcs"):
         for src in ctx.rule.attr.srcs:
             for f in src.files.to_list():
                 if f.extension == "swift":
                     srcs.append(f.basename)
+                    source_files.append({
+                        "basename": f.basename,
+                        "path": f.path,
+                        "short_path": f.short_path,
+                        "is_generated": not f.is_source,
+                    })
+                    source_inputs.append(f)
 
     # Write metadata JSON.
     metadata = {
         "schema_version": 1,
         "target": {
-            "label": str(ctx.label),
+            "label": _label_string(ctx.label),
             "module_name": module_name,
             "srcs": srcs,
+            "source_files": source_files,
             "is_mixed_source": _has_mixed_sources(ctx),
             "rule_kind": ctx.rule.kind,
         },
@@ -233,6 +276,15 @@ def _swift_deps_aspect_impl(target, ctx):
 
     metadata_file = ctx.actions.declare_file(
         "{}.swift_deps_info.json".format(ctx.label.name),
+    )
+    report_file = ctx.actions.declare_file(
+        "{}.swift_unused_deps.report.json".format(ctx.label.name),
+    )
+    fix_high_file = ctx.actions.declare_file(
+        "{}.swift_unused_deps.fix_high.json".format(ctx.label.name),
+    )
+    fix_low_file = ctx.actions.declare_file(
+        "{}.swift_unused_deps.fix_low.json".format(ctx.label.name),
     )
     metadata_json = json.encode(metadata)
 
@@ -255,20 +307,62 @@ def _swift_deps_aspect_impl(target, ctx):
             content = metadata_json,
         )
 
+    analyzer_args = ctx.actions.args()
+    analyzer_args.add("analyze-target")
+    analyzer_args.add("--metadata-file")
+    analyzer_args.add(metadata_file)
+    analyzer_args.add("--bazel-bin")
+    analyzer_args.add(".")
+    if indexstore_directory:
+        analyzer_args.add("--index-store-path")
+        analyzer_args.add(indexstore_directory.path)
+    analyzer_args.add("--report-output")
+    analyzer_args.add(report_file)
+    analyzer_args.add("--fix-output")
+    analyzer_args.add(fix_high_file)
+    analyzer_args.add("--fix-low-output")
+    analyzer_args.add(fix_low_file)
+
+    analyzer_inputs = [metadata_file] + source_inputs
+    if indexstore_directory:
+        analyzer_inputs.append(indexstore_directory)
+
+    ctx.actions.run(
+        executable = ctx.executable._analyzer,
+        arguments = [analyzer_args],
+        inputs = analyzer_inputs,
+        outputs = [report_file, fix_high_file, fix_low_file],
+        mnemonic = "SwiftUnusedDepsAnalyzeTarget",
+        progress_message = "Analyzing unused deps for %s" % module_name,
+    )
+
     transitive_metadata_files = depset([metadata_file], transitive = transitive_metadata_sets)
+    transitive_report_files = depset([report_file], transitive = transitive_report_sets)
+    transitive_fix_high_files = depset([fix_high_file], transitive = transitive_fix_high_sets)
+    transitive_fix_low_files = depset([fix_low_file], transitive = transitive_fix_low_sets)
 
     return [
         SwiftDepsInfo(
             target_label = ctx.label,
             module_name = module_name,
             metadata_file = metadata_file,
+            report_file = report_file,
+            fix_high_file = fix_high_file,
+            fix_low_file = fix_low_file,
             transitive_metadata_files = transitive_metadata_files,
+            transitive_report_files = transitive_report_files,
+            transitive_fix_high_files = transitive_fix_high_files,
+            transitive_fix_low_files = transitive_fix_low_files,
             transitive_modules = transitive_modules,
             direct_dep_modules = [],
         ),
         OutputGroupInfo(
             swift_deps_info = transitive_metadata_files,
             swift_unused_deps_metadata = transitive_metadata_files,
+            swift_unused_deps_reports = transitive_report_files,
+            swift_unused_deps_fix_high = transitive_fix_high_files,
+            swift_unused_deps_fix_low = transitive_fix_low_files,
+            swift_unused_deps_fix_plans = transitive_fix_high_files,
         ),
     ]
 
@@ -281,4 +375,11 @@ swift_deps_aspect = aspect(
     For Bazel-first analysis workflows, request swift_unused_deps_metadata.
     """,
     attr_aspects = ["deps", "private_deps", "plugins"],
+    attrs = {
+        "_analyzer": attr.label(
+            default = Label("//tools/swift_unused_deps/analyzer:swift_unused_deps"),
+            executable = True,
+            cfg = "exec",
+        ),
+    },
 )

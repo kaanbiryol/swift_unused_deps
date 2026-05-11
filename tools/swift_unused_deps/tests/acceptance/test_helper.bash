@@ -78,7 +78,7 @@ run_swift_unused_deps_in_workspace() {
     target=""
     fix="false"
     direct_fix="false"
-    build_config="swift-unused-deps"
+    build_config="swift-unused-deps-metadata"
     build_flags=()
     analyzer_flags=()
 

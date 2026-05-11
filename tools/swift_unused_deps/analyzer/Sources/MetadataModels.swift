@@ -5,24 +5,59 @@ public enum DepKind: String, Codable {
     case privateDep = "private_dep"
 }
 
+public struct SourceFileMetadata: Codable, Equatable, Hashable {
+    public let basename: String
+    public let path: String
+    public let shortPath: String
+    public let isGenerated: Bool
+
+    enum CodingKeys: String, CodingKey {
+        case basename
+        case path
+        case shortPath = "short_path"
+        case isGenerated = "is_generated"
+    }
+
+    public init(
+        basename: String,
+        path: String,
+        shortPath: String,
+        isGenerated: Bool = false
+    ) {
+        self.basename = basename
+        self.path = path
+        self.shortPath = shortPath
+        self.isGenerated = isGenerated
+    }
+}
+
 public struct TargetInfo: Codable {
     public let label: String
     public let moduleName: String
     public let isMixedSource: Bool
     public let srcs: [String]
+    public let sourceFiles: [SourceFileMetadata]
 
     enum CodingKeys: String, CodingKey {
         case label
         case moduleName = "module_name"
         case isMixedSource = "is_mixed_source"
         case srcs
+        case sourceFiles = "source_files"
     }
 
-    public init(label: String, moduleName: String, isMixedSource: Bool = false, srcs: [String] = []) {
+    public init(
+        label: String,
+        moduleName: String,
+        isMixedSource: Bool = false,
+        srcs: [String] = [],
+        sourceFiles: [SourceFileMetadata] = []
+    ) {
         self.label = label
         self.moduleName = moduleName
         self.isMixedSource = isMixedSource
         self.srcs = srcs
+        self.sourceFiles = sourceFiles
     }
 
     public init(from decoder: Decoder) throws {
@@ -31,6 +66,7 @@ public struct TargetInfo: Codable {
         moduleName = try container.decode(String.self, forKey: .moduleName)
         isMixedSource = try container.decodeIfPresent(Bool.self, forKey: .isMixedSource) ?? false
         srcs = try container.decodeIfPresent([String].self, forKey: .srcs) ?? []
+        sourceFiles = try container.decodeIfPresent([SourceFileMetadata].self, forKey: .sourceFiles) ?? []
     }
 }
 
@@ -106,7 +142,8 @@ public struct TargetMetadata: Codable {
                 label: converter.convert(target.label, buildFileContent: buildFileContent),
                 moduleName: target.moduleName,
                 isMixedSource: target.isMixedSource,
-                srcs: target.srcs
+                srcs: target.srcs,
+                sourceFiles: target.sourceFiles
             ),
             declaredDeps: declaredDeps.map {
                 DeclaredDep(

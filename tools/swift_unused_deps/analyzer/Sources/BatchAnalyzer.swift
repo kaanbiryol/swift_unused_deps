@@ -42,8 +42,6 @@ public enum BatchAnalyzer {
     public static func analyze(options: Options) -> Output {
         let baseURL = URL(fileURLWithPath: options.bazelBin, isDirectory: true)
         let fm = FileManager.default
-        var warnings: [String] = []
-        var indexStoreCache: [String: IndexStoreData] = [:]
 
         guard directoryExists(at: baseURL, fileManager: fm) else {
             return Output(
@@ -53,9 +51,15 @@ public enum BatchAnalyzer {
         }
 
         let artifacts = discoverArtifacts(in: baseURL, fileManager: fm)
+        return analyze(metadataFiles: artifacts.metadataFiles, options: options)
+    }
+
+    public static func analyze(metadataFiles: [URL], options: Options) -> Output {
+        var warnings: [String] = []
+        var indexStoreCache: [String: IndexStoreData] = [:]
         let filter = options.filter.map(TargetFilter.init)
 
-        let results = artifacts.metadataFiles.compactMap { metadataFile in
+        let results = metadataFiles.compactMap { metadataFile in
             analyzeTarget(
                 metadataFile: metadataFile,
                 bazelBin: options.bazelBin,
@@ -106,12 +110,16 @@ public enum BatchAnalyzer {
 
     private static func loadIndexStoreData(
         storePath: String?,
+        sourceFiles: [SourceFileMetadata],
         warnings: inout [String]
     ) -> IndexStoreData {
         guard let storePath else { return .empty }
 
         do {
-            let result = try IndexStoreReader.readModuleUsage(storePath: storePath)
+            let result = try IndexStoreReader.readModuleUsage(
+                storePath: storePath,
+                sourceFiles: sourceFiles
+            )
             return IndexStoreData(
                 usageByModule: Dictionary(grouping: result.usage, by: \.moduleName)
             )
@@ -136,12 +144,20 @@ public enum BatchAnalyzer {
             return []
         }
 
-        let key = URL(fileURLWithPath: storePath).standardizedFileURL.path
+        let sourceKey = metadata.target.sourceFiles
+            .map { "\($0.path)=\($0.shortPath)" }
+            .sorted()
+            .joined(separator: ";")
+        let key = URL(fileURLWithPath: storePath).standardizedFileURL.path + "\u{0}" + sourceKey
         let indexStoreData: IndexStoreData
         if let cached = cache[key] {
             indexStoreData = cached
         } else {
-            indexStoreData = loadIndexStoreData(storePath: key, warnings: &warnings)
+            indexStoreData = loadIndexStoreData(
+                storePath: storePath,
+                sourceFiles: metadata.target.sourceFiles,
+                warnings: &warnings
+            )
             cache[key] = indexStoreData
         }
 
@@ -266,6 +282,7 @@ public enum BatchAnalyzer {
         return sourceFileUsage.map { usage in
             SourceFileModuleUsage(
                 sourceFile: usage.sourceFile,
+                isGenerated: usage.isGenerated,
                 moduleName: usage.moduleName,
                 referencedModules: usage.referencedModules.intersection(knownModules),
                 loadedModules: usage.loadedModules,
@@ -365,6 +382,7 @@ public enum BatchAnalyzer {
                 guard !conditionalImportModules.contains(dep.moduleName) else { return nil }
 
                 let removals = sourceFileUsage.compactMap { usage -> SourceImportRemoval? in
+                    guard !usage.isGenerated else { return nil }
                     guard usage.directImports.contains(dep.moduleName) else { return nil }
                     guard !usage.referencedModules.contains(dep.moduleName) else { return nil }
                     guard !usage.reexportedImports.contains(dep.moduleName) else { return nil }
@@ -418,6 +436,7 @@ public enum BatchAnalyzer {
                     return nil
                 }
                 let removals = sourceFileUsage.compactMap { usage -> SourceImportRemoval? in
+                    guard !usage.isGenerated else { return nil }
                     guard usage.directImports.contains(moduleName) else { return nil }
                     guard !usage.referencedModules.contains(moduleName) else { return nil }
                     guard !usage.reexportedImports.contains(moduleName) else { return nil }
