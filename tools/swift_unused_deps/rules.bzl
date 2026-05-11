@@ -100,6 +100,49 @@ def _report_info(outputs):
         exit_code = outputs.exit_code,
     )
 
+def _runfiles_prelude(strict):
+    strict_line = "set -euo pipefail" if strict else "set -u"
+    return """#!/usr/bin/env bash
+%s
+
+if [[ -z "${RUNFILES_DIR:-}" && -d "$0.runfiles" ]]; then
+  export RUNFILES_DIR="$0.runfiles"
+fi
+
+resolve_runfile() {
+  local path="$1"
+  if [[ -n "${RUNFILES_DIR:-}" && -n "${TEST_WORKSPACE:-}" && -e "${RUNFILES_DIR}/${TEST_WORKSPACE}/${path}" ]]; then
+    printf '%%s\\n' "${RUNFILES_DIR}/${TEST_WORKSPACE}/${path}"
+    return 0
+  fi
+  if [[ -n "${RUNFILES_DIR:-}" && -e "${RUNFILES_DIR}/_main/${path}" ]]; then
+    printf '%%s\\n' "${RUNFILES_DIR}/_main/${path}"
+    return 0
+  fi
+  if [[ -n "${RUNFILES_DIR:-}" && -e "${RUNFILES_DIR}/${path}" ]]; then
+    printf '%%s\\n' "${RUNFILES_DIR}/${path}"
+    return 0
+  fi
+  if [[ -n "${TEST_SRCDIR:-}" && -n "${TEST_WORKSPACE:-}" && -e "${TEST_SRCDIR}/${TEST_WORKSPACE}/${path}" ]]; then
+    printf '%%s\\n' "${TEST_SRCDIR}/${TEST_WORKSPACE}/${path}"
+    return 0
+  fi
+  if [[ -n "${TEST_WORKSPACE:-}" && -e "$0.runfiles/${TEST_WORKSPACE}/${path}" ]]; then
+    printf '%%s\\n' "$0.runfiles/${TEST_WORKSPACE}/${path}"
+    return 0
+  fi
+  if [[ -e "$0.runfiles/_main/${path}" ]]; then
+    printf '%%s\\n' "$0.runfiles/_main/${path}"
+    return 0
+  fi
+  if [[ -e "${path}" ]]; then
+    printf '%%s\\n' "${path}"
+    return 0
+  fi
+  printf '%%s\\n' "${path}"
+}
+""" % strict_line
+
 def _swift_unused_deps_report_impl(ctx):
     collected = _collect_swift_unused_deps_outputs(ctx.attr.targets)
     outputs = _merged_outputs(ctx)
@@ -125,26 +168,7 @@ def _swift_unused_deps_test_impl(ctx):
     ctx.actions.write(
         output = executable,
         is_executable = True,
-        content = """#!/usr/bin/env bash
-set -u
-
-resolve_runfile() {
-  local path="$1"
-  if [[ -n "${TEST_SRCDIR:-}" && -n "${TEST_WORKSPACE:-}" && -e "${TEST_SRCDIR}/${TEST_WORKSPACE}/${path}" ]]; then
-    printf '%%s\\n' "${TEST_SRCDIR}/${TEST_WORKSPACE}/${path}"
-    return 0
-  fi
-  if [[ -e "${path}" ]]; then
-    printf '%%s\\n' "${path}"
-    return 0
-  fi
-  if [[ -n "${TEST_WORKSPACE:-}" && -e "$0.runfiles/${TEST_WORKSPACE}/${path}" ]]; then
-    printf '%%s\\n' "$0.runfiles/${TEST_WORKSPACE}/${path}"
-    return 0
-  fi
-  printf '%%s\\n' "${path}"
-}
-
+        content = _runfiles_prelude(strict = False) + """
 report="$(resolve_runfile "%s")"
 exit_code_file="$(resolve_runfile "%s")"
 
@@ -177,48 +201,13 @@ exit "$(cat "${exit_code_file}")"
 
 def _swift_unused_deps_fix_impl(ctx):
     report = ctx.attr.report[SwiftUnusedDepsReportInfo]
-    executable = ctx.actions.declare_file(ctx.label.name + "_fix.sh")
+    executable = ctx.actions.declare_file(ctx.label.name + ".sh")
     apply_executable = ctx.executable._swift_unused_deps_apply
 
     ctx.actions.write(
         output = executable,
         is_executable = True,
-        content = """#!/usr/bin/env bash
-set -euo pipefail
-
-if [[ -z "${RUNFILES_DIR:-}" && -d "$0.runfiles" ]]; then
-  export RUNFILES_DIR="$0.runfiles"
-fi
-
-resolve_runfile() {
-  local path="$1"
-  if [[ -n "${RUNFILES_DIR:-}" && -n "${TEST_WORKSPACE:-}" && -e "${RUNFILES_DIR}/${TEST_WORKSPACE}/${path}" ]]; then
-    printf '%%s\\n' "${RUNFILES_DIR}/${TEST_WORKSPACE}/${path}"
-    return 0
-  fi
-  if [[ -n "${RUNFILES_DIR:-}" && -e "${RUNFILES_DIR}/_main/${path}" ]]; then
-    printf '%%s\\n' "${RUNFILES_DIR}/_main/${path}"
-    return 0
-  fi
-  if [[ -n "${RUNFILES_DIR:-}" && -e "${RUNFILES_DIR}/${path}" ]]; then
-    printf '%%s\\n' "${RUNFILES_DIR}/${path}"
-    return 0
-  fi
-  if [[ -n "${TEST_WORKSPACE:-}" && -e "$0.runfiles/${TEST_WORKSPACE}/${path}" ]]; then
-    printf '%%s\\n' "$0.runfiles/${TEST_WORKSPACE}/${path}"
-    return 0
-  fi
-  if [[ -e "$0.runfiles/_main/${path}" ]]; then
-    printf '%%s\\n' "$0.runfiles/_main/${path}"
-    return 0
-  fi
-  if [[ -e "${path}" ]]; then
-    printf '%%s\\n' "${path}"
-    return 0
-  fi
-  printf '%%s\\n' "${path}"
-}
-
+        content = _runfiles_prelude(strict = True) + """
 apply_bin="$(resolve_runfile "%s")"
 fix_plan="$(resolve_runfile "%s")"
 

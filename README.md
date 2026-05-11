@@ -4,8 +4,9 @@
 
 Detect unused and missing direct Bazel dependencies for Swift targets.
 
-The Bazel-native API is a test/report rule. Bazel owns configuration, platform
-selection, aspect application, declared outputs, and test failure reporting.
+The Bazel-native API is a macro that creates check, report, and fix targets.
+Bazel owns configuration, platform selection, aspect application, declared
+outputs, and test failure reporting.
 
 ## Setup
 
@@ -33,7 +34,7 @@ build:swift-unused-deps --features=swift.index_while_building
 
 ## Usage
 
-Define one analysis target with the macro:
+Create a BUILD file for the analysis target, for example `tools/BUILD.bazel`:
 
 ```python
 load("@swift_unused_deps//tools/swift_unused_deps:defs.bzl", "swift_unused_deps")
@@ -99,7 +100,11 @@ bazel run --config=swift-unused-deps //tools:swift_unused_deps_fix
 ```
 
 Applying fixes mutates source and BUILD files, so it intentionally stays outside
-normal Bazel build/test actions.
+normal Bazel build/test actions. After applying fixes, rerun the check:
+
+```sh
+bazel test --config=swift-unused-deps //tools:swift_unused_deps
+```
 
 ## Low-Level Output Groups
 
