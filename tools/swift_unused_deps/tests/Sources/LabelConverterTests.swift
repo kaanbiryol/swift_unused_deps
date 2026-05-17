@@ -214,7 +214,7 @@ final class LabelConverterTests: XCTestCase {
 
         let metadata = TargetMetadata(
             schemaVersion: 2,
-            target: TargetInfo(label: "@@//Lib:A", moduleName: "MyModule", isMixedSource: true, srcs: ["File.swift"]),
+            target: TargetInfo(label: "@@//Lib:A", moduleName: "MyModule", isMixedSource: true),
             declaredDeps: [],
             transitiveModuleMap: [:]
         )
@@ -224,7 +224,6 @@ final class LabelConverterTests: XCTestCase {
         XCTAssertEqual(converted.schemaVersion, 2)
         XCTAssertEqual(converted.target.moduleName, "MyModule")
         XCTAssertTrue(converted.target.isMixedSource)
-        XCTAssertEqual(converted.target.srcs, ["File.swift"])
     }
 
     // MARK: - End-to-end: canonical labels produce correct buildozer commands

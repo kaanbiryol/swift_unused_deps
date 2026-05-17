@@ -6,11 +6,6 @@ public enum ResolutionStatus: Equatable {
     case unresolved
 }
 
-public struct ResolvedModule {
-    public let moduleName: String
-    public let status: ResolutionStatus
-}
-
 public struct ModuleResolver {
 
     private let moduleMap: [String: String]
@@ -21,17 +16,13 @@ public struct ModuleResolver {
         self.systemModules = extraSystemModules
     }
 
-    public func resolve(_ moduleName: String) -> ResolvedModule {
+    public func resolve(_ moduleName: String) -> ResolutionStatus {
         if systemModules.contains(moduleName) {
-            return ResolvedModule(moduleName: moduleName, status: .system)
+            return .system
         }
         if let label = moduleMap[moduleName] {
-            return ResolvedModule(moduleName: moduleName, status: .resolved(label: label))
+            return .resolved(label: label)
         }
-        return ResolvedModule(moduleName: moduleName, status: .unresolved)
-    }
-
-    public func isSystemModule(_ name: String) -> Bool {
-        systemModules.contains(name)
+        return .unresolved
     }
 }

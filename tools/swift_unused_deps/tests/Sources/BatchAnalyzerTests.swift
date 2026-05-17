@@ -294,12 +294,11 @@ final class BatchAnalyzerTests: XCTestCase {
         label: String,
         moduleName: String,
         deps: [DeclaredDep] = [],
-        transitiveModuleMap: [String: String] = [:],
-        srcs: [String] = ["A.swift"]
+        transitiveModuleMap: [String: String] = [:]
     ) -> TargetMetadata {
         TargetMetadata(
             schemaVersion: 1,
-            target: TargetInfo(label: label, moduleName: moduleName, srcs: srcs),
+            target: TargetInfo(label: label, moduleName: moduleName),
             declaredDeps: deps,
             transitiveModuleMap: transitiveModuleMap
         )

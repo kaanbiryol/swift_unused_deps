@@ -7,126 +7,19 @@ public enum Report {
         minConfidence: Confidence,
         includesFixPlanHint: Bool = true
     ) -> String {
-        var lines: [String] = []
-        lines.append("swift_unused_deps v0.1.0")
-        lines.append("Analyzing \(results.count) target\(results.count == 1 ? "" : "s")...")
-        lines.append("")
-
-        var totalHigh = 0, totalMedium = 0, totalLow = 0
-
-        for result in results {
-            let filtered = filteredIssues(in: result, minConfidence: minConfidence)
-
-            if filtered.isEmpty {
-                lines.append(result.target)
-                lines.append("  Status: CLEAN")
-                let depCount = result.cleanDeps.count
-                if depCount > 0 {
-                    lines.append("  Declared deps: \(depCount)")
-                }
-                let systemSkipped = result.skippedModules
-                    .filter { $0.reason == .systemModule }
-                    .map(\.name)
-                    .sorted()
-                if !systemSkipped.isEmpty {
-                    lines.append("  Skipped \(systemSkipped.count) system modules: \(systemSkipped.joined(separator: ", "))")
-                }
-                lines.append("  No issues found.")
-                lines.append("")
-                continue
-            }
-
-            let high = filtered.filter { $0.confidence == .high }.count
-            let medium = filtered.filter { $0.confidence == .medium }.count
-            let low = filtered.filter { $0.confidence == .low }.count
-            totalHigh += high
-            totalMedium += medium
-            totalLow += low
-
-            lines.append(result.target)
-            lines.append("  Status: \(filtered.count) issue\(filtered.count == 1 ? "" : "s") found")
-            lines.append("")
-
-            for issue in filtered {
-                lines.append(contentsOf: formatIssue(issue))
-                lines.append("")
-            }
-        }
-
-        let totalIssues = totalHigh + totalMedium + totalLow
-        lines.append("Summary: \(results.count) target\(results.count == 1 ? "" : "s") analyzed, \(totalIssues) issue\(totalIssues == 1 ? "" : "s") found.")
-
-        if totalIssues > 0 {
-            var parts: [String] = []
-            if totalHigh > 0 { parts.append("\(totalHigh) high") }
-            if totalMedium > 0 { parts.append("\(totalMedium) medium") }
-            if totalLow > 0 { parts.append("\(totalLow) low") }
-            lines.append("  \(parts.joined(separator: ", ")).")
-        }
-
-        if includesFixPlanHint && totalHigh > 0 {
-            lines.append("")
-            lines.append("Run with --fix-output <path> to write explicit fixes.")
-        }
-
-        return lines.joined(separator: "\n")
-    }
-
-    private static func filteredIssues(
-        in result: AnalysisResult,
-        minConfidence: Confidence
-    ) -> [Issue] {
-        result.issues.filter { $0.confidence >= minConfidence }
-    }
-
-    private static func formatIssue(_ issue: Issue) -> [String] {
-        var lines: [String] = []
-        let conf = issue.confidence.rawValue.uppercased()
-        let kind = issue.kind.rawValue.uppercased()
-
-        if let depLabel = issue.depLabel {
-            var header = "  [\(conf)] \(kind): \(depLabel)"
-            if let depModule = issue.depModule {
-                header += " (module: \(depModule))"
-            }
-            lines.append(header)
-        } else if let depModule = issue.depModule {
-            lines.append("  [\(conf)] \(kind): \(depModule)")
-        } else {
-            lines.append("  [\(conf)] \(kind)")
-        }
-
-        lines.append("         \(issue.reason)")
-
-        if !issue.currentlyReachableVia.isEmpty {
-            lines.append("         Currently reachable transitively via: \(issue.currentlyReachableVia.joined(separator: ", "))")
-        }
-
-        if !issue.sourceImportRemovals.isEmpty {
-            let files = issue.sourceImportRemovals.map(\.filePath).sorted()
-            let summary = files.count == 1
-                ? files[0]
-                : "\(files.count) source files"
-            lines.append("         Source fix: remove import from \(summary)")
-        }
-
-        switch issue.suggestedAction {
-        case .remove, .addDep:
-            if let cmd = issue.buildozerCommand {
-                lines.append("         Fix: \(cmd.displayString)")
-            }
-        case .moveToPrivateDeps:
-            if let cmd = issue.buildozerCommand {
-                lines.append("         Suggestion: \(cmd.displayString)")
-            }
-        case .investigate:
-            lines.append("         Action: investigate manually.")
-        }
-
-        return lines
+        formatText(
+            report: jsonReport(results: results, minConfidence: minConfidence),
+            minConfidence: minConfidence,
+            includesFixPlanHint: includesFixPlanHint,
+            fixPlanHint: "Run with --fix-output <path> to write explicit fixes."
+        )
     }
 
     public static func formatJSON(results: [AnalysisResult], minConfidence: Confidence) -> String {
+        formatJSON(report: jsonReport(results: results, minConfidence: minConfidence))
+    }
+
+    private static func jsonReport(results: [AnalysisResult], minConfidence: Confidence) -> JSONReport {
         let jsonResults = results.map { result -> JSONResult in
             let filtered = filteredIssues(in: result, minConfidence: minConfidence)
             let issues = filtered.map { JSONIssue(issue: $0) }
@@ -143,12 +36,17 @@ public enum Report {
             )
         }
 
-        let output = JSONReport(
+        return JSONReport(
             analyzedAt: ISO8601DateFormatter().string(from: Date()),
             results: jsonResults
         )
+    }
 
-        return formatJSON(report: output)
+    private static func filteredIssues(
+        in result: AnalysisResult,
+        minConfidence: Confidence
+    ) -> [Issue] {
+        result.issues.filter { $0.confidence >= minConfidence }
     }
 
     public static func readJSONReport(from url: URL) throws -> JSONReport {
@@ -173,67 +71,6 @@ public enum Report {
         )
     }
 
-    public static func convertingLabels(
-        in report: JSONReport,
-        with converter: LabelConverter
-    ) -> JSONReport {
-        JSONReport(
-            schemaVersion: report.schemaVersion,
-            analyzedAt: report.analyzedAt,
-            results: report.results.map { result in
-                let convertedTarget = converter.convert(result.target)
-                return JSONResult(
-                    target: convertedTarget,
-                    moduleName: result.moduleName,
-                    status: result.status,
-                    issues: result.issues.map { issue in
-                        let convertedDepLabel = issue.depLabel.map { converter.convert($0) }
-                        var convertedBuildozerCommand = issue.buildozerCommand?
-                            .replacingOccurrences(of: result.target, with: convertedTarget)
-                        if let depLabel = issue.depLabel,
-                           let convertedDepLabel {
-                            convertedBuildozerCommand = convertedBuildozerCommand?
-                                .replacingOccurrences(of: depLabel, with: convertedDepLabel)
-                        }
-
-                        return JSONIssue(
-                            kind: issue.kind,
-                            confidence: issue.confidence,
-                            reason: issue.reason,
-                            suggestedAction: issue.suggestedAction,
-                            depLabel: convertedDepLabel,
-                            depModule: issue.depModule,
-                            depKind: issue.depKind,
-                            currentlyReachableVia: issue.currentlyReachableVia?.map { converter.convert($0) },
-                            buildozerCommand: convertedBuildozerCommand,
-                            sourceImportRemovals: issue.sourceImportRemovals
-                        )
-                    },
-                    cleanDeps: result.cleanDeps.map { dep in
-                        JSONCleanDep(
-                            label: converter.convert(dep.label),
-                            moduleName: dep.moduleName,
-                            classification: dep.classification
-                        )
-                    },
-                    skippedModules: result.skippedModules
-                )
-            }
-        )
-    }
-
-    public static func filtering(
-        _ report: JSONReport,
-        includedTargets: Set<String>?
-    ) -> JSONReport {
-        guard let includedTargets else { return report }
-        return JSONReport(
-            schemaVersion: report.schemaVersion,
-            analyzedAt: report.analyzedAt,
-            results: report.results.filter { includedTargets.contains($0.target) }
-        )
-    }
-
     public static func formatJSON(report: JSONReport) -> String {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
@@ -247,14 +84,15 @@ public enum Report {
     public static func formatText(
         report: JSONReport,
         minConfidence: Confidence,
-        includesFixPlanHint: Bool = true
+        includesFixPlanHint: Bool = true,
+        fixPlanHint: String = "Run with fix to apply high-confidence fixes."
     ) -> String {
         var lines: [String] = []
         lines.append("swift_unused_deps v0.1.0")
         lines.append("Analyzing \(report.results.count) target\(report.results.count == 1 ? "" : "s")...")
         lines.append("")
 
-        var totalHigh = 0, totalMedium = 0, totalLow = 0
+        var totalHigh = 0, totalLow = 0
 
         for result in report.results {
             let filtered = filteredIssues(in: result, minConfidence: minConfidence)
@@ -279,10 +117,8 @@ public enum Report {
             }
 
             let high = filtered.filter { $0.confidence == Confidence.high.rawValue }.count
-            let medium = filtered.filter { $0.confidence == Confidence.medium.rawValue }.count
             let low = filtered.filter { $0.confidence == Confidence.low.rawValue }.count
             totalHigh += high
-            totalMedium += medium
             totalLow += low
 
             lines.append(result.target)
@@ -295,20 +131,19 @@ public enum Report {
             }
         }
 
-        let totalIssues = totalHigh + totalMedium + totalLow
+        let totalIssues = totalHigh + totalLow
         lines.append("Summary: \(report.results.count) target\(report.results.count == 1 ? "" : "s") analyzed, \(totalIssues) issue\(totalIssues == 1 ? "" : "s") found.")
 
         if totalIssues > 0 {
             var parts: [String] = []
             if totalHigh > 0 { parts.append("\(totalHigh) high") }
-            if totalMedium > 0 { parts.append("\(totalMedium) medium") }
             if totalLow > 0 { parts.append("\(totalLow) low") }
             lines.append("  \(parts.joined(separator: ", ")).")
         }
 
         if includesFixPlanHint && totalHigh > 0 {
             lines.append("")
-            lines.append("Run with fix to apply high-confidence fixes.")
+            lines.append(fixPlanHint)
         }
 
         return lines.joined(separator: "\n")

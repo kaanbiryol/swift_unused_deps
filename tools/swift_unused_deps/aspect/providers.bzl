@@ -8,13 +8,7 @@ SwiftDepsInfo = provider(
     but the Bazel label association is tracked here.
     """,
     fields = {
-        "target_label": "Label of the analyzed target.",
-        "module_name": "Swift module name (read from SwiftInfo).",
-        "metadata_file": "File containing the full metadata JSON.",
         "transitive_metadata_files": "Depset of metadata JSON files for this target and its transitive Swift deps.",
-        "report_file": "File containing the JSON report for this target.",
-        "fix_high_file": "File containing high-confidence fixes for this target.",
-        "fix_low_file": "File containing all fixes for this target, including low-confidence fixes.",
         "transitive_report_files": "Depset of JSON report files for this target and its transitive Swift deps.",
         "transitive_fix_high_files": "Depset of high-confidence fix JSON files for this target and its transitive Swift deps.",
         "transitive_fix_low_files": "Depset of all fix JSON files for this target and its transitive Swift deps.",

@@ -705,7 +705,7 @@ public struct SwiftUnusedDepsCommand: ParsableCommand {
 
     static func confidence(_ rawValue: String, option: String) throws -> Confidence {
         guard let confidence = Confidence(rawValue: rawValue) else {
-            throw ValidationError("Invalid confidence level '\(rawValue)' for \(option). Use: low, medium, high")
+            throw ValidationError("Invalid confidence level '\(rawValue)' for \(option). Use: low, high")
         }
         return confidence
     }

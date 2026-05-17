@@ -14,18 +14,21 @@ final class ModuleResolverTests: XCTestCase {
     }
 
     func testResolveKnownModule() {
-        let result = resolver.resolve("Networking")
-        XCTAssertEqual(result.status, .resolved(label: "//App/Core/Networking:Networking"))
+        XCTAssertEqual(
+            resolver.resolve("Networking"),
+            .resolved(label: "//App/Core/Networking:Networking")
+        )
     }
 
     func testResolveModuleWithDifferentName() {
-        let result = resolver.resolve("AppLogger")
-        XCTAssertEqual(result.status, .resolved(label: "//App/Core/Logger:Logger"))
+        XCTAssertEqual(
+            resolver.resolve("AppLogger"),
+            .resolved(label: "//App/Core/Logger:Logger")
+        )
     }
 
     func testResolveUnknownModule() {
-        let result = resolver.resolve("SomeUnknownModule")
-        XCTAssertEqual(result.status, .unresolved)
+        XCTAssertEqual(resolver.resolve("SomeUnknownModule"), .unresolved)
     }
 
     func testExtraSystemModules() {
@@ -33,19 +36,13 @@ final class ModuleResolverTests: XCTestCase {
             transitiveModuleMap: [:],
             extraSystemModules: ["CustomSDKModule"]
         )
-        XCTAssertEqual(r.resolve("CustomSDKModule").status, .system)
+        XCTAssertEqual(r.resolve("CustomSDKModule"), .system)
     }
 
     func testUserModuleNotConfusedWithSystem() {
         let r = ModuleResolver(transitiveModuleMap: [
             "SwiftProtobuf": "//ThirdParty:SwiftProtobuf",
         ])
-        XCTAssertEqual(r.resolve("SwiftProtobuf").status, .resolved(label: "//ThirdParty:SwiftProtobuf"))
-    }
-
-    func testIsSystemModule() {
-        let resolver = ModuleResolver(transitiveModuleMap: [:], extraSystemModules: ["Foundation"])
-        XCTAssertTrue(resolver.isSystemModule("Foundation"))
-        XCTAssertFalse(resolver.isSystemModule("Networking"))
+        XCTAssertEqual(r.resolve("SwiftProtobuf"), .resolved(label: "//ThirdParty:SwiftProtobuf"))
     }
 }

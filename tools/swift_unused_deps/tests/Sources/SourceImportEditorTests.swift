@@ -187,10 +187,11 @@ final class SourceImportEditorTests: XCTestCase {
         import LibB
         """.write(to: sourceURL, atomically: true, encoding: .utf8)
 
-        try SourceImportEditor.apply(
+        let edits = try SourceImportEditor.plan(
             removals: [SourceImportRemoval(filePath: "Demo.swift", moduleName: "LibA")],
             workspaceDirectory: directory
         )
+        try SourceImportEditor.apply(edits: edits)
 
         XCTAssertEqual(try String(contentsOf: sourceURL, encoding: .utf8), "import LibB")
     }

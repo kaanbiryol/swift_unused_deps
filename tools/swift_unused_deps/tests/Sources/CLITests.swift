@@ -12,7 +12,7 @@ final class CLITests: XCTestCase {
                 "--index-store-path", "/tmp/index-store",
                 "--fix-output", "/tmp/fix.json",
                 "--include-low-confidence-fixes",
-                "--min-report-confidence", "medium",
+                "--min-report-confidence", "high",
                 "--min-fix-confidence", "low",
                 "--report-output", "/tmp/report.out",
                 "--exit-code-output", "/tmp/report.exit_code",
@@ -25,7 +25,7 @@ final class CLITests: XCTestCase {
         XCTAssertNil(command.filter)
         XCTAssertEqual(command.fixOutput, "/tmp/fix.json")
         XCTAssertTrue(command.includeLowConfidenceFixes)
-        XCTAssertEqual(command.minReportConfidence, "medium")
+        XCTAssertEqual(command.minReportConfidence, "high")
         XCTAssertEqual(command.minFixConfidence, "low")
         XCTAssertEqual(command.reportOutput, "/tmp/report.out")
         XCTAssertEqual(command.exitCodeOutput, "/tmp/report.exit_code")
@@ -67,6 +67,12 @@ final class CLITests: XCTestCase {
             "--min-fix-confidence", "high",
         ])) { error in
             XCTAssertTrue("\(error)".contains("--include-low-confidence-fixes"))
+        }
+    }
+
+    func testParseAnalyzeRejectsMediumReportConfidence() {
+        XCTAssertThrowsError(try SwiftUnusedDepsCommand.confidence("medium", option: "--min-report-confidence")) { error in
+            XCTAssertTrue("\(error)".contains("Use: low, high"))
         }
     }
 

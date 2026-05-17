@@ -153,12 +153,6 @@ def _passthrough_transitive_modules(ctx):
         transitive_fix_low_files = depset(transitive = transitive_fix_low_sets)
         return [
             SwiftDepsInfo(
-                target_label = ctx.label,
-                module_name = None,
-                metadata_file = None,
-                report_file = None,
-                fix_high_file = None,
-                fix_low_file = None,
                 transitive_metadata_files = transitive_metadata_files,
                 transitive_report_files = transitive_report_files,
                 transitive_fix_high_files = transitive_fix_high_files,
@@ -167,12 +161,10 @@ def _passthrough_transitive_modules(ctx):
                 direct_dep_modules = direct_dep_modules,
             ),
             OutputGroupInfo(
-                swift_deps_info = transitive_metadata_files,
                 swift_unused_deps_metadata = transitive_metadata_files,
                 swift_unused_deps_reports = transitive_report_files,
                 swift_unused_deps_fix_high = transitive_fix_high_files,
                 swift_unused_deps_fix_low = transitive_fix_low_files,
-                swift_unused_deps_fix_plans = transitive_fix_high_files,
             ),
         ]
     return []
@@ -238,17 +230,15 @@ def _swift_deps_aspect_impl(target, ctx):
         ctx.rule.attr.private_deps if hasattr(ctx.rule.attr, "private_deps") else [],
     )
 
-    # Record source file names and declared source paths. The richer source
-    # metadata lets the analyzer action read inputs through Bazel's declared
-    # inputs instead of relying on absolute paths captured in the index store.
-    srcs = []
+    # Record declared source paths so the analyzer action can read inputs through
+    # Bazel's declared inputs instead of relying on absolute paths captured in
+    # the index store.
     source_files = []
     source_inputs = []
     if hasattr(ctx.rule.attr, "srcs"):
         for src in ctx.rule.attr.srcs:
             for f in src.files.to_list():
                 if f.extension == "swift":
-                    srcs.append(f.basename)
                     source_files.append({
                         "basename": f.basename,
                         "path": f.path,
@@ -263,7 +253,6 @@ def _swift_deps_aspect_impl(target, ctx):
         "target": {
             "label": _label_string(ctx.label),
             "module_name": module_name,
-            "srcs": srcs,
             "source_files": source_files,
             "is_mixed_source": _has_mixed_sources(ctx),
             "rule_kind": ctx.rule.kind,
@@ -343,12 +332,6 @@ def _swift_deps_aspect_impl(target, ctx):
 
     return [
         SwiftDepsInfo(
-            target_label = ctx.label,
-            module_name = module_name,
-            metadata_file = metadata_file,
-            report_file = report_file,
-            fix_high_file = fix_high_file,
-            fix_low_file = fix_low_file,
             transitive_metadata_files = transitive_metadata_files,
             transitive_report_files = transitive_report_files,
             transitive_fix_high_files = transitive_fix_high_files,
@@ -357,12 +340,10 @@ def _swift_deps_aspect_impl(target, ctx):
             direct_dep_modules = [],
         ),
         OutputGroupInfo(
-            swift_deps_info = transitive_metadata_files,
             swift_unused_deps_metadata = transitive_metadata_files,
             swift_unused_deps_reports = transitive_report_files,
             swift_unused_deps_fix_high = transitive_fix_high_files,
             swift_unused_deps_fix_low = transitive_fix_low_files,
-            swift_unused_deps_fix_plans = transitive_fix_high_files,
         ),
     ]
 

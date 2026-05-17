@@ -78,7 +78,7 @@ public enum Analyzer {
                 continue
             }
 
-            switch resolver.resolve(loaded.name).status {
+            switch resolver.resolve(loaded.name) {
             case .system:
                 if loaded.isImportedDirectly {
                     skippedModules.append(SkippedModule(name: loaded.name, reason: .systemModule))

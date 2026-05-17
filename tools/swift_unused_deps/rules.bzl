@@ -3,7 +3,7 @@
 load("//tools/swift_unused_deps/aspect:deps_info.bzl", "swift_deps_aspect")
 load("//tools/swift_unused_deps/aspect:providers.bzl", "SwiftDepsInfo")
 
-_CONFIDENCE_VALUES = ["low", "medium", "high"]
+_CONFIDENCE_VALUES = ["low", "high"]
 
 SwiftUnusedDepsReportInfo = provider(
     doc = "Merged swift_unused_deps report and fix artifacts.",

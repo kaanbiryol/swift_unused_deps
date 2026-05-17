@@ -50,8 +50,6 @@ public enum IndexStoreReader {
 
     public struct Result {
         public let usage: [SourceFileModuleUsage]
-        /// Module names that have defined symbols (records) in the index store.
-        public let indexedModules: Set<String>
     }
 
     public enum Error: Swift.Error, CustomStringConvertible {
@@ -152,7 +150,6 @@ public enum IndexStoreReader {
 
     public static func readModuleUsage(
         storePath: String,
-        filterModules: Set<String>? = nil,
         sourceFiles: [SourceFileMetadata] = []
     ) throws -> Result {
         let store: IndexStore
@@ -238,8 +235,6 @@ public enum IndexStoreReader {
 
             moduleDefinedUSRs[mod, default: []].formUnion(definedUSRs)
 
-            if let filter = filterModules, !filter.contains(mod) { continue }
-
             sourceFileEntries.append((
                 resolvedSource.reportPath, resolvedSource.isGenerated, mod, referencedUSRs, loadedModules, systemModules, directImports, reexportedImports,
                 conditionalImports
@@ -281,10 +276,7 @@ public enum IndexStoreReader {
             ))
         }
 
-        return Result(
-            usage: results,
-            indexedModules: Set(moduleDefinedUSRs.keys)
-        )
+        return Result(usage: results)
     }
 
     static func moduleName(fromUSR usr: String) -> String? {

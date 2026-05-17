@@ -148,29 +148,6 @@ public struct FixPlan: Codable, Equatable {
         )
     }
 
-    public func convertingLabels(with converter: LabelConverter) -> FixPlan {
-        FixPlan(
-            sourceImportRemovals: sourceImportRemovals,
-            buildEdits: buildEdits.map { edit in
-                BuildEdit(
-                    operation: edit.operation,
-                    attribute: edit.attribute,
-                    label: converter.convert(edit.label),
-                    target: converter.convert(edit.target),
-                    destinationAttribute: edit.destinationAttribute
-                )
-            }
-        )
-    }
-
-    public func filtering(includedTargets: Set<String>?) -> FixPlan {
-        guard let includedTargets else { return self }
-        return FixPlan(
-            sourceImportRemovals: sourceImportRemovals.filter { !$0.filePath.hasPrefix("../") },
-            buildEdits: buildEdits.filter { includedTargets.contains($0.target) }
-        )
-    }
-
     public static func formatJSON(_ plan: FixPlan) throws -> String {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]

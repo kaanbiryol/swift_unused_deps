@@ -9,19 +9,14 @@ final class IndexStoreReaderTests: XCTestCase {
         )
     }
 
-    func testReadModuleUsageWithFilterReturnsEmpty() throws {
-        // An empty directory won't have any units, so filtering should return empty.
+    func testReadModuleUsageWithEmptyStoreReturnsEmpty() throws {
         let tmpDir = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: tmpDir, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: tmpDir) }
 
-        let result = try IndexStoreReader.readModuleUsage(
-            storePath: tmpDir.path,
-            filterModules: ["SomeModule"]
-        )
+        let result = try IndexStoreReader.readModuleUsage(storePath: tmpDir.path)
         XCTAssertTrue(result.usage.isEmpty)
-        XCTAssertTrue(result.indexedModules.isEmpty)
     }
 
     func testModuleNameFromSwiftUSRReadsModulePayload() {

@@ -10,17 +10,14 @@ public enum IssueKind: String, Codable {
 
 public enum Confidence: String, Codable, Comparable {
     case low
-    case medium
     case high
 
     private var order: Int {
         switch self {
         case .low:
             return 0
-        case .medium:
-            return 1
         case .high:
-            return 2
+            return 1
         }
     }
 

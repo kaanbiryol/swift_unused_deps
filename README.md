@@ -4,10 +4,6 @@
 
 Detect unused and missing direct Bazel dependencies for Swift targets.
 
-The Bazel-native API is a macro that creates check, report, and fix targets.
-Bazel owns configuration, platform selection, aspect application, declared
-outputs, and test failure reporting.
-
 ## Setup
 
 ### 1. Add the dependency

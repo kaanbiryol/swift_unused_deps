@@ -35,14 +35,12 @@ public struct TargetInfo: Codable {
     public let label: String
     public let moduleName: String
     public let isMixedSource: Bool
-    public let srcs: [String]
     public let sourceFiles: [SourceFileMetadata]
 
     enum CodingKeys: String, CodingKey {
         case label
         case moduleName = "module_name"
         case isMixedSource = "is_mixed_source"
-        case srcs
         case sourceFiles = "source_files"
     }
 
@@ -50,13 +48,11 @@ public struct TargetInfo: Codable {
         label: String,
         moduleName: String,
         isMixedSource: Bool = false,
-        srcs: [String] = [],
         sourceFiles: [SourceFileMetadata] = []
     ) {
         self.label = label
         self.moduleName = moduleName
         self.isMixedSource = isMixedSource
-        self.srcs = srcs
         self.sourceFiles = sourceFiles
     }
 
@@ -65,7 +61,6 @@ public struct TargetInfo: Codable {
         label = try container.decode(String.self, forKey: .label)
         moduleName = try container.decode(String.self, forKey: .moduleName)
         isMixedSource = try container.decodeIfPresent(Bool.self, forKey: .isMixedSource) ?? false
-        srcs = try container.decodeIfPresent([String].self, forKey: .srcs) ?? []
         sourceFiles = try container.decodeIfPresent([SourceFileMetadata].self, forKey: .sourceFiles) ?? []
     }
 }
@@ -142,7 +137,6 @@ public struct TargetMetadata: Codable {
                 label: converter.convert(target.label, buildFileContent: buildFileContent),
                 moduleName: target.moduleName,
                 isMixedSource: target.isMixedSource,
-                srcs: target.srcs,
                 sourceFiles: target.sourceFiles
             ),
             declaredDeps: declaredDeps.map {

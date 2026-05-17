@@ -36,13 +36,6 @@ public enum SourceImportEditor {
         }
     }
 
-    public static func apply(
-        removals: [SourceImportRemoval],
-        workspaceDirectory: URL? = nil
-    ) throws {
-        try apply(edits: plan(removals: removals, workspaceDirectory: workspaceDirectory))
-    }
-
     static func plan(
         removals: [SourceImportRemoval],
         workspaceDirectory: URL? = nil
