@@ -9,6 +9,7 @@ public enum BatchAnalyzer {
     public struct Options {
         public var bazelBin: String
         public var indexStorePath: String?
+        public var dependencyIndexStorePaths: [String]
         public var extraSystemModules: Set<String>
         public var filter: String?
         public var includedLabels: Set<String>?
@@ -18,6 +19,7 @@ public enum BatchAnalyzer {
         public init(
             bazelBin: String,
             indexStorePath: String? = nil,
+            dependencyIndexStorePaths: [String] = [],
             extraSystemModules: Set<String> = [],
             filter: String? = nil,
             includedLabels: Set<String>? = nil,
@@ -26,6 +28,7 @@ public enum BatchAnalyzer {
         ) {
             self.bazelBin = bazelBin
             self.indexStorePath = indexStorePath
+            self.dependencyIndexStorePaths = dependencyIndexStorePaths
             self.extraSystemModules = extraSystemModules
             self.filter = filter
             self.includedLabels = includedLabels
@@ -58,16 +61,33 @@ public enum BatchAnalyzer {
         var warnings: [String] = []
         var indexStoreCache: [String: IndexStoreData] = [:]
         let filter = options.filter.map(TargetFilter.init)
+        let loadedMetadata = metadataFiles.compactMap { metadataFile -> TargetMetadata? in
+            guard var metadata = loadMetadata(from: metadataFile, warnings: &warnings) else {
+                return nil
+            }
+            let buildFileContent = readBuildFile(
+                for: metadata.target.label,
+                workspaceDirectory: options.workspaceDirectory
+            )
+            metadata = metadata.convertingLabels(
+                with: options.labelConverter,
+                buildFileContent: buildFileContent
+            )
+            return metadata
+        }
+        let metadataByLabel = loadedMetadata.reduce(into: [String: TargetMetadata]()) { partial, metadata in
+            partial[metadata.target.label] = metadata
+        }
 
-        let results = metadataFiles.compactMap { metadataFile in
+        let results = loadedMetadata.compactMap { metadata in
             analyzeTarget(
-                metadataFile: metadataFile,
+                metadata: metadata,
+                allMetadataByLabel: metadataByLabel,
                 bazelBin: options.bazelBin,
                 extraSystemModules: options.extraSystemModules,
                 filter: filter,
                 includedLabels: options.includedLabels,
-                labelConverter: options.labelConverter,
-                workspaceDirectory: options.workspaceDirectory,
+                dependencyIndexStorePaths: options.dependencyIndexStorePaths,
                 indexStoreOverridePath: options.indexStorePath,
                 indexStoreCache: &indexStoreCache,
                 warnings: &warnings
@@ -110,6 +130,7 @@ public enum BatchAnalyzer {
 
     private static func loadIndexStoreData(
         storePath: String?,
+        dependencyStorePaths: [String],
         sourceFiles: [SourceFileMetadata],
         warnings: inout [String]
     ) -> IndexStoreData {
@@ -118,7 +139,8 @@ public enum BatchAnalyzer {
         do {
             let result = try IndexStoreReader.readModuleUsage(
                 storePath: storePath,
-                sourceFiles: sourceFiles
+                sourceFiles: sourceFiles,
+                definitionStorePaths: dependencyStorePaths
             )
             return IndexStoreData(
                 usageByModule: Dictionary(grouping: result.usage, by: \.moduleName)
@@ -133,6 +155,7 @@ public enum BatchAnalyzer {
         for metadata: TargetMetadata,
         bazelBin: String,
         overridePath: String?,
+        dependencyStorePaths: [String],
         cache: inout [String: IndexStoreData],
         warnings: inout [String]
     ) -> [SourceFileModuleUsage] {
@@ -148,13 +171,22 @@ public enum BatchAnalyzer {
             .map { "\($0.path)=\($0.shortPath)" }
             .sorted()
             .joined(separator: ";")
-        let key = URL(fileURLWithPath: storePath).standardizedFileURL.path + "\u{0}" + sourceKey
+        let dependencyKey = dependencyStorePaths
+            .map { URL(fileURLWithPath: $0).standardizedFileURL.path }
+            .sorted()
+            .joined(separator: ";")
+        let key = [
+            URL(fileURLWithPath: storePath).standardizedFileURL.path,
+            sourceKey,
+            dependencyKey,
+        ].joined(separator: "\u{0}")
         let indexStoreData: IndexStoreData
         if let cached = cache[key] {
             indexStoreData = cached
         } else {
             indexStoreData = loadIndexStoreData(
                 storePath: storePath,
+                dependencyStorePaths: dependencyStorePaths,
                 sourceFiles: metadata.target.sourceFiles,
                 warnings: &warnings
             )
@@ -186,35 +218,35 @@ public enum BatchAnalyzer {
     }
 
     private static func analyzeTarget(
-        metadataFile: URL,
+        metadata: TargetMetadata,
+        allMetadataByLabel: [String: TargetMetadata],
         bazelBin: String,
         extraSystemModules: Set<String>,
         filter: TargetFilter?,
         includedLabels: Set<String>?,
-        labelConverter: LabelConverter,
-        workspaceDirectory: URL?,
+        dependencyIndexStorePaths: [String],
         indexStoreOverridePath: String?,
         indexStoreCache: inout [String: IndexStoreData],
         warnings: inout [String]
     ) -> AnalysisResult? {
-        guard var metadata = loadMetadata(from: metadataFile, warnings: &warnings) else {
-            return nil
-        }
-        let buildFileContent = readBuildFile(
-            for: metadata.target.label,
-            workspaceDirectory: workspaceDirectory
-        )
-        metadata = metadata.convertingLabels(with: labelConverter, buildFileContent: buildFileContent)
         if let includedLabels {
             guard includedLabels.contains(metadata.target.label) else { return nil }
         } else if let filter, !filter.matches(label: metadata.target.label) {
             return nil
         }
+        let dependencyStorePaths = uniqueStrings(
+            dependencyIndexStorePaths + directDependencyIndexStorePaths(
+                for: metadata,
+                allMetadataByLabel: allMetadataByLabel,
+                bazelBin: bazelBin
+            )
+        )
 
         let rawSourceFileUsage = loadIndexStoreUsage(
             for: metadata,
             bazelBin: bazelBin,
             overridePath: indexStoreOverridePath,
+            dependencyStorePaths: dependencyStorePaths,
             cache: &indexStoreCache,
             warnings: &warnings
         )
@@ -249,6 +281,33 @@ public enum BatchAnalyzer {
             baseResult: baseResult,
             unusedImportIssues: unusedImportIssues
         )
+    }
+
+    private static func directDependencyIndexStorePaths(
+        for metadata: TargetMetadata,
+        allMetadataByLabel: [String: TargetMetadata],
+        bazelBin: String
+    ) -> [String] {
+        metadata.declaredDeps.compactMap { dep in
+            guard let dependencyMetadata = allMetadataByLabel[dep.label] else {
+                return nil
+            }
+            return resolveIndexStorePath(
+                for: dependencyMetadata,
+                bazelBin: bazelBin,
+                overridePath: nil
+            )
+        }
+    }
+
+    private static func uniqueStrings(_ values: [String]) -> [String] {
+        var seen = Set<String>()
+        var result: [String] = []
+        for value in values where !seen.contains(value) {
+            seen.insert(value)
+            result.append(value)
+        }
+        return result
     }
 
     static func mergeUnusedImportIssues(

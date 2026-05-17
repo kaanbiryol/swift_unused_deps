@@ -453,6 +453,9 @@ public struct SwiftUnusedDepsAnalyzeTargetCommand: ParsableCommand {
     @Option(help: .hidden)
     var indexStorePath: String?
 
+    @Option(name: .customLong("dependency-index-store-path"), help: .hidden)
+    var dependencyIndexStorePaths: [String] = []
+
     @Option(help: .hidden)
     var extraSystemModules: String?
 
@@ -485,6 +488,7 @@ public struct SwiftUnusedDepsAnalyzeTargetCommand: ParsableCommand {
             options: .init(
                 bazelBin: bazelBin,
                 indexStorePath: indexStorePath,
+                dependencyIndexStorePaths: dependencyIndexStorePaths,
                 extraSystemModules: SwiftUnusedDepsCommand.parseExtraSystemModules(extraSystemModules),
                 labelConverter: .identity,
                 workspaceDirectory: nil

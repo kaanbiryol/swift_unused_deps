@@ -25,6 +25,15 @@ final class FixPlanTests: XCTestCase {
         )
     }
 
+    func testBuildEditSkipsExternalTargets() {
+        XCTAssertNil(
+            BuildEdit.from(command: BuildozerCommand(action: "add deps //Lib:B", target: "@repo//App:A"))
+        )
+        XCTAssertNil(
+            BuildEdit.from(command: BuildozerCommand(action: "add deps //Lib:B", target: "@@repo+//App:A"))
+        )
+    }
+
     func testFixPlanContainsHighConfidenceBuildAndSourceEdits() throws {
         let unusedDep = DeclaredDep(label: "//Lib:Unused", moduleName: "Unused", kind: .dep)
         let importedDep = DeclaredDep(label: "//Lib:Imported", moduleName: "Imported", kind: .dep)
@@ -86,6 +95,36 @@ final class FixPlanTests: XCTestCase {
                 destinationAttribute: "private_deps"
             ),
         ])
+    }
+
+    func testFixPlanSkipsExternalTargetIssues() {
+        let result = AnalysisResult(
+            target: "@swiftpkg_package//:Package",
+            moduleName: "Package",
+            issues: [
+                .missingDirectDep(
+                    depLabel: "@swiftpkg_other//:Other",
+                    moduleName: "Other",
+                    currentlyReachableVia: [],
+                    isImportedDirectly: true,
+                    targetLabel: "@swiftpkg_package//:Package"
+                ),
+                .unusedImport(
+                    DeclaredDep(label: "@swiftpkg_unused//:Unused", moduleName: "Unused", kind: .dep),
+                    targetLabel: "@swiftpkg_package//:Package",
+                    sourceImportRemovals: [
+                        SourceImportRemoval(filePath: "external/package/File.swift", moduleName: "Unused"),
+                    ]
+                ),
+            ],
+            cleanDeps: [],
+            skippedModules: []
+        )
+
+        let plan = FixPlan.from(results: [result])
+
+        XCTAssertTrue(plan.buildEdits.isEmpty)
+        XCTAssertTrue(plan.sourceImportRemovals.isEmpty)
     }
 
     func testFixPlanSummaryListsBuildAndSourceChanges() {

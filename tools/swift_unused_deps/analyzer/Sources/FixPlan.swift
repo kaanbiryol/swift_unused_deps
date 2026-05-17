@@ -48,6 +48,10 @@ public struct BuildEdit: Codable, Equatable, Hashable {
     }
 
     public static func from(command: BuildozerCommand) -> BuildEdit? {
+        guard isWorkspaceEditableTarget(command.target) else {
+            return nil
+        }
+
         let parts = command.action.split(separator: " ", omittingEmptySubsequences: true).map(String.init)
 
         switch parts.first {
@@ -76,6 +80,10 @@ public struct BuildEdit: Codable, Equatable, Hashable {
         default:
             return nil
         }
+    }
+
+    public static func isWorkspaceEditableTarget(_ label: String) -> Bool {
+        label.hasPrefix("//") || label.hasPrefix("@@//")
     }
 }
 
@@ -129,6 +137,7 @@ public struct FixPlan: Codable, Equatable {
         minConfidence: Confidence = .high
     ) -> FixPlan {
         let fixableIssues = results
+            .filter { BuildEdit.isWorkspaceEditableTarget($0.target) }
             .flatMap(\.issues)
             .filter { $0.confidence >= minConfidence }
 

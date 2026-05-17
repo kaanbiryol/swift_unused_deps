@@ -1,0 +1,15 @@
+load("@build_bazel_rules_swift//swift:swift.bzl", "swift_library")
+
+# ExtensionProvider is used only through an extension member on FixtureContainer,
+# whose nominal type is declared by ExtensionBase.
+swift_library(
+    name = "ExtensionMemberUsage",
+    srcs = ["ExtensionMemberUsage.swift"],
+    module_name = "ExtensionMemberUsage",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//cases/Deps/ExtensionBase",
+        "//cases/Deps/ExtensionProvider",
+        "//cases/Deps/LibA",
+    ],
+)

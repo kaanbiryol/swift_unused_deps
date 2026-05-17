@@ -20,3 +20,8 @@ swift_unused_deps(
     name = "unused_import_unused_deps",
     targets = ["//cases/Targets/UnusedImport:UnusedImport"],
 )
+
+swift_unused_deps(
+    name = "extension_member_usage_unused_deps",
+    targets = ["//cases/Targets/ExtensionMemberUsage:ExtensionMemberUsage"],
+)

@@ -44,6 +44,27 @@ teardown_file() {
   assert_file_contains "cases/Targets/MissingDirectDep/BUILD.bazel" "//cases/Deps/TransitiveDep"
 }
 
+@test "fix keeps extension-providing dependency used through another module's type" {
+  assert_file_contains "cases/Targets/ExtensionMemberUsage/ExtensionMemberUsage.swift" "import ExtensionProvider"
+  assert_file_contains "cases/Targets/ExtensionMemberUsage/ExtensionMemberUsage.swift" "import LibA"
+  assert_file_contains "cases/Targets/ExtensionMemberUsage/BUILD.bazel" "//cases/Deps/ExtensionProvider"
+  assert_file_contains "cases/Targets/ExtensionMemberUsage/BUILD.bazel" "//cases/Deps/LibA"
+
+  run_swift_unused_deps_in_workspace //cases/Targets/ExtensionMemberUsage:ExtensionMemberUsage --apply-fix-plan --min-report-confidence high
+
+  assert_status 0
+  assert_output_contains "0 issues found."
+  assert_stderr_contains "remove //cases/Deps/LibA:LibA from deps of //cases/Targets/ExtensionMemberUsage:ExtensionMemberUsage"
+  assert_stderr_contains "remove import LibA from cases/Targets/ExtensionMemberUsage/ExtensionMemberUsage.swift"
+  assert_stderr_not_contains "remove //cases/Deps/ExtensionProvider:ExtensionProvider"
+  assert_stderr_not_contains "remove import ExtensionProvider"
+
+  assert_file_contains "cases/Targets/ExtensionMemberUsage/ExtensionMemberUsage.swift" "import ExtensionProvider"
+  assert_file_contains "cases/Targets/ExtensionMemberUsage/BUILD.bazel" "//cases/Deps/ExtensionProvider"
+  assert_file_not_contains "cases/Targets/ExtensionMemberUsage/ExtensionMemberUsage.swift" "import LibA"
+  assert_file_not_contains "cases/Targets/ExtensionMemberUsage/BUILD.bazel" "//cases/Deps/LibA"
+}
+
 @test "fix leaves low-confidence candidate private dep unchanged" {
   run_swift_unused_deps_in_workspace //cases/Targets/CandidatePrivateDep:CandidatePrivateDep --apply-fix-plan --min-report-confidence high
 

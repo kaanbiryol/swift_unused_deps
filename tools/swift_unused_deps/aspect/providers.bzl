@@ -14,5 +14,6 @@ SwiftDepsInfo = provider(
         "transitive_fix_low_files": "Depset of all fix JSON files for this target and its transitive Swift deps.",
         "transitive_modules": "Depset of 'module_name=label' strings for all transitive Swift deps.",
         "direct_dep_modules": "List of module names directly provided by this target's deps (for passthrough targets like swift_library_group).",
+        "direct_indexstore_files": "Depset of index store directories directly provided by this target.",
     },
 )

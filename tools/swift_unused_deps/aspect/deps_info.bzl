@@ -131,6 +131,7 @@ def _passthrough_transitive_modules(ctx):
     transitive_fix_high_sets = []
     transitive_fix_low_sets = []
     direct_dep_modules = []
+    direct_indexstore_sets = []
     for attr_name in ["deps", "private_deps", "plugins"]:
         if hasattr(ctx.rule.attr, attr_name):
             for dep in getattr(ctx.rule.attr, attr_name):
@@ -140,6 +141,7 @@ def _passthrough_transitive_modules(ctx):
                     transitive_report_sets.append(dep[SwiftDepsInfo].transitive_report_files)
                     transitive_fix_high_sets.append(dep[SwiftDepsInfo].transitive_fix_high_files)
                     transitive_fix_low_sets.append(dep[SwiftDepsInfo].transitive_fix_low_files)
+                    direct_indexstore_sets.append(dep[SwiftDepsInfo].direct_indexstore_files)
 
                 # Record direct module names from deps that have SwiftInfo.
                 if SwiftInfo in dep:
@@ -159,6 +161,7 @@ def _passthrough_transitive_modules(ctx):
                 transitive_fix_low_files = transitive_fix_low_files,
                 transitive_modules = depset(transitive = transitive_sets),
                 direct_dep_modules = direct_dep_modules,
+                direct_indexstore_files = depset(transitive = direct_indexstore_sets),
             ),
             OutputGroupInfo(
                 swift_unused_deps_metadata = transitive_metadata_files,
@@ -189,6 +192,7 @@ def _swift_deps_aspect_impl(target, ctx):
     transitive_report_sets = []
     transitive_fix_high_sets = []
     transitive_fix_low_sets = []
+    dependency_indexstore_sets = []
     for attr_name in ["deps", "private_deps", "plugins"]:
         if hasattr(ctx.rule.attr, attr_name):
             for dep in getattr(ctx.rule.attr, attr_name):
@@ -198,7 +202,9 @@ def _swift_deps_aspect_impl(target, ctx):
                     transitive_report_sets.append(dep[SwiftDepsInfo].transitive_report_files)
                     transitive_fix_high_sets.append(dep[SwiftDepsInfo].transitive_fix_high_files)
                     transitive_fix_low_sets.append(dep[SwiftDepsInfo].transitive_fix_low_files)
+                    dependency_indexstore_sets.append(dep[SwiftDepsInfo].direct_indexstore_files)
     transitive_modules = depset(transitive = transitive_sets)
+    dependency_indexstore_files = depset(transitive = dependency_indexstore_sets).to_list()
 
     # Record declared deps, deduplicating by module name (a module can
     # appear through multiple swift_library_group expansions).
@@ -305,6 +311,9 @@ def _swift_deps_aspect_impl(target, ctx):
     if indexstore_directory:
         analyzer_args.add("--index-store-path")
         analyzer_args.add(indexstore_directory.path)
+    for dependency_indexstore in dependency_indexstore_files:
+        analyzer_args.add("--dependency-index-store-path")
+        analyzer_args.add(dependency_indexstore.path)
     analyzer_args.add("--report-output")
     analyzer_args.add(report_file)
     analyzer_args.add("--fix-output")
@@ -315,6 +324,7 @@ def _swift_deps_aspect_impl(target, ctx):
     analyzer_inputs = [metadata_file] + source_inputs
     if indexstore_directory:
         analyzer_inputs.append(indexstore_directory)
+    analyzer_inputs.extend(dependency_indexstore_files)
 
     ctx.actions.run(
         executable = ctx.executable._analyzer,
@@ -329,6 +339,7 @@ def _swift_deps_aspect_impl(target, ctx):
     transitive_report_files = depset([report_file], transitive = transitive_report_sets)
     transitive_fix_high_files = depset([fix_high_file], transitive = transitive_fix_high_sets)
     transitive_fix_low_files = depset([fix_low_file], transitive = transitive_fix_low_sets)
+    direct_indexstore_files = depset([indexstore_directory] if indexstore_directory else [])
 
     return [
         SwiftDepsInfo(
@@ -338,6 +349,7 @@ def _swift_deps_aspect_impl(target, ctx):
             transitive_fix_low_files = transitive_fix_low_files,
             transitive_modules = transitive_modules,
             direct_dep_modules = [],
+            direct_indexstore_files = direct_indexstore_files,
         ),
         OutputGroupInfo(
             swift_unused_deps_metadata = transitive_metadata_files,

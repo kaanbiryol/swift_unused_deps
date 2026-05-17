@@ -28,6 +28,8 @@ results = {result["target"]: result for result in report["results"]}
 expected_reported_targets = {
     "//cases/Deps/CustomModuleName:CustomModuleName",
     "//cases/Deps/DirectDepWithTransitive:DirectDepWithTransitive",
+    "//cases/Deps/ExtensionBase:ExtensionBase",
+    "//cases/Deps/ExtensionProvider:ExtensionProvider",
     "//cases/Deps/LibA:LibA",
     "//cases/Deps/LibB:LibB",
     "//cases/Deps/LibC:LibC",
@@ -36,6 +38,7 @@ expected_reported_targets = {
     "//cases/Targets/CandidatePrivateDep:CandidatePrivateDep",
     "//cases/Targets/CleanLibraryGroupDep:CleanLibraryGroupDep",
     "//cases/Targets/CleanTarget:CleanTarget",
+    "//cases/Targets/ExtensionMemberUsage:ExtensionMemberUsage",
     "//cases/Targets/MissingDirectDep:MissingDirectDep",
     "//cases/Targets/MultipleUnusedDeps:MultipleUnusedDeps",
     "//cases/Targets/StdlibOnly:StdlibOnly",
@@ -148,6 +151,23 @@ require_clean_modules(
 )
 require_issues("//cases/Targets/CleanTarget:CleanTarget", set())
 require_skipped_modules("//cases/Targets/CleanTarget:CleanTarget", set())
+
+require_status("//cases/Deps/ExtensionProvider:ExtensionProvider", "clean")
+require_clean_modules("//cases/Deps/ExtensionProvider:ExtensionProvider", {"ExtensionBase"})
+require_issues("//cases/Deps/ExtensionProvider:ExtensionProvider", set())
+require_skipped_modules("//cases/Deps/ExtensionProvider:ExtensionProvider", set())
+
+require_status("//cases/Targets/ExtensionMemberUsage:ExtensionMemberUsage", "issues_found")
+require_clean_modules(
+    "//cases/Targets/ExtensionMemberUsage:ExtensionMemberUsage",
+    {"ExtensionBase", "ExtensionProvider"},
+)
+require_issues(
+    "//cases/Targets/ExtensionMemberUsage:ExtensionMemberUsage",
+    {("unused_import", "LibA")},
+)
+require_skipped_modules("//cases/Targets/ExtensionMemberUsage:ExtensionMemberUsage", set())
+require_source_removal("//cases/Targets/ExtensionMemberUsage:ExtensionMemberUsage", "LibA")
 
 require_status("//cases/Targets/StdlibOnly:StdlibOnly", "clean")
 require_clean_modules("//cases/Targets/StdlibOnly:StdlibOnly", set())

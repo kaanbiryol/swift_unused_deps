@@ -69,6 +69,18 @@ public enum IndexStoreReader {
         let isGenerated: Bool
     }
 
+    private struct SourceFileEntry {
+        let sourceFile: String
+        let isGenerated: Bool
+        let moduleName: String
+        let referencedUSRs: Set<String>
+        let loadedModules: Set<String>
+        let systemModules: Set<String>
+        let directImports: Set<String>
+        let reexportedImports: Set<String>
+        let conditionalImports: Set<String>
+    }
+
     private struct SourceFileLookup {
         let sourceFiles: [SourceFileMetadata]
         let fileManager = FileManager.default
@@ -150,7 +162,8 @@ public enum IndexStoreReader {
 
     public static func readModuleUsage(
         storePath: String,
-        sourceFiles: [SourceFileMetadata] = []
+        sourceFiles: [SourceFileMetadata] = [],
+        definitionStorePaths: [String] = []
     ) throws -> Result {
         let store: IndexStore
         do {
@@ -159,87 +172,36 @@ public enum IndexStoreReader {
             throw Error.storeOpenFailed(path: storePath, underlying: error)
         }
 
-        // Pass 1: gather defined USRs per module and per-file data.
+        // Pass 1: gather defined USRs per module and per-file data. Definition
+        // stores from direct dependencies let us attribute extension members to
+        // the module that defines them, even when the USR is attached to an
+        // extended type from another module.
         var moduleDefinedUSRs: [String: Set<String>] = [:]
         let sourceLookup = SourceFileLookup(sourceFiles: sourceFiles)
-        var sourceFileEntries: [(
-            sourceFile: String,
-            isGenerated: Bool,
-            moduleName: String,
-            referencedUSRs: Set<String>,
-            loadedModules: Set<String>,
-            systemModules: Set<String>,
-            directImports: Set<String>,
-            reexportedImports: Set<String>,
-            conditionalImports: Set<String>
-        )] = []
+        var sourceFileEntries: [SourceFileEntry] = []
         var seenSourceUnits = Set<SourceUnitKey>()
 
-        for unitReader in store.units {
-            if unitReader.mainFile.isEmpty { continue }
-            let mod = unitReader.moduleName
-            let sourceUnitKey = SourceUnitKey(sourceFile: unitReader.mainFile, moduleName: mod)
-            if seenSourceUnits.contains(sourceUnitKey) { continue }
+        read(
+            store: store,
+            sourceLookup: sourceLookup,
+            collectsSourceEntries: true,
+            moduleDefinedUSRs: &moduleDefinedUSRs,
+            sourceFileEntries: &sourceFileEntries,
+            seenSourceUnits: &seenSourceUnits
+        )
 
-            guard let recordName = unitReader.recordName else { continue }
-            let recordReader: RecordReader
-            do {
-                recordReader = try RecordReader(indexStore: store, recordName: recordName)
-            } catch {
+        for definitionStorePath in definitionStorePaths where definitionStorePath != storePath {
+            guard let definitionStore = try? IndexStore(path: definitionStorePath) else {
                 continue
             }
-
-            var definedUSRs = Set<String>()
-            var referencedUSRs = Set<String>()
-            var directImports = Set<String>()
-            var reexportedImports = Set<String>()
-            var conditionalImports = Set<String>()
-            var importLineNumbers = Set<Int>()
-            let resolvedSource = sourceLookup.resolve(unitReader.mainFile)
-
-            if let readablePath = resolvedSource.readablePath,
-               let source = try? String(contentsOfFile: readablePath, encoding: .utf8) {
-                directImports.formUnion(SourceImportEditor.importedModuleNames(in: source))
-                reexportedImports.formUnion(SourceImportEditor.reexportedImportModuleNames(in: source))
-                conditionalImports.formUnion(SourceImportEditor.conditionalImportModuleNames(in: source))
-                importLineNumbers = SourceImportEditor.importLineNumbers(in: source)
-            }
-
-            recordReader.forEach { (occurrence: SymbolOccurrence) in
-                if occurrence.roles.contains(.definition) {
-                    definedUSRs.insert(occurrence.symbol.usr)
-                } else if occurrence.roles.contains(.reference) {
-                    // Symbol-scoped imports like `import struct LibA.Type` appear as
-                    // references in the index store, but they are import declarations,
-                    // not semantic usage sites.
-                    if !importLineNumbers.contains(occurrence.location.line) {
-                        referencedUSRs.insert(occurrence.symbol.usr)
-                    }
-                    if occurrence.symbol.kind == .module {
-                        directImports.insert(occurrence.symbol.name)
-                    }
-                }
-            }
-
-            // Gather loaded modules from unit dependencies.
-            var loadedModules = Set<String>()
-            var systemModules = Set<String>()
-            unitReader.forEach(dependency: { dep in
-                if dep.kind == .unit && !dep.moduleName.isEmpty {
-                    loadedModules.insert(dep.moduleName)
-                    if dep.isSystem {
-                        systemModules.insert(dep.moduleName)
-                    }
-                }
-            })
-
-            moduleDefinedUSRs[mod, default: []].formUnion(definedUSRs)
-
-            sourceFileEntries.append((
-                resolvedSource.reportPath, resolvedSource.isGenerated, mod, referencedUSRs, loadedModules, systemModules, directImports, reexportedImports,
-                conditionalImports
-            ))
-            seenSourceUnits.insert(sourceUnitKey)
+            read(
+                store: definitionStore,
+                sourceLookup: nil,
+                collectsSourceEntries: false,
+                moduleDefinedUSRs: &moduleDefinedUSRs,
+                sourceFileEntries: &sourceFileEntries,
+                seenSourceUnits: &seenSourceUnits
+            )
         }
 
         // Pass 2: resolve referenced modules via USR cross-reference.
@@ -277,6 +239,98 @@ public enum IndexStoreReader {
         }
 
         return Result(usage: results)
+    }
+
+    private static func read(
+        store: IndexStore,
+        sourceLookup: SourceFileLookup?,
+        collectsSourceEntries: Bool,
+        moduleDefinedUSRs: inout [String: Set<String>],
+        sourceFileEntries: inout [SourceFileEntry],
+        seenSourceUnits: inout Set<SourceUnitKey>
+    ) {
+        for unitReader in store.units {
+            if unitReader.mainFile.isEmpty { continue }
+            let mod = unitReader.moduleName
+            let sourceUnitKey = SourceUnitKey(sourceFile: unitReader.mainFile, moduleName: mod)
+            if seenSourceUnits.contains(sourceUnitKey) { continue }
+
+            guard let recordName = unitReader.recordName else { continue }
+            let recordReader: RecordReader
+            do {
+                recordReader = try RecordReader(indexStore: store, recordName: recordName)
+            } catch {
+                continue
+            }
+
+            var definedUSRs = Set<String>()
+            var referencedUSRs = Set<String>()
+            var directImports = Set<String>()
+            var reexportedImports = Set<String>()
+            var conditionalImports = Set<String>()
+            var importLineNumbers = Set<Int>()
+            let resolvedSource = sourceLookup?.resolve(unitReader.mainFile) ?? ResolvedSourceFile(
+                readablePath: nil,
+                reportPath: unitReader.mainFile,
+                isGenerated: false
+            )
+
+            if collectsSourceEntries,
+               let readablePath = resolvedSource.readablePath,
+               let source = try? String(contentsOfFile: readablePath, encoding: .utf8) {
+                directImports.formUnion(SourceImportEditor.importedModuleNames(in: source))
+                reexportedImports.formUnion(SourceImportEditor.reexportedImportModuleNames(in: source))
+                conditionalImports.formUnion(SourceImportEditor.conditionalImportModuleNames(in: source))
+                importLineNumbers = SourceImportEditor.importLineNumbers(in: source)
+            }
+
+            recordReader.forEach { (occurrence: SymbolOccurrence) in
+                if occurrence.roles.contains(.definition) {
+                    definedUSRs.insert(occurrence.symbol.usr)
+                } else if collectsSourceEntries, occurrence.roles.contains(.reference) {
+                    // Symbol-scoped imports like `import struct LibA.Type` appear as
+                    // references in the index store, but they are import declarations,
+                    // not semantic usage sites.
+                    if !importLineNumbers.contains(occurrence.location.line) {
+                        referencedUSRs.insert(occurrence.symbol.usr)
+                    }
+                    if occurrence.symbol.kind == .module {
+                        directImports.insert(occurrence.symbol.name)
+                    }
+                }
+            }
+
+            // Gather loaded modules from unit dependencies.
+            var loadedModules = Set<String>()
+            var systemModules = Set<String>()
+            if collectsSourceEntries {
+                unitReader.forEach(dependency: { dep in
+                    if dep.kind == .unit && !dep.moduleName.isEmpty {
+                        loadedModules.insert(dep.moduleName)
+                        if dep.isSystem {
+                            systemModules.insert(dep.moduleName)
+                        }
+                    }
+                })
+            }
+
+            moduleDefinedUSRs[mod, default: []].formUnion(definedUSRs)
+
+            if collectsSourceEntries {
+                sourceFileEntries.append(SourceFileEntry(
+                    sourceFile: resolvedSource.reportPath,
+                    isGenerated: resolvedSource.isGenerated,
+                    moduleName: mod,
+                    referencedUSRs: referencedUSRs,
+                    loadedModules: loadedModules,
+                    systemModules: systemModules,
+                    directImports: directImports,
+                    reexportedImports: reexportedImports,
+                    conditionalImports: conditionalImports
+                ))
+            }
+            seenSourceUnits.insert(sourceUnitKey)
+        }
     }
 
     static func moduleName(fromUSR usr: String) -> String? {

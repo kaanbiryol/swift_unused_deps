@@ -32,7 +32,8 @@ public struct LabelConverter {
     /// - Labels without `@@` prefix -> unchanged (WORKSPACE mode)
     public func convert(_ label: String, buildFileContent: String? = nil) -> String {
         let apparent = convertCanonicalToApparent(label, buildFileContent: buildFileContent)
-        return Self.stripRSPMSuffix(apparent)
+        let normalized = Self.normalizeRSPMCanonicalRepo(apparent)
+        return Self.stripRSPMSuffix(normalized)
     }
 
     /// Core canonical-to-apparent conversion logic.
@@ -84,6 +85,44 @@ public struct LabelConverter {
     private static func stripRSPMSuffix(_ label: String) -> String {
         guard label.hasPrefix("@"), label.hasSuffix(".rspm") else { return label }
         return String(label.dropLast(".rspm".count))
+    }
+
+    /// Convert rules_swift_package_manager extension canonical repos to the
+    /// apparent repo names users can write in BUILD files.
+    ///
+    /// Bazel actions may run without a workspace repo mapping available, but
+    /// labels from rules_swift_package_manager still have a stable canonical
+    /// shape:
+    ///
+    /// `@@rules_swift_package_manager++_swift_deps+++swift_deps+swiftpkg_x//:Y`
+    /// becomes `@swiftpkg_x//:Y`.
+    private static func normalizeRSPMCanonicalRepo(_ label: String) -> String {
+        let atPrefix: String
+        let withoutAt: String
+        if label.hasPrefix("@@") {
+            atPrefix = "@"
+            withoutAt = String(label.dropFirst(2))
+        } else if label.hasPrefix("@") {
+            atPrefix = "@"
+            withoutAt = String(label.dropFirst())
+        } else {
+            return label
+        }
+
+        guard let packageRange = withoutAt.range(of: "//") else {
+            return label
+        }
+
+        let repo = String(withoutAt[..<packageRange.lowerBound])
+        guard repo.hasPrefix("rules_swift_package_manager"),
+              let apparentRange = repo.range(of: "swiftpkg_", options: .backwards)
+        else {
+            return label
+        }
+
+        let apparentRepo = String(repo[apparentRange.lowerBound...])
+        let remainder = String(withoutAt[packageRange.lowerBound...])
+        return "\(atPrefix)\(apparentRepo)\(remainder)"
     }
 
     /// Load the repo mapping by running `bazel mod dump_repo_mapping ""`.

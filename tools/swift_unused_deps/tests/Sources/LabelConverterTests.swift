@@ -129,6 +129,26 @@ final class LabelConverterTests: XCTestCase {
         )
     }
 
+    func testIdentityConverterNormalizesRSPMCanonicalRepo() {
+        let converter = LabelConverter.identity
+        XCTAssertEqual(
+            converter.convert("@@rules_swift_package_manager++_swift_deps+++swift_deps+swiftpkg_swift_http_types//:HTTPTypes"),
+            "@swiftpkg_swift_http_types//:HTTPTypes"
+        )
+        XCTAssertEqual(
+            converter.convert("@rules_swift_package_manager++_swift_deps+++swift_deps+swiftpkg_swift_http_types//:HTTPTypes"),
+            "@swiftpkg_swift_http_types//:HTTPTypes"
+        )
+    }
+
+    func testUnknownRSPMCanonicalRepoNormalizesBeforeFallback() {
+        let converter = LabelConverter(canonicalToApparent: [:])
+        XCTAssertEqual(
+            converter.convert("@@rules_swift_package_manager++_swift_deps+++swift_deps+swiftpkg_grpc_swift_nio_transport//:GRPCNIOTransportHTTP2TransportServices"),
+            "@swiftpkg_grpc_swift_nio_transport//:GRPCNIOTransportHTTP2TransportServices"
+        )
+    }
+
     func testNonRSPMExternalLabelUnchanged() {
         let converter = LabelConverter(canonicalToApparent: [
             "swift-syntax+": ["swiftpkg_swift_syntax"],

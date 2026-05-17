@@ -63,6 +63,26 @@ teardown_file() {
   assert_file_not_contains "cases/Targets/UnusedImport/BUILD.bazel" "//cases/Deps/LibA"
 }
 
+@test "bazel-native fix target keeps extension-providing dependency" {
+  assert_file_contains "cases/Targets/ExtensionMemberUsage/ExtensionMemberUsage.swift" "import ExtensionProvider"
+  assert_file_contains "cases/Targets/ExtensionMemberUsage/ExtensionMemberUsage.swift" "import LibA"
+  assert_file_contains "cases/Targets/ExtensionMemberUsage/BUILD.bazel" "//cases/Deps/ExtensionProvider"
+  assert_file_contains "cases/Targets/ExtensionMemberUsage/BUILD.bazel" "//cases/Deps/LibA"
+
+  run_in_workspace bazel run \
+    --features=swift.index_while_building \
+    //:extension_member_usage_unused_deps_fix
+
+  assert_status 0
+  assert_stderr_contains "remove //cases/Deps/LibA:LibA from deps of //cases/Targets/ExtensionMemberUsage:ExtensionMemberUsage"
+  assert_stderr_not_contains "remove //cases/Deps/ExtensionProvider:ExtensionProvider"
+  assert_stderr_not_contains "remove import ExtensionProvider"
+  assert_file_contains "cases/Targets/ExtensionMemberUsage/ExtensionMemberUsage.swift" "import ExtensionProvider"
+  assert_file_contains "cases/Targets/ExtensionMemberUsage/BUILD.bazel" "//cases/Deps/ExtensionProvider"
+  assert_file_not_contains "cases/Targets/ExtensionMemberUsage/ExtensionMemberUsage.swift" "import LibA"
+  assert_file_not_contains "cases/Targets/ExtensionMemberUsage/BUILD.bazel" "//cases/Deps/LibA"
+}
+
 @test "bazel-native fix target can use low fix confidence" {
   assert_file_contains "cases/Targets/CandidatePrivateDep/BUILD.bazel" "//cases/Deps/TransitiveDep"
   assert_file_not_contains "cases/Targets/CandidatePrivateDep/BUILD.bazel" "private_deps"
