@@ -1,0 +1,9 @@
+load(
+    "@swift_unused_deps//tools/swift_unused_deps:defs.bzl",
+    "swift_unused_deps",
+)
+
+swift_unused_deps(
+    name = "clean_ios_target_unused_deps",
+    targets = ["//cases/Targets/CleanIOSTarget:CleanIOSTarget"],
+)

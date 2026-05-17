@@ -27,6 +27,15 @@ teardown_file() {
   assert_status 3
 }
 
+@test "bazel-native test runs on host when target platform is iOS" {
+  run_in_workspace bazel test \
+    --features=swift.index_while_building \
+    --platforms=@apple_support//platforms:ios_sim_arm64 \
+    //cases:clean_ios_target_unused_deps
+
+  assert_status 0
+}
+
 @test "bazel-native report emits merged report and fix artifacts" {
   run_in_workspace bash -c '
     bazel build --features=swift.index_while_building //:candidate_private_dep_unused_deps_report

@@ -259,6 +259,9 @@ swift_unused_deps_test = rule(
     implementation = _swift_unused_deps_test_impl,
     attrs = _COMMON_ATTRS,
     doc = "Fails when swift_unused_deps reports configured findings.",
+    exec_groups = {
+        "test": exec_group(),
+    },
     test = True,
 )
 
