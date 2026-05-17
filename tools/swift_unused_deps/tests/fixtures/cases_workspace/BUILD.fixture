@@ -5,7 +5,14 @@ load(
 
 swift_unused_deps(
     name = "candidate_private_dep_unused_deps",
-    min_report_confidence = "high",
+    report_confidence = "high",
+    targets = ["//cases/Targets/CandidatePrivateDep:CandidatePrivateDep"],
+)
+
+swift_unused_deps(
+    name = "candidate_private_dep_low_fix_unused_deps",
+    fix_confidence = "low",
+    report_confidence = "high",
     targets = ["//cases/Targets/CandidatePrivateDep:CandidatePrivateDep"],
 )
 

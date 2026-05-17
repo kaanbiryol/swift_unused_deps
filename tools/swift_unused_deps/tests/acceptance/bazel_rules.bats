@@ -11,7 +11,7 @@ teardown_file() {
   cleanup_fixture_workspace
 }
 
-@test "bazel-native test passes when findings are below configured confidence" {
+@test "bazel-native test passes when report confidence is high" {
   run_in_workspace bazel test \
     --features=swift.index_while_building \
     //:candidate_private_dep_unused_deps
@@ -52,4 +52,18 @@ teardown_file() {
   assert_stderr_contains "remove //cases/Deps/LibA:LibA from deps of //cases/Targets/UnusedImport:UnusedImport"
   assert_file_not_contains "cases/Targets/UnusedImport/UnusedImport.swift" "import LibA"
   assert_file_not_contains "cases/Targets/UnusedImport/BUILD.bazel" "//cases/Deps/LibA"
+}
+
+@test "bazel-native fix target can use low fix confidence" {
+  assert_file_contains "cases/Targets/CandidatePrivateDep/BUILD.bazel" "//cases/Deps/TransitiveDep"
+  assert_file_not_contains "cases/Targets/CandidatePrivateDep/BUILD.bazel" "private_deps"
+
+  run_in_workspace bazel run \
+    --features=swift.index_while_building \
+    //:candidate_private_dep_low_fix_unused_deps_fix
+
+  assert_status 0
+  assert_stderr_contains "move //cases/Deps/TransitiveDep:TransitiveDep from deps to private_deps of //cases/Targets/CandidatePrivateDep:CandidatePrivateDep"
+  assert_file_contains "cases/Targets/CandidatePrivateDep/BUILD.bazel" "private_deps"
+  assert_file_contains "cases/Targets/CandidatePrivateDep/BUILD.bazel" "//cases/Deps/TransitiveDep"
 }

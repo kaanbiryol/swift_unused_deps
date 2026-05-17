@@ -65,8 +65,8 @@ bazel test --config=swift-unused-deps \
   //tools:swift_unused_deps
 ```
 
-The test prints a merged text report and fails when findings meet
-`min_report_confidence`.
+The test prints a merged text report and fails when configured findings are
+present.
 
 ## Report And Fix Targets
 
@@ -86,8 +86,8 @@ Common macro attributes:
 | Attribute | Use |
 |-----------|-----|
 | `targets` | Top-level Bazel targets whose Swift dependency closure should be analyzed |
-| `min_report_confidence` | `low`, `medium`, or `high`; controls reporting and test failure |
-| `include_low_confidence_fixes` | Include low-confidence fixes in the merged fix plan |
+| `report_confidence` | `low` or `high`; minimum confidence level to report and fail tests on. Defaults to `low` |
+| `fix_confidence` | `low` or `high`; minimum confidence level to include in the merged fix plan. Defaults to `high` |
 
 Apply generated fixes with the macro-generated fix target:
 

@@ -47,12 +47,12 @@ def _merged_outputs(ctx):
     )
 
 def _run_merge_action(ctx, outputs, collected):
-    fix_files = collected.fix_low if ctx.attr.include_low_confidence_fixes else collected.fix_high
+    fix_files = collected.fix_low if ctx.attr.fix_confidence == "low" else collected.fix_high
 
     args = ctx.actions.args()
     args.add("merge-reports")
     args.add("--min-report-confidence")
-    args.add(ctx.attr.min_report_confidence)
+    args.add(ctx.attr.report_confidence)
     args.add_all(collected.reports, before_each = "--report-input")
     args.add_all(fix_files, before_each = "--fix-input")
     args.add("--report-output")
@@ -232,14 +232,15 @@ _COMMON_ATTRS = {
         aspects = [swift_deps_aspect],
         doc = "Top-level targets whose Swift dependency closure should be analyzed.",
     ),
-    "min_report_confidence": attr.string(
+    "report_confidence": attr.string(
         default = "low",
         values = _CONFIDENCE_VALUES,
         doc = "Minimum confidence level that is reported and causes tests to fail.",
     ),
-    "include_low_confidence_fixes": attr.bool(
-        default = False,
-        doc = "Include low-confidence fixes in the merged fix plan.",
+    "fix_confidence": attr.string(
+        default = "high",
+        values = _CONFIDENCE_VALUES,
+        doc = "Minimum confidence level included in the merged fix plan.",
     ),
     "_swift_unused_deps": attr.label(
         default = Label("//tools/swift_unused_deps/analyzer:swift_unused_deps"),
@@ -257,7 +258,7 @@ swift_unused_deps_report = rule(
 swift_unused_deps_test = rule(
     implementation = _swift_unused_deps_test_impl,
     attrs = _COMMON_ATTRS,
-    doc = "Fails when swift_unused_deps reports issues at or above the configured confidence.",
+    doc = "Fails when swift_unused_deps reports configured findings.",
     test = True,
 )
 
@@ -289,8 +290,8 @@ def _target_kwargs(visibility = None, tags = None):
 def swift_unused_deps(
         name,
         targets,
-        min_report_confidence = "low",
-        include_low_confidence_fixes = False,
+        report_confidence = "low",
+        fix_confidence = "high",
         visibility = None,
         tags = None,
         test_tags = None,
@@ -306,8 +307,8 @@ def swift_unused_deps(
     Args:
       name: Name of the generated test target.
       targets: Top-level Bazel targets whose Swift dependency closure should be analyzed.
-      min_report_confidence: Minimum confidence level to report and fail the test on.
-      include_low_confidence_fixes: Include low-confidence fixes in the generated fix plan.
+      report_confidence: Minimum confidence level to report and fail the test on.
+      fix_confidence: Minimum confidence level to include in the generated fix plan.
       visibility: Optional visibility applied to all generated targets.
       tags: Optional tags applied to all generated targets unless target-specific tags are set.
       test_tags: Optional tags for the generated test target.
@@ -319,8 +320,8 @@ def swift_unused_deps(
     swift_unused_deps_report(
         name = report_name,
         targets = targets,
-        min_report_confidence = min_report_confidence,
-        include_low_confidence_fixes = include_low_confidence_fixes,
+        report_confidence = report_confidence,
+        fix_confidence = fix_confidence,
         **_target_kwargs(
             visibility = visibility,
             tags = report_tags if report_tags != None else tags,
@@ -330,8 +331,8 @@ def swift_unused_deps(
     swift_unused_deps_test(
         name = name,
         targets = targets,
-        min_report_confidence = min_report_confidence,
-        include_low_confidence_fixes = include_low_confidence_fixes,
+        report_confidence = report_confidence,
+        fix_confidence = fix_confidence,
         **_target_kwargs(
             visibility = visibility,
             tags = test_tags if test_tags != None else tags,
