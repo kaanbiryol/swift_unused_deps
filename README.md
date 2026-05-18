@@ -131,6 +131,9 @@ bazel run @swift_unused_deps//:swift_unused_deps -- analyze //apps/Example:Examp
   --metadata-root /path/to/bazel-bin
 ```
 
+Use `--min-fix-confidence low` with `analyze --fix-output` or `fix` to include
+low-confidence fixes.
+
 Normal CI and local checks should use the `swift_unused_deps` macro instead.
 
 ## What It Detects

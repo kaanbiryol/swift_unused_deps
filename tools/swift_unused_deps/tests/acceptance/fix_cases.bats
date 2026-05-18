@@ -104,7 +104,7 @@ teardown_file() {
 }
 
 @test "fix can apply low-confidence candidate private dep when requested" {
-  run_swift_unused_deps_in_workspace //cases/Targets/CandidatePrivateDep:CandidatePrivateDep --apply-fix-plan --include-low-confidence-fixes
+  run_swift_unused_deps_in_workspace //cases/Targets/CandidatePrivateDep:CandidatePrivateDep --apply-fix-plan --min-fix-confidence low
 
   assert_status 0
   assert_output_contains "0 issues found."

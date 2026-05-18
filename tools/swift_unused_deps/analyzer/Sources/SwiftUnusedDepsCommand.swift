@@ -114,12 +114,6 @@ public struct SwiftUnusedDepsAnalyzeCommand: ParsableCommand {
     @Option(name: .customLong("fix-output"), help: "Write a structured JSON fix file.")
     var fixOutput: String?
 
-    @Flag(
-        name: .customLong("include-low-confidence-fixes"),
-        help: "Include low-confidence fixes in --fix-output."
-    )
-    var includeLowConfidenceFixes = false
-
     @Option(
         name: .customLong("min-report-confidence"),
         help: .hidden
@@ -128,7 +122,7 @@ public struct SwiftUnusedDepsAnalyzeCommand: ParsableCommand {
 
     @Option(
         name: .customLong("min-fix-confidence"),
-        help: .hidden
+        help: "Minimum confidence level included in --fix-output. Use: low, high. Defaults to high."
     )
     var minFixConfidence: String?
 
@@ -169,10 +163,6 @@ public struct SwiftUnusedDepsAnalyzeCommand: ParsableCommand {
         if let targetPattern, let filter, targetPattern != filter {
             throw ValidationError("Provide either TARGET_PATTERN or --filter, not both.")
         }
-        try SwiftUnusedDepsCommand.validateLowConfidenceFixOptions(
-            includeLowConfidenceFixes: includeLowConfidenceFixes,
-            minFixConfidence: minFixConfidence
-        )
     }
 
     public func run() throws {
@@ -181,7 +171,6 @@ public struct SwiftUnusedDepsAnalyzeCommand: ParsableCommand {
             option: "--min-report-confidence"
         )
         let fixConfidence = try SwiftUnusedDepsCommand.fixConfidence(
-            includeLowConfidenceFixes: includeLowConfidenceFixes,
             minFixConfidence: minFixConfidence
         )
 
@@ -243,12 +232,6 @@ public struct SwiftUnusedDepsFixCommand: ParsableCommand {
     @Option(name: .customLong("fix-output"), help: "Write the structured JSON fix file before applying it.")
     var fixOutput: String?
 
-    @Flag(
-        name: .customLong("include-low-confidence-fixes"),
-        help: "Include low-confidence fixes when applying changes."
-    )
-    var includeLowConfidenceFixes = false
-
     @Option(
         name: .customLong("report-output"),
         help: "Write a JSON analysis report to a file before applying fixes."
@@ -258,7 +241,10 @@ public struct SwiftUnusedDepsFixCommand: ParsableCommand {
     @Option(name: .customLong("min-report-confidence"), help: .hidden)
     var minReportConfidence: String?
 
-    @Option(name: .customLong("min-fix-confidence"), help: .hidden)
+    @Option(
+        name: .customLong("min-fix-confidence"),
+        help: "Minimum confidence level to apply. Use: low, high. Defaults to high."
+    )
     var minFixConfidence: String?
 
     @Option(help: .hidden)
@@ -287,10 +273,6 @@ public struct SwiftUnusedDepsFixCommand: ParsableCommand {
         if let targetPattern, let filter, targetPattern != filter {
             throw ValidationError("Provide either TARGET_PATTERN or --filter, not both.")
         }
-        try SwiftUnusedDepsCommand.validateLowConfidenceFixOptions(
-            includeLowConfidenceFixes: includeLowConfidenceFixes,
-            minFixConfidence: minFixConfidence
-        )
     }
 
     public func run() throws {
@@ -299,7 +281,6 @@ public struct SwiftUnusedDepsFixCommand: ParsableCommand {
             option: "--min-report-confidence"
         )
         let fixConfidence = try SwiftUnusedDepsCommand.fixConfidence(
-            includeLowConfidenceFixes: includeLowConfidenceFixes,
             minFixConfidence: minFixConfidence
         )
 
@@ -670,24 +651,9 @@ public struct SwiftUnusedDepsCommand: ParsableCommand {
         return confidence
     }
 
-    static func fixConfidence(
-        includeLowConfidenceFixes: Bool,
-        minFixConfidence: String?
-    ) throws -> Confidence {
-        let rawValue = includeLowConfidenceFixes
-            ? "low"
-            : minFixConfidence ?? "high"
+    static func fixConfidence(minFixConfidence: String?) throws -> Confidence {
+        let rawValue = minFixConfidence ?? "high"
         return try confidence(rawValue, option: "--min-fix-confidence")
-    }
-
-    static func validateLowConfidenceFixOptions(
-        includeLowConfidenceFixes: Bool,
-        minFixConfidence: String?
-    ) throws {
-        guard includeLowConfidenceFixes else { return }
-        if let minFixConfidence, minFixConfidence != Confidence.low.rawValue {
-            throw ValidationError("Provide either --include-low-confidence-fixes or --min-fix-confidence, not both.")
-        }
     }
 
     static func validateNonEmpty(_ value: String?, option: String) throws {

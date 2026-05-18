@@ -11,7 +11,6 @@ final class CLITests: XCTestCase {
                 "--metadata-root", "/tmp/bazel-bin",
                 "--index-store-path", "/tmp/index-store",
                 "--fix-output", "/tmp/fix.json",
-                "--include-low-confidence-fixes",
                 "--min-report-confidence", "high",
                 "--min-fix-confidence", "low",
                 "--report-output", "/tmp/report.out",
@@ -24,7 +23,6 @@ final class CLITests: XCTestCase {
         XCTAssertEqual(command.indexStorePath, "/tmp/index-store")
         XCTAssertNil(command.filter)
         XCTAssertEqual(command.fixOutput, "/tmp/fix.json")
-        XCTAssertTrue(command.includeLowConfidenceFixes)
         XCTAssertEqual(command.minReportConfidence, "high")
         XCTAssertEqual(command.minFixConfidence, "low")
         XCTAssertEqual(command.reportOutput, "/tmp/report.out")
@@ -40,19 +38,14 @@ final class CLITests: XCTestCase {
         }
     }
 
-    func testParseAnalyzeRejectsConflictingLowConfidenceFixOptions() {
-        XCTAssertThrowsError(try SwiftUnusedDepsCommand.parseAsRoot([
-            "analyze",
-            "//App/...",
-            "--include-low-confidence-fixes",
-            "--min-fix-confidence", "high",
-        ])) { error in
-            XCTAssertTrue("\(error)".contains("--include-low-confidence-fixes"))
+    func testParseAnalyzeRejectsMediumReportConfidence() {
+        XCTAssertThrowsError(try SwiftUnusedDepsCommand.confidence("medium", option: "--min-report-confidence")) { error in
+            XCTAssertTrue("\(error)".contains("Use: low, high"))
         }
     }
 
-    func testParseAnalyzeRejectsMediumReportConfidence() {
-        XCTAssertThrowsError(try SwiftUnusedDepsCommand.confidence("medium", option: "--min-report-confidence")) { error in
+    func testParseAnalyzeRejectsMediumFixConfidence() {
+        XCTAssertThrowsError(try SwiftUnusedDepsCommand.fixConfidence(minFixConfidence: "medium")) { error in
             XCTAssertTrue("\(error)".contains("Use: low, high"))
         }
     }
@@ -65,7 +58,7 @@ final class CLITests: XCTestCase {
                 "--metadata-root", "/tmp/bazel-bin",
                 "--index-store-path", "/tmp/index-store",
                 "--fix-output", "/tmp/fix.json",
-                "--include-low-confidence-fixes",
+                "--min-fix-confidence", "low",
                 "--report-output", "/tmp/report.json",
                 "--workspace-directory", "/tmp/workspace",
             ]) as? SwiftUnusedDepsFixCommand
@@ -75,7 +68,7 @@ final class CLITests: XCTestCase {
         XCTAssertEqual(command.metadataRoot, "/tmp/bazel-bin")
         XCTAssertEqual(command.indexStorePath, "/tmp/index-store")
         XCTAssertEqual(command.fixOutput, "/tmp/fix.json")
-        XCTAssertTrue(command.includeLowConfidenceFixes)
+        XCTAssertEqual(command.minFixConfidence, "low")
         XCTAssertEqual(command.reportOutput, "/tmp/report.json")
         XCTAssertEqual(command.workspaceDirectory, "/tmp/workspace")
     }
