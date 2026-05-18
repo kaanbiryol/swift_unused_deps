@@ -2,26 +2,20 @@ import ArgumentParser
 import Foundation
 
 struct BazelInfoProvider {
-    private let lookupImpl: (String, URL, [String]) -> String?
+    private let lookupImpl: (String, URL) -> String?
 
     init(_ lookup: @escaping (String, URL) -> String?) {
-        self.lookupImpl = { key, currentDirectory, _ in
-            lookup(key, currentDirectory)
-        }
-    }
-
-    init(_ lookup: @escaping (String, URL, [String]) -> String?) {
         self.lookupImpl = lookup
     }
 
-    func lookup(_ key: String, currentDirectory: URL, options: [String] = []) -> String? {
-        lookupImpl(key, currentDirectory, options)
+    func lookup(_ key: String, currentDirectory: URL) -> String? {
+        lookupImpl(key, currentDirectory)
     }
 
-    static let process = BazelInfoProvider { key, currentDirectory, options in
+    static let process = BazelInfoProvider { key, currentDirectory in
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
-        process.arguments = ["bazel", "info"] + options + [key]
+        process.arguments = ["bazel", "info", key]
         process.currentDirectoryURL = currentDirectory
 
         let stdout = Pipe()
@@ -138,15 +132,6 @@ public struct SwiftUnusedDepsAnalyzeCommand: ParsableCommand {
     )
     var minFixConfidence: String?
 
-    @Option(name: .customLong("min-confidence"), help: .hidden)
-    var legacyMinConfidence: String?
-
-    @Option(name: .customLong("fix-plan-min-confidence"), help: .hidden)
-    var legacyFixPlanMinConfidence: String?
-
-    @Option(name: .customLong("fix-plan-output"), help: .hidden)
-    var legacyFixPlanOutput: String?
-
     @Option(help: .hidden)
     var extraSystemModules: String?
 
@@ -179,39 +164,26 @@ public struct SwiftUnusedDepsAnalyzeCommand: ParsableCommand {
         try SwiftUnusedDepsCommand.validateNonEmpty(filter, option: "--filter")
         try SwiftUnusedDepsCommand.validateNonEmpty(workspaceDirectory, option: "--workspace-directory")
         try SwiftUnusedDepsCommand.validateNonEmpty(fixOutput, option: "--fix-output")
-        try SwiftUnusedDepsCommand.validateNonEmpty(legacyFixPlanOutput, option: "--fix-plan-output")
         try SwiftUnusedDepsCommand.validateNonEmpty(reportOutput, option: "--report-output")
         try SwiftUnusedDepsCommand.validateNonEmpty(exitCodeOutput, option: "--exit-code-output")
         if let targetPattern, let filter, targetPattern != filter {
             throw ValidationError("Provide either TARGET_PATTERN or --filter, not both.")
         }
-        if let fixOutput, let legacyFixPlanOutput, fixOutput != legacyFixPlanOutput {
-            throw ValidationError("Provide either --fix-output or --fix-plan-output, not both.")
-        }
-        if let minReportConfidence, let legacyMinConfidence, minReportConfidence != legacyMinConfidence {
-            throw ValidationError("Provide either --min-report-confidence or --min-confidence, not both.")
-        }
-        if let minFixConfidence, let legacyFixPlanMinConfidence, minFixConfidence != legacyFixPlanMinConfidence {
-            throw ValidationError("Provide either --min-fix-confidence or --fix-plan-min-confidence, not both.")
-        }
         try SwiftUnusedDepsCommand.validateLowConfidenceFixOptions(
             includeLowConfidenceFixes: includeLowConfidenceFixes,
-            minFixConfidence: minFixConfidence,
-            legacyFixPlanMinConfidence: legacyFixPlanMinConfidence
+            minFixConfidence: minFixConfidence
         )
     }
 
     public func run() throws {
         let reportConfidence = try SwiftUnusedDepsCommand.confidence(
-            minReportConfidence ?? legacyMinConfidence ?? "low",
+            minReportConfidence ?? "low",
             option: "--min-report-confidence"
         )
         let fixConfidence = try SwiftUnusedDepsCommand.fixConfidence(
             includeLowConfidenceFixes: includeLowConfidenceFixes,
-            minFixConfidence: minFixConfidence,
-            legacyFixPlanMinConfidence: legacyFixPlanMinConfidence
+            minFixConfidence: minFixConfidence
         )
-        let resolvedFixOutput = fixOutput ?? legacyFixPlanOutput
 
         let run = try SwiftUnusedDepsCommand.runAnalysis(AnalysisInvocation(
             targetPattern: targetPattern,
@@ -225,9 +197,9 @@ public struct SwiftUnusedDepsAnalyzeCommand: ParsableCommand {
         try SwiftUnusedDepsCommand.validateFoundMetadata(run.output, metadataRoot: run.metadataRoot)
 
         let jsonReport = Report.formatJSON(results: run.output.results, minConfidence: reportConfidence)
-        if let resolvedFixOutput {
+        if let fixOutput {
             let plan = FixPlan.from(results: run.output.results, minConfidence: fixConfidence)
-            try SwiftUnusedDepsCommand.write(FixPlan.formatJSON(plan), to: resolvedFixOutput)
+            try SwiftUnusedDepsCommand.write(FixPlan.formatJSON(plan), to: fixOutput)
         }
         if let reportOutput {
             try SwiftUnusedDepsCommand.write(jsonReport, to: reportOutput)
@@ -238,7 +210,7 @@ public struct SwiftUnusedDepsAnalyzeCommand: ParsableCommand {
             : Report.formatText(
                 results: run.output.results,
                 minConfidence: reportConfidence,
-                includesFixPlanHint: resolvedFixOutput == nil
+                includesFixPlanHint: fixOutput == nil
             )
 
         let exitCode = SwiftUnusedDepsCommand.analysisExitCode(
@@ -289,12 +261,6 @@ public struct SwiftUnusedDepsFixCommand: ParsableCommand {
     @Option(name: .customLong("min-fix-confidence"), help: .hidden)
     var minFixConfidence: String?
 
-    @Option(name: .customLong("fix-plan-min-confidence"), help: .hidden)
-    var legacyFixPlanMinConfidence: String?
-
-    @Option(name: .customLong("fix-plan-output"), help: .hidden)
-    var legacyFixPlanOutput: String?
-
     @Option(help: .hidden)
     var extraSystemModules: String?
 
@@ -317,21 +283,13 @@ public struct SwiftUnusedDepsFixCommand: ParsableCommand {
         try SwiftUnusedDepsCommand.validateNonEmpty(filter, option: "--filter")
         try SwiftUnusedDepsCommand.validateNonEmpty(workspaceDirectory, option: "--workspace-directory")
         try SwiftUnusedDepsCommand.validateNonEmpty(fixOutput, option: "--fix-output")
-        try SwiftUnusedDepsCommand.validateNonEmpty(legacyFixPlanOutput, option: "--fix-plan-output")
         try SwiftUnusedDepsCommand.validateNonEmpty(reportOutput, option: "--report-output")
         if let targetPattern, let filter, targetPattern != filter {
             throw ValidationError("Provide either TARGET_PATTERN or --filter, not both.")
         }
-        if let fixOutput, let legacyFixPlanOutput, fixOutput != legacyFixPlanOutput {
-            throw ValidationError("Provide either --fix-output or --fix-plan-output, not both.")
-        }
-        if let minFixConfidence, let legacyFixPlanMinConfidence, minFixConfidence != legacyFixPlanMinConfidence {
-            throw ValidationError("Provide either --min-fix-confidence or --fix-plan-min-confidence, not both.")
-        }
         try SwiftUnusedDepsCommand.validateLowConfidenceFixOptions(
             includeLowConfidenceFixes: includeLowConfidenceFixes,
-            minFixConfidence: minFixConfidence,
-            legacyFixPlanMinConfidence: legacyFixPlanMinConfidence
+            minFixConfidence: minFixConfidence
         )
     }
 
@@ -342,10 +300,8 @@ public struct SwiftUnusedDepsFixCommand: ParsableCommand {
         )
         let fixConfidence = try SwiftUnusedDepsCommand.fixConfidence(
             includeLowConfidenceFixes: includeLowConfidenceFixes,
-            minFixConfidence: minFixConfidence,
-            legacyFixPlanMinConfidence: legacyFixPlanMinConfidence
+            minFixConfidence: minFixConfidence
         )
-        let resolvedFixOutput = fixOutput ?? legacyFixPlanOutput
 
         let run = try SwiftUnusedDepsCommand.runAnalysis(AnalysisInvocation(
             targetPattern: targetPattern,
@@ -381,8 +337,8 @@ public struct SwiftUnusedDepsFixCommand: ParsableCommand {
         }
 
         let plan = FixPlan.from(results: run.output.results, minConfidence: fixConfidence)
-        if let resolvedFixOutput {
-            try SwiftUnusedDepsCommand.write(FixPlan.formatJSON(plan), to: resolvedFixOutput)
+        if let fixOutput {
+            try SwiftUnusedDepsCommand.write(FixPlan.formatJSON(plan), to: fixOutput)
         }
 
         let result = try FixPlanApplier.apply(plan, workspaceDirectory: run.workspaceDirectory)
@@ -716,28 +672,21 @@ public struct SwiftUnusedDepsCommand: ParsableCommand {
 
     static func fixConfidence(
         includeLowConfidenceFixes: Bool,
-        minFixConfidence: String?,
-        legacyFixPlanMinConfidence: String?
+        minFixConfidence: String?
     ) throws -> Confidence {
         let rawValue = includeLowConfidenceFixes
             ? "low"
-            : minFixConfidence ?? legacyFixPlanMinConfidence ?? "high"
+            : minFixConfidence ?? "high"
         return try confidence(rawValue, option: "--min-fix-confidence")
     }
 
     static func validateLowConfidenceFixOptions(
         includeLowConfidenceFixes: Bool,
-        minFixConfidence: String?,
-        legacyFixPlanMinConfidence: String?
+        minFixConfidence: String?
     ) throws {
         guard includeLowConfidenceFixes else { return }
         if let minFixConfidence, minFixConfidence != Confidence.low.rawValue {
             throw ValidationError("Provide either --include-low-confidence-fixes or --min-fix-confidence, not both.")
-        }
-        if let legacyFixPlanMinConfidence, legacyFixPlanMinConfidence != Confidence.low.rawValue {
-            throw ValidationError(
-                "Provide either --include-low-confidence-fixes or --fix-plan-min-confidence, not both."
-            )
         }
     }
 

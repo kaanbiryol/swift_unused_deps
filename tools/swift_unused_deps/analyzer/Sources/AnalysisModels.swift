@@ -6,6 +6,7 @@ public enum IssueKind: String, Codable {
     case missingDirectDep = "missing_direct_dep"
     case candidatePrivateDep = "candidate_private_dep"
     case unresolvedModule = "unresolved_module"
+    case mixedSourceTarget = "mixed_source_target"
 }
 
 public enum Confidence: String, Codable, Comparable {
@@ -95,7 +96,7 @@ public struct Issue {
 
     public static func mixedSourceWarning(targetLabel: String) -> Issue {
         Issue(
-            kind: .unresolvedModule,
+            kind: .mixedSourceTarget,
             confidence: .low,
             reason: "Target \(targetLabel) has mixed Swift/ObjC sources. Analysis may be incomplete - ObjC imports are not tracked.",
             suggestedAction: .investigate,

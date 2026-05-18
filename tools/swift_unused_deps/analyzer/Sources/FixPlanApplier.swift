@@ -16,6 +16,7 @@ public enum FixPlanApplier {
             printErr("No fixes to apply.")
             return Result(applied: false, buildFixCount: 0, sourceImportRemovalCount: 0)
         }
+        try plan.validate()
 
         let sourceImportEdits = try SourceImportEditor.plan(
             removals: plan.sourceImportRemovals,

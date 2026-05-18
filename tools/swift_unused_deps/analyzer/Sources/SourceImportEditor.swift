@@ -11,6 +11,13 @@ public enum SourceImportEditor {
         let isConditional: Bool
     }
 
+    struct ImportSummary {
+        let importedModuleNames: Set<String>
+        let reexportedImportModuleNames: Set<String>
+        let conditionalImportModuleNames: Set<String>
+        let importLineNumbers: Set<Int>
+    }
+
     struct PlannedEdit {
         let displayFilePath: String
         let filePath: String
@@ -144,21 +151,29 @@ public enum SourceImportEditor {
     }
 
     static func importedModuleNames(in source: String) -> Set<String> {
-        Set(
-            importStatements(in: source).filter { !$0.isConditional }.map(\.moduleName)
-        )
+        importSummary(in: source).importedModuleNames
     }
 
     static func importLineNumbers(in source: String) -> Set<Int> {
-        Set(importStatements(in: source).map(\.lineNumber))
+        importSummary(in: source).importLineNumbers
     }
 
     static func reexportedImportModuleNames(in source: String) -> Set<String> {
-        Set(importStatements(in: source).filter(\.isReexported).map(\.moduleName))
+        importSummary(in: source).reexportedImportModuleNames
     }
 
     static func conditionalImportModuleNames(in source: String) -> Set<String> {
-        Set(importStatements(in: source).filter(\.isConditional).map(\.moduleName))
+        importSummary(in: source).conditionalImportModuleNames
+    }
+
+    static func importSummary(in source: String) -> ImportSummary {
+        let statements = importStatements(in: source)
+        return ImportSummary(
+            importedModuleNames: Set(statements.filter { !$0.isConditional }.map(\.moduleName)),
+            reexportedImportModuleNames: Set(statements.filter(\.isReexported).map(\.moduleName)),
+            conditionalImportModuleNames: Set(statements.filter(\.isConditional).map(\.moduleName)),
+            importLineNumbers: Set(statements.map(\.lineNumber))
+        )
     }
 
     private static func readFile(at path: String) throws -> String {

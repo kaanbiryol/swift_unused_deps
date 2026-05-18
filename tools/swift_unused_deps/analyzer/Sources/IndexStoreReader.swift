@@ -278,10 +278,11 @@ public enum IndexStoreReader {
             if collectsSourceEntries,
                let readablePath = resolvedSource.readablePath,
                let source = try? String(contentsOfFile: readablePath, encoding: .utf8) {
-                directImports.formUnion(SourceImportEditor.importedModuleNames(in: source))
-                reexportedImports.formUnion(SourceImportEditor.reexportedImportModuleNames(in: source))
-                conditionalImports.formUnion(SourceImportEditor.conditionalImportModuleNames(in: source))
-                importLineNumbers = SourceImportEditor.importLineNumbers(in: source)
+                let importSummary = SourceImportEditor.importSummary(in: source)
+                directImports.formUnion(importSummary.importedModuleNames)
+                reexportedImports.formUnion(importSummary.reexportedImportModuleNames)
+                conditionalImports.formUnion(importSummary.conditionalImportModuleNames)
+                importLineNumbers = importSummary.importLineNumbers
             }
 
             recordReader.forEach { (occurrence: SymbolOccurrence) in

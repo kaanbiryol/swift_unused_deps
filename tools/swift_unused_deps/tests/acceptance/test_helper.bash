@@ -108,11 +108,11 @@ run_swift_unused_deps_in_workspace() {
           direct_fix="true"
           shift
           ;;
-        --min-report-confidence|--min-fix-confidence|--min-confidence|--fix-plan-min-confidence|--extra-system-modules|--index-store-path|--report-output|--fix-output)
+        --min-report-confidence|--min-fix-confidence|--extra-system-modules|--index-store-path|--report-output|--fix-output)
           analyzer_flags+=("$1" "$2")
           shift 2
           ;;
-        --min-report-confidence=*|--min-fix-confidence=*|--min-confidence=*|--fix-plan-min-confidence=*|--extra-system-modules=*|--index-store-path=*|--report-output=*|--fix-output=*|--json)
+        --min-report-confidence=*|--min-fix-confidence=*|--extra-system-modules=*|--index-store-path=*|--report-output=*|--fix-output=*|--json)
           analyzer_flags+=("$1")
           shift
           ;;

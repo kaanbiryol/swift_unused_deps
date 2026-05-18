@@ -31,25 +31,6 @@ final class CLITests: XCTestCase {
         XCTAssertEqual(command.exitCodeOutput, "/tmp/report.exit_code")
     }
 
-    func testParseAnalyzeLegacyOptions() throws {
-        let command = try XCTUnwrap(
-            try SwiftUnusedDepsCommand.parseAsRoot([
-                "analyze",
-                "--metadata-root", "/tmp/bazel-bin",
-                "--filter", "//App/...",
-                "--fix-plan-output", "/tmp/fix_plan.json",
-                "--min-confidence", "high",
-                "--fix-plan-min-confidence", "low",
-            ]) as? SwiftUnusedDepsAnalyzeCommand
-        )
-
-        XCTAssertNil(command.targetPattern)
-        XCTAssertEqual(command.filter, "//App/...")
-        XCTAssertEqual(command.legacyFixPlanOutput, "/tmp/fix_plan.json")
-        XCTAssertEqual(command.legacyMinConfidence, "high")
-        XCTAssertEqual(command.legacyFixPlanMinConfidence, "low")
-    }
-
     func testParseAnalyzeRejectsEmptyMetadataRoot() {
         XCTAssertThrowsError(try SwiftUnusedDepsCommand.parseAsRoot([
             "analyze",

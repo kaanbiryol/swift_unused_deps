@@ -34,6 +34,23 @@ final class FixPlanTests: XCTestCase {
         )
     }
 
+    func testMoveBuildEditRequiresDestinationAttribute() throws {
+        let edit = BuildEdit(
+            operation: .move,
+            attribute: "deps",
+            label: "//Lib:B",
+            target: "//App:A"
+        )
+
+        XCTAssertNil(edit.buildozerCommand)
+        XCTAssertThrowsError(try edit.validate()) { error in
+            XCTAssertTrue("\(error)".contains("destination_attribute"))
+        }
+        XCTAssertThrowsError(try FixPlan.formatJSON(FixPlan(sourceImportRemovals: [], buildEdits: [edit]))) { error in
+            XCTAssertTrue("\(error)".contains("destination_attribute"))
+        }
+    }
+
     func testFixPlanContainsHighConfidenceBuildAndSourceEdits() throws {
         let unusedDep = DeclaredDep(label: "//Lib:Unused", moduleName: "Unused", kind: .dep)
         let importedDep = DeclaredDep(label: "//Lib:Imported", moduleName: "Imported", kind: .dep)

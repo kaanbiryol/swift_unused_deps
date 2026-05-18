@@ -228,6 +228,7 @@ final class AnalyzerTests: XCTestCase {
         let result = Analyzer.analyze(metadata: metadata, loadedModules: [], resolver: resolver)
 
         XCTAssertEqual(result.issues.count, 1)
+        XCTAssertEqual(result.issues[0].kind, .mixedSourceTarget)
         XCTAssertTrue(result.issues[0].reason.lowercased().contains("mixed"))
     }
 

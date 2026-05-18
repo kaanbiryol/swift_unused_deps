@@ -1,5 +1,16 @@
 import Foundation
 
+public enum FixPlanValidationError: Swift.Error, CustomStringConvertible {
+    case missingMoveDestination(target: String, label: String)
+
+    public var description: String {
+        switch self {
+        case .missingMoveDestination(let target, let label):
+            return "Move edit for \(label) in \(target) requires destination_attribute."
+        }
+    }
+}
+
 public enum BuildEditOperation: String, Codable {
     case add
     case remove
@@ -35,15 +46,26 @@ public struct BuildEdit: Codable, Equatable, Hashable {
         self.destinationAttribute = destinationAttribute
     }
 
-    public var buildozerCommand: BuildozerCommand {
+    public var buildozerCommand: BuildozerCommand? {
         switch operation {
         case .add:
             return BuildozerCommand(action: "add \(attribute) \(label)", target: target)
         case .remove:
             return BuildozerCommand(action: "remove \(attribute) \(label)", target: target)
         case .move:
-            let destination = destinationAttribute ?? ""
+            guard let destination = destinationAttribute,
+                  !destination.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            else {
+                return nil
+            }
             return BuildozerCommand(action: "move \(attribute) \(destination) \(label)", target: target)
+        }
+    }
+
+    public func validate() throws {
+        if operation == .move,
+           destinationAttribute?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty != false {
+            throw FixPlanValidationError.missingMoveDestination(target: target, label: label)
         }
     }
 
@@ -129,7 +151,7 @@ public struct FixPlan: Codable, Equatable {
     }
 
     public var buildozerCommands: [BuildozerCommand] {
-        buildEdits.map(\.buildozerCommand)
+        buildEdits.compactMap(\.buildozerCommand)
     }
 
     public static func from(
@@ -158,6 +180,7 @@ public struct FixPlan: Codable, Equatable {
     }
 
     public static func formatJSON(_ plan: FixPlan) throws -> String {
+        try plan.validate()
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         let data = try encoder.encode(plan)
@@ -190,7 +213,13 @@ public struct FixPlan: Codable, Equatable {
 
     public static func read(from url: URL) throws -> FixPlan {
         let data = try Data(contentsOf: url)
-        return try JSONDecoder().decode(FixPlan.self, from: data)
+        let plan = try JSONDecoder().decode(FixPlan.self, from: data)
+        try plan.validate()
+        return plan
+    }
+
+    public func validate() throws {
+        try buildEdits.forEach { try $0.validate() }
     }
 
     private static func formatBuildEdit(_ edit: BuildEdit) -> String {
