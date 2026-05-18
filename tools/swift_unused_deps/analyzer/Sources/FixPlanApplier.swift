@@ -1,14 +1,14 @@
 import ArgumentParser
 import Foundation
 
-public enum FixPlanApplier {
-    public struct Result {
-        public let applied: Bool
-        public let buildFixCount: Int
-        public let sourceImportRemovalCount: Int
+enum FixPlanApplier {
+    struct Result {
+        let applied: Bool
+        let buildFixCount: Int
+        let sourceImportRemovalCount: Int
     }
 
-    public static func apply(
+    static func apply(
         _ plan: FixPlan,
         workspaceDirectory: URL? = nil
     ) throws -> Result {

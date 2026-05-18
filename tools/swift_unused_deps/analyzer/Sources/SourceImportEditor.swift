@@ -2,7 +2,7 @@ import Foundation
 import SwiftParser
 import SwiftSyntax
 
-public enum SourceImportEditor {
+enum SourceImportEditor {
 
     private struct ImportStatement {
         let lineNumber: Int
@@ -25,13 +25,13 @@ public enum SourceImportEditor {
         let removedModuleNames: Set<String>
     }
 
-    public enum Error: Swift.Error, CustomStringConvertible {
+    enum Error: Swift.Error, CustomStringConvertible {
         case fileNotUTF8(path: String)
         case importNotFound(path: String, moduleName: String)
         case reexportedImportNotRemovable(path: String, moduleName: String)
         case conditionalImportNotRemovable(path: String, moduleName: String)
 
-        public var description: String {
+        var description: String {
             switch self {
             case .fileNotUTF8(let path):
                 return "Failed to read source file as UTF-8: \(path)"

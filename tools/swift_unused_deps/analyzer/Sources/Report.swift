@@ -1,8 +1,8 @@
 import Foundation
 
-public enum Report {
+enum Report {
 
-    public static func formatText(
+    static func formatText(
         results: [AnalysisResult],
         minConfidence: Confidence,
         includesFixPlanHint: Bool = true
@@ -15,7 +15,7 @@ public enum Report {
         )
     }
 
-    public static func formatJSON(results: [AnalysisResult], minConfidence: Confidence) -> String {
+    static func formatJSON(results: [AnalysisResult], minConfidence: Confidence) -> String {
         formatJSON(report: jsonReport(results: results, minConfidence: minConfidence))
     }
 
@@ -49,12 +49,12 @@ public enum Report {
         result.issues.filter { $0.confidence >= minConfidence }
     }
 
-    public static func readJSONReport(from url: URL) throws -> JSONReport {
+    static func readJSONReport(from url: URL) throws -> JSONReport {
         let data = try Data(contentsOf: url)
         return try JSONDecoder().decode(JSONReport.self, from: data)
     }
 
-    public static func mergeJSONReports(_ reports: [JSONReport]) -> JSONReport {
+    static func mergeJSONReports(_ reports: [JSONReport]) -> JSONReport {
         var seenTargets = Set<String>()
         let results = reports
             .flatMap(\.results)
@@ -71,7 +71,7 @@ public enum Report {
         )
     }
 
-    public static func formatJSON(report: JSONReport) -> String {
+    static func formatJSON(report: JSONReport) -> String {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
 
@@ -81,7 +81,7 @@ public enum Report {
         return String(decoding: data, as: UTF8.self)
     }
 
-    public static func formatText(
+    static func formatText(
         report: JSONReport,
         minConfidence: Confidence,
         includesFixPlanHint: Bool = true,
@@ -210,7 +210,7 @@ public enum Report {
         return lines
     }
 
-    public struct JSONReport: Codable {
+    struct JSONReport: Codable {
         let schemaVersion: Int
         let analyzedAt: String
         let results: [JSONResult]
@@ -232,7 +232,7 @@ public enum Report {
         }
     }
 
-    public struct JSONResult: Codable {
+    struct JSONResult: Codable {
         let target: String
         let moduleName: String
         let status: String
@@ -266,16 +266,10 @@ public enum Report {
         }
     }
 
-    public struct JSONCleanDep: Codable {
+    struct JSONCleanDep: Codable {
         let label: String
         let moduleName: String
         let classification: String
-
-        init(label: String, moduleName: String, classification: String) {
-            self.label = label
-            self.moduleName = moduleName
-            self.classification = classification
-        }
 
         init(dep: DeclaredDep) {
             label = dep.label
@@ -290,14 +284,9 @@ public enum Report {
         }
     }
 
-    public struct JSONSkippedModule: Codable {
+    struct JSONSkippedModule: Codable {
         let moduleName: String
         let reason: String
-
-        init(moduleName: String, reason: String) {
-            self.moduleName = moduleName
-            self.reason = reason
-        }
 
         init(skippedModule: SkippedModule) {
             moduleName = skippedModule.name
@@ -310,7 +299,7 @@ public enum Report {
         }
     }
 
-    public struct JSONIssue: Codable {
+    struct JSONIssue: Codable {
         let kind: String
         let confidence: String
         let reason: String
@@ -321,30 +310,6 @@ public enum Report {
         let currentlyReachableVia: [String]?
         let buildozerCommand: String?
         let sourceImportRemovals: [JSONSourceImportRemoval]?
-
-        init(
-            kind: String,
-            confidence: String,
-            reason: String,
-            suggestedAction: String,
-            depLabel: String?,
-            depModule: String?,
-            depKind: String?,
-            currentlyReachableVia: [String]?,
-            buildozerCommand: String?,
-            sourceImportRemovals: [JSONSourceImportRemoval]?
-        ) {
-            self.kind = kind
-            self.confidence = confidence
-            self.reason = reason
-            self.suggestedAction = suggestedAction
-            self.depLabel = depLabel
-            self.depModule = depModule
-            self.depKind = depKind
-            self.currentlyReachableVia = currentlyReachableVia
-            self.buildozerCommand = buildozerCommand
-            self.sourceImportRemovals = sourceImportRemovals
-        }
 
         init(issue: Issue) {
             kind = issue.kind.rawValue
@@ -377,14 +342,9 @@ public enum Report {
         }
     }
 
-    public struct JSONSourceImportRemoval: Codable {
+    struct JSONSourceImportRemoval: Codable {
         let filePath: String
         let moduleName: String
-
-        init(filePath: String, moduleName: String) {
-            self.filePath = filePath
-            self.moduleName = moduleName
-        }
 
         init(removal: SourceImportRemoval) {
             filePath = removal.filePath

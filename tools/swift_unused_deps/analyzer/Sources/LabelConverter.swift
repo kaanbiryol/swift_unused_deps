@@ -3,7 +3,7 @@ import Foundation
 /// Converts Bzlmod canonical labels (e.g., `@@swift-syntax+//:SwiftSyntax`)
 /// to apparent labels (e.g., `@swiftpkg_swift_syntax//:SwiftSyntax`) so that
 /// buildozer commands match the text in BUILD files.
-public struct LabelConverter {
+struct LabelConverter {
     /// Maps canonical repo name to all known apparent names for that repo.
     private let canonicalToApparent: [String: [String]]
     private let isIdentity: Bool
@@ -19,7 +19,7 @@ public struct LabelConverter {
     }
 
     /// A no-op converter that passes labels through unchanged (for WORKSPACE mode).
-    public static let identity = LabelConverter(identity: ())
+    static let identity = LabelConverter(identity: ())
 
     /// Convert a canonical label to its apparent form.
     ///
@@ -30,7 +30,7 @@ public struct LabelConverter {
     /// - `@@//pkg:target` (main repo) -> `//pkg:target`
     /// - `@@swift-syntax+//:Foo` -> `@swiftpkg_swift_syntax//:Foo`
     /// - Labels without `@@` prefix -> unchanged (WORKSPACE mode)
-    public func convert(_ label: String, buildFileContent: String? = nil) -> String {
+    func convert(_ label: String, buildFileContent: String? = nil) -> String {
         let apparent = convertCanonicalToApparent(label, buildFileContent: buildFileContent)
         let normalized = Self.normalizeRSPMCanonicalRepo(apparent)
         return Self.stripRSPMSuffix(normalized)
@@ -136,7 +136,7 @@ public struct LabelConverter {
     /// Load the repo mapping by running `bazel mod --lockfile_mode=off dump_repo_mapping ""`.
     ///
     /// Returns `nil` on failure (WORKSPACE mode, old Bazel, or bazel not available).
-    public static func loadFromBazel(workspaceDirectory: String? = nil) -> LabelConverter? {
+    static func loadFromBazel(workspaceDirectory: String? = nil) -> LabelConverter? {
         let workspace = workspaceDirectory
             ?? ProcessInfo.processInfo.environment["BUILD_WORKSPACE_DIRECTORY"]
 

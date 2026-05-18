@@ -1,16 +1,16 @@
 import Foundation
 
-public enum DepKind: String, Codable {
+enum DepKind: String, Codable {
     case dep
     case privateDep = "private_dep"
     case plugin
 }
 
-public struct SourceFileMetadata: Codable, Equatable, Hashable {
-    public let basename: String
-    public let path: String
-    public let shortPath: String
-    public let isGenerated: Bool
+struct SourceFileMetadata: Codable, Equatable, Hashable {
+    let basename: String
+    let path: String
+    let shortPath: String
+    let isGenerated: Bool
 
     enum CodingKeys: String, CodingKey {
         case basename
@@ -19,7 +19,7 @@ public struct SourceFileMetadata: Codable, Equatable, Hashable {
         case isGenerated = "is_generated"
     }
 
-    public init(
+    init(
         basename: String,
         path: String,
         shortPath: String,
@@ -32,11 +32,11 @@ public struct SourceFileMetadata: Codable, Equatable, Hashable {
     }
 }
 
-public struct TargetInfo: Codable {
-    public let label: String
-    public let moduleName: String
-    public let isMixedSource: Bool
-    public let sourceFiles: [SourceFileMetadata]
+struct TargetInfo: Codable {
+    let label: String
+    let moduleName: String
+    let isMixedSource: Bool
+    let sourceFiles: [SourceFileMetadata]
 
     enum CodingKeys: String, CodingKey {
         case label
@@ -45,7 +45,7 @@ public struct TargetInfo: Codable {
         case sourceFiles = "source_files"
     }
 
-    public init(
+    init(
         label: String,
         moduleName: String,
         isMixedSource: Bool = false,
@@ -57,7 +57,7 @@ public struct TargetInfo: Codable {
         self.sourceFiles = sourceFiles
     }
 
-    public init(from decoder: Decoder) throws {
+    init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         label = try container.decode(String.self, forKey: .label)
         moduleName = try container.decode(String.self, forKey: .moduleName)
@@ -66,10 +66,10 @@ public struct TargetInfo: Codable {
     }
 }
 
-public struct DeclaredDep: Codable, Hashable {
-    public let label: String
-    public let moduleName: String
-    public let kind: DepKind
+struct DeclaredDep: Codable, Hashable {
+    let label: String
+    let moduleName: String
+    let kind: DepKind
 
     enum CodingKeys: String, CodingKey {
         case label
@@ -77,21 +77,21 @@ public struct DeclaredDep: Codable, Hashable {
         case kind
     }
 
-    public init(label: String, moduleName: String, kind: DepKind) {
+    init(label: String, moduleName: String, kind: DepKind) {
         self.label = label
         self.moduleName = moduleName
         self.kind = kind
     }
 }
 
-public struct TargetMetadata: Codable {
-    public let schemaVersion: Int
-    public let target: TargetInfo
-    public let declaredDeps: [DeclaredDep]
-    public let pluginDeps: [DeclaredDep]
-    public let transitiveModuleMap: [String: String]
-    public let moduleReachableVia: [String: [String]]
-    public let indexStorePath: String?
+struct TargetMetadata: Codable {
+    let schemaVersion: Int
+    let target: TargetInfo
+    let declaredDeps: [DeclaredDep]
+    let pluginDeps: [DeclaredDep]
+    let transitiveModuleMap: [String: String]
+    let moduleReachableVia: [String: [String]]
+    let indexStorePath: String?
 
     enum CodingKeys: String, CodingKey {
         case schemaVersion = "schema_version"
@@ -103,7 +103,7 @@ public struct TargetMetadata: Codable {
         case indexStorePath = "indexstore_path"
     }
 
-    public init(
+    init(
         schemaVersion: Int,
         target: TargetInfo,
         declaredDeps: [DeclaredDep],
@@ -121,7 +121,7 @@ public struct TargetMetadata: Codable {
         self.indexStorePath = indexStorePath
     }
 
-    public init(from decoder: Decoder) throws {
+    init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         schemaVersion = try container.decode(Int.self, forKey: .schemaVersion)
         target = try container.decode(TargetInfo.self, forKey: .target)
@@ -136,7 +136,7 @@ public struct TargetMetadata: Codable {
     ///
     /// When multiple apparent names exist for the same canonical repo, pass
     /// `buildFileContent` to disambiguate by checking which name the BUILD file actually uses.
-    public func convertingLabels(with converter: LabelConverter, buildFileContent: String? = nil) -> TargetMetadata {
+    func convertingLabels(with converter: LabelConverter, buildFileContent: String? = nil) -> TargetMetadata {
         TargetMetadata(
             schemaVersion: schemaVersion,
             target: TargetInfo(

@@ -1,6 +1,6 @@
 import Foundation
 
-public enum Analyzer {
+enum Analyzer {
 
     private struct UsedModule {
         let name: String
@@ -14,7 +14,7 @@ public enum Analyzer {
         let skippedModules: [SkippedModule]
     }
 
-    public static func analyze(
+    static func analyze(
         metadata: TargetMetadata,
         loadedModules: [LoadedModule],
         resolver: ModuleResolver

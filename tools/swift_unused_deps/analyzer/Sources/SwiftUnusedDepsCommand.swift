@@ -1,106 +1,8 @@
 import ArgumentParser
 import Foundation
 
-struct BazelInfoProvider {
-    private let lookupImpl: (String, URL) -> String?
-
-    init(_ lookup: @escaping (String, URL) -> String?) {
-        self.lookupImpl = lookup
-    }
-
-    func lookup(_ key: String, currentDirectory: URL) -> String? {
-        lookupImpl(key, currentDirectory)
-    }
-
-    static let process = BazelInfoProvider { key, currentDirectory in
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
-        process.arguments = ["bazel", "info", key]
-        process.currentDirectoryURL = currentDirectory
-
-        let stdout = Pipe()
-        process.standardOutput = stdout
-        process.standardError = FileHandle.nullDevice
-
-        do {
-            try process.run()
-            process.waitUntilExit()
-        } catch {
-            return nil
-        }
-
-        guard process.terminationStatus == 0 else { return nil }
-        let data = stdout.fileHandleForReading.readDataToEndOfFile()
-        let value = String(data: data, encoding: .utf8)?
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        guard let value, !value.isEmpty else { return nil }
-        return value
-    }
-}
-
-struct BazelQueryProvider {
-    private let depsImpl: (String, URL) -> Set<String>?
-
-    init(_ deps: @escaping (String, URL) -> Set<String>?) {
-        self.depsImpl = deps
-    }
-
-    func deps(of targetPattern: String, currentDirectory: URL) -> Set<String>? {
-        depsImpl(targetPattern, currentDirectory)
-    }
-
-    static let process = BazelQueryProvider { targetPattern, currentDirectory in
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
-        process.arguments = [
-            "bazel",
-            "query",
-            "--notool_deps",
-            "--noimplicit_deps",
-            "kind(\".* rule\", deps(\(targetPattern)))",
-            "--output=label",
-        ]
-        process.currentDirectoryURL = currentDirectory
-
-        let stdout = Pipe()
-        process.standardOutput = stdout
-        process.standardError = FileHandle.nullDevice
-
-        do {
-            try process.run()
-            process.waitUntilExit()
-        } catch {
-            return nil
-        }
-
-        guard process.terminationStatus == 0 else { return nil }
-        let data = stdout.fileHandleForReading.readDataToEndOfFile()
-        guard let output = String(data: data, encoding: .utf8) else { return nil }
-        let labels = output
-            .split(separator: "\n")
-            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-            .filter { !$0.isEmpty }
-        return Set(labels)
-    }
-}
-
-struct AnalysisInvocation {
-    let targetPattern: String?
-    let filter: String?
-    let workspaceDirectory: String?
-    let metadataRoot: String?
-    let indexStorePath: String?
-    let extraSystemModules: String?
-}
-
-struct AnalysisRun {
-    let output: BatchAnalyzer.Output
-    let workspaceDirectory: URL?
-    let metadataRoot: String
-}
-
-public struct SwiftUnusedDepsAnalyzeCommand: ParsableCommand {
-    public static let configuration = CommandConfiguration(
+struct SwiftUnusedDepsAnalyzeCommand: ParsableCommand {
+    static let configuration = CommandConfiguration(
         commandName: "analyze",
         abstract: "Analyze already-produced swift_unused_deps metadata and Swift index-store artifacts."
     )
@@ -150,9 +52,9 @@ public struct SwiftUnusedDepsAnalyzeCommand: ParsableCommand {
     @Option(help: .hidden)
     var exitCodeOutput: String?
 
-    public init() {}
+    init() {}
 
-    public func validate() throws {
+    func validate() throws {
         try SwiftUnusedDepsCommand.validateNonEmpty(metadataRoot, option: "--metadata-root")
         try SwiftUnusedDepsCommand.validateNonEmpty(targetPattern, option: "TARGET_PATTERN")
         try SwiftUnusedDepsCommand.validateNonEmpty(filter, option: "--filter")
@@ -165,7 +67,7 @@ public struct SwiftUnusedDepsAnalyzeCommand: ParsableCommand {
         }
     }
 
-    public func run() throws {
+    func run() throws {
         let reportConfidence = try SwiftUnusedDepsCommand.confidence(
             minReportConfidence ?? "low",
             option: "--min-report-confidence"
@@ -220,8 +122,8 @@ public struct SwiftUnusedDepsAnalyzeCommand: ParsableCommand {
     }
 }
 
-public struct SwiftUnusedDepsFixCommand: ParsableCommand {
-    public static let configuration = CommandConfiguration(
+struct SwiftUnusedDepsFixCommand: ParsableCommand {
+    static let configuration = CommandConfiguration(
         commandName: "fix",
         abstract: "Analyze and apply swift_unused_deps fixes to the workspace."
     )
@@ -262,9 +164,9 @@ public struct SwiftUnusedDepsFixCommand: ParsableCommand {
     @Option(help: .hidden)
     var workspaceDirectory: String?
 
-    public init() {}
+    init() {}
 
-    public func validate() throws {
+    func validate() throws {
         try SwiftUnusedDepsCommand.validateNonEmpty(targetPattern, option: "TARGET_PATTERN")
         try SwiftUnusedDepsCommand.validateNonEmpty(filter, option: "--filter")
         try SwiftUnusedDepsCommand.validateNonEmpty(workspaceDirectory, option: "--workspace-directory")
@@ -275,7 +177,7 @@ public struct SwiftUnusedDepsFixCommand: ParsableCommand {
         }
     }
 
-    public func run() throws {
+    func run() throws {
         let reportConfidence = try SwiftUnusedDepsCommand.confidence(
             minReportConfidence ?? "low",
             option: "--min-report-confidence"
@@ -374,8 +276,8 @@ public struct SwiftUnusedDepsApplyCommand: ParsableCommand {
     }
 }
 
-public struct SwiftUnusedDepsAnalyzeTargetCommand: ParsableCommand {
-    public static let configuration = CommandConfiguration(
+struct SwiftUnusedDepsAnalyzeTargetCommand: ParsableCommand {
+    static let configuration = CommandConfiguration(
         commandName: "analyze-target",
         abstract: "Analyze one target metadata artifact for Bazel actions.",
         shouldDisplay: false
@@ -405,9 +307,9 @@ public struct SwiftUnusedDepsAnalyzeTargetCommand: ParsableCommand {
     @Option(help: .hidden)
     var fixLowOutput: String?
 
-    public init() {}
+    init() {}
 
-    public func validate() throws {
+    func validate() throws {
         try SwiftUnusedDepsCommand.validateNonEmpty(metadataFile, option: "--metadata-file")
         try SwiftUnusedDepsCommand.validateNonEmpty(bazelBin, option: "--bazel-bin")
         try SwiftUnusedDepsCommand.validateNonEmpty(indexStorePath, option: "--index-store-path")
@@ -416,7 +318,7 @@ public struct SwiftUnusedDepsAnalyzeTargetCommand: ParsableCommand {
         try SwiftUnusedDepsCommand.validateNonEmpty(fixLowOutput, option: "--fix-low-output")
     }
 
-    public func run() throws {
+    func run() throws {
         guard let metadataFile, let reportOutput, let fixOutput, let fixLowOutput else {
             throw ValidationError("analyze-target requires --metadata-file, --report-output, --fix-output, and --fix-low-output.")
         }
@@ -448,8 +350,8 @@ public struct SwiftUnusedDepsAnalyzeTargetCommand: ParsableCommand {
     }
 }
 
-public struct SwiftUnusedDepsMergeReportsCommand: ParsableCommand {
-    public static let configuration = CommandConfiguration(
+struct SwiftUnusedDepsMergeReportsCommand: ParsableCommand {
+    static let configuration = CommandConfiguration(
         commandName: "merge-reports",
         abstract: "Merge declared swift_unused_deps report and fix artifacts.",
         shouldDisplay: false
@@ -476,9 +378,9 @@ public struct SwiftUnusedDepsMergeReportsCommand: ParsableCommand {
     @Option(name: .customLong("exit-code-output"), help: .hidden)
     var exitCodeOutput: String?
 
-    public init() {}
+    init() {}
 
-    public func validate() throws {
+    func validate() throws {
         try SwiftUnusedDepsCommand.validateNonEmpty(minReportConfidence, option: "--min-report-confidence")
         try SwiftUnusedDepsCommand.validateNonEmpty(reportOutput, option: "--report-output")
         try SwiftUnusedDepsCommand.validateNonEmpty(textOutput, option: "--text-output")
@@ -492,7 +394,7 @@ public struct SwiftUnusedDepsMergeReportsCommand: ParsableCommand {
         }
     }
 
-    public func run() throws {
+    func run() throws {
         let reportConfidence = try SwiftUnusedDepsCommand.confidence(
             minReportConfidence,
             option: "--min-report-confidence"
@@ -567,68 +469,11 @@ public struct SwiftUnusedDepsCommand: ParsableCommand {
         environment: [String: String] = ProcessInfo.processInfo.environment,
         bazelInfo: BazelInfoProvider = .process
     ) -> URL? {
-        if let workingDirectory = environment["BUILD_WORKING_DIRECTORY"],
-           let workspace = bazelInfo.lookup(
-               "workspace",
-               currentDirectory: URL(fileURLWithPath: workingDirectory, isDirectory: true)
-           ) {
-            return URL(fileURLWithPath: workspace, isDirectory: true)
-        }
-        if let workspace = environment["BUILD_WORKSPACE_DIRECTORY"] {
-            return URL(fileURLWithPath: workspace, isDirectory: true)
-        }
-        return nil
+        AnalysisRunner.workspaceDirectory(environment: environment, bazelInfo: bazelInfo)
     }
 
     static func runAnalysis(_ invocation: AnalysisInvocation) throws -> AnalysisRun {
-        let workspace = resolvedWorkspaceDirectory(invocation.workspaceDirectory)
-        let metadataRoot = try resolvedMetadataRoot(invocation.metadataRoot)
-        let filter = invocation.targetPattern ?? invocation.filter
-        let labelConverter = LabelConverter.loadFromBazel(workspaceDirectory: workspace?.path) ?? .identity
-        let includedLabels = topLevelDependencyLabels(
-            for: filter,
-            workspace: workspace,
-            labelConverter: labelConverter
-        )
-
-        let output = BatchAnalyzer.analyze(options: .init(
-            bazelBin: metadataRoot,
-            indexStorePath: invocation.indexStorePath,
-            extraSystemModules: parseExtraSystemModules(invocation.extraSystemModules),
-            filter: filter,
-            includedLabels: includedLabels,
-            labelConverter: labelConverter,
-            workspaceDirectory: workspace
-        ))
-
-        return AnalysisRun(
-            output: output,
-            workspaceDirectory: workspace,
-            metadataRoot: metadataRoot
-        )
-    }
-
-    private static func topLevelDependencyLabels(
-        for targetPattern: String?,
-        workspace: URL?,
-        labelConverter: LabelConverter,
-        bazelQuery: BazelQueryProvider = .process
-    ) -> Set<String>? {
-        guard let targetPattern, let workspace else { return nil }
-        let trimmedPattern = targetPattern.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmedPattern.isEmpty else { return nil }
-        guard let labels = bazelQuery.deps(of: trimmedPattern, currentDirectory: workspace) else {
-            return nil
-        }
-
-        let includesExternalTargets = trimmedPattern.hasPrefix("@")
-        return Set(labels.compactMap { label in
-            let converted = labelConverter.convert(label)
-            if !includesExternalTargets && converted.hasPrefix("@") {
-                return nil
-            }
-            return converted
-        })
+        try AnalysisRunner.run(invocation)
     }
 
     static func printWarnings(_ output: BatchAnalyzer.Output) {
@@ -690,18 +535,4 @@ public struct SwiftUnusedDepsCommand: ParsableCommand {
         return hasIssues ? 1 : 0
     }
 
-    private static func resolvedWorkspaceDirectory(_ workspaceDirectory: String?) -> URL? {
-        if let workspaceDirectory {
-            return URL(fileURLWithPath: workspaceDirectory, isDirectory: true)
-        }
-        return SwiftUnusedDepsCommand.workspaceDirectory()
-    }
-
-    private static func resolvedMetadataRoot(_ metadataRoot: String?) throws -> String {
-        if let metadataRoot {
-            return metadataRoot
-        }
-
-        throw ValidationError("--metadata-root is required for debug metadata analysis. Prefer swift_unused_deps_test or swift_unused_deps_report for normal Bazel usage.")
-    }
 }

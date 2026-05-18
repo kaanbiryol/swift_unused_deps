@@ -1,6 +1,6 @@
 import Foundation
 
-public enum IssueKind: String, Codable {
+enum IssueKind: String, Codable {
     case unusedDep = "unused_dep"
     case unusedImport = "unused_import"
     case missingDirectDep = "missing_direct_dep"
@@ -9,7 +9,7 @@ public enum IssueKind: String, Codable {
     case mixedSourceTarget = "mixed_source_target"
 }
 
-public enum Confidence: String, Codable, Comparable {
+enum Confidence: String, Codable, Comparable {
     case low
     case high
 
@@ -22,56 +22,56 @@ public enum Confidence: String, Codable, Comparable {
         }
     }
 
-    public static func < (lhs: Confidence, rhs: Confidence) -> Bool {
+    static func < (lhs: Confidence, rhs: Confidence) -> Bool {
         lhs.order < rhs.order
     }
 }
 
-public enum SuggestedAction: String, Codable {
+enum SuggestedAction: String, Codable {
     case remove
     case addDep = "add_dep"
     case moveToPrivateDeps = "move_to_private_deps"
     case investigate
 }
 
-public enum SkippedModuleReason: String, Codable {
+enum SkippedModuleReason: String, Codable {
     case systemModule = "system_module"
     case unresolved
 }
 
-public struct SkippedModule: Codable, Equatable {
-    public let name: String
-    public let reason: SkippedModuleReason
+struct SkippedModule: Codable, Equatable {
+    let name: String
+    let reason: SkippedModuleReason
 
-    public init(name: String, reason: SkippedModuleReason) {
+    init(name: String, reason: SkippedModuleReason) {
         self.name = name
         self.reason = reason
     }
 }
 
-public struct SourceImportRemoval: Codable, Equatable, Hashable {
-    public let filePath: String
-    public let moduleName: String
+struct SourceImportRemoval: Codable, Equatable, Hashable {
+    let filePath: String
+    let moduleName: String
 
-    public init(filePath: String, moduleName: String) {
+    init(filePath: String, moduleName: String) {
         self.filePath = filePath
         self.moduleName = moduleName
     }
 }
 
-public struct LoadedModule: Equatable {
-    public let name: String
-    public let isImportedDirectly: Bool
-    public let isSystem: Bool
+struct LoadedModule: Equatable {
+    let name: String
+    let isImportedDirectly: Bool
+    let isSystem: Bool
 
-    public init(name: String, isImportedDirectly: Bool, isSystem: Bool = false) {
+    init(name: String, isImportedDirectly: Bool, isSystem: Bool = false) {
         self.name = name
         self.isImportedDirectly = isImportedDirectly
         self.isSystem = isSystem
     }
 }
 
-public enum IssueContext {
+enum IssueContext {
     case unusedDep(DeclaredDep)
     case unusedImport(DeclaredDep)
     case missingDirectDep(
@@ -85,16 +85,16 @@ public enum IssueContext {
     case mixedSourceTarget(label: String)
 }
 
-public struct Issue {
-    public let kind: IssueKind
-    public let confidence: Confidence
-    public let reason: String
-    public let suggestedAction: SuggestedAction
-    public let context: IssueContext
-    public let buildozerCommand: BuildozerCommand?
-    public let sourceImportRemovals: [SourceImportRemoval]
+struct Issue {
+    let kind: IssueKind
+    let confidence: Confidence
+    let reason: String
+    let suggestedAction: SuggestedAction
+    let context: IssueContext
+    let buildozerCommand: BuildozerCommand?
+    let sourceImportRemovals: [SourceImportRemoval]
 
-    public static func mixedSourceWarning(targetLabel: String) -> Issue {
+    static func mixedSourceWarning(targetLabel: String) -> Issue {
         Issue(
             kind: .mixedSourceTarget,
             confidence: .low,
@@ -106,7 +106,7 @@ public struct Issue {
         )
     }
 
-    public static func unresolvedModule(_ moduleName: String) -> Issue {
+    static func unresolvedModule(_ moduleName: String) -> Issue {
         Issue(
             kind: .unresolvedModule,
             confidence: .low,
@@ -118,7 +118,7 @@ public struct Issue {
         )
     }
 
-    public static func unusedDep(_ dep: DeclaredDep, targetLabel: String) -> Issue {
+    static func unusedDep(_ dep: DeclaredDep, targetLabel: String) -> Issue {
         let attrName = dep.kind == .privateDep ? "private_deps" : "deps"
         return Issue(
             kind: .unusedDep,
@@ -134,7 +134,7 @@ public struct Issue {
         )
     }
 
-    public static func unusedImport(
+    static func unusedImport(
         _ dep: DeclaredDep,
         targetLabel: String,
         sourceImportRemovals: [SourceImportRemoval],
@@ -162,7 +162,7 @@ public struct Issue {
         )
     }
 
-    public static func missingDirectDep(
+    static func missingDirectDep(
         depLabel: String,
         moduleName: String,
         currentlyReachableVia: [String],
@@ -188,7 +188,7 @@ public struct Issue {
         )
     }
 
-    public static func candidatePrivateDep(_ dep: DeclaredDep, targetLabel: String) -> Issue {
+    static func candidatePrivateDep(_ dep: DeclaredDep, targetLabel: String) -> Issue {
         Issue(
             kind: .candidatePrivateDep,
             confidence: .low,
@@ -203,7 +203,7 @@ public struct Issue {
         )
     }
 
-    public var depLabel: String? {
+    var depLabel: String? {
         switch context {
         case .unusedDep(let dep):
             return dep.label
@@ -218,7 +218,7 @@ public struct Issue {
         }
     }
 
-    public var depModule: String? {
+    var depModule: String? {
         switch context {
         case .unusedDep(let dep):
             return dep.moduleName
@@ -235,7 +235,7 @@ public struct Issue {
         }
     }
 
-    public var depKind: DepKind? {
+    var depKind: DepKind? {
         switch context {
         case .unusedDep(let dep), .unusedImport(let dep), .candidatePrivateDep(let dep):
             return dep.kind
@@ -244,7 +244,7 @@ public struct Issue {
         }
     }
 
-    public var currentlyReachableVia: [String] {
+    var currentlyReachableVia: [String] {
         switch context {
         case .missingDirectDep(_, _, let reachableVia, _):
             return reachableVia
@@ -254,12 +254,12 @@ public struct Issue {
     }
 }
 
-public struct AnalysisResult {
-    public let target: String
-    public let moduleName: String
-    public let issues: [Issue]
-    public let cleanDeps: [DeclaredDep]
-    public let skippedModules: [SkippedModule]
+struct AnalysisResult {
+    let target: String
+    let moduleName: String
+    let issues: [Issue]
+    let cleanDeps: [DeclaredDep]
+    let skippedModules: [SkippedModule]
 
-    public var isClean: Bool { issues.isEmpty }
+    var isClean: Bool { issues.isEmpty }
 }

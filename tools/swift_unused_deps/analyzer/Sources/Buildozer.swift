@@ -1,10 +1,10 @@
 import Foundation
 
-public struct BuildozerCommand {
-    public enum ValidationError: Swift.Error, CustomStringConvertible {
+struct BuildozerCommand {
+    enum ValidationError: Swift.Error, CustomStringConvertible {
         case unsafeBatchField(field: String)
 
-        public var description: String {
+        var description: String {
             switch self {
             case .unsafeBatchField(let field):
                 return "Buildozer command \(field) contains a reserved batch-file separator."
@@ -12,23 +12,23 @@ public struct BuildozerCommand {
         }
     }
 
-    public let action: String
-    public let target: String
+    let action: String
+    let target: String
 
-    public init(action: String, target: String) {
+    init(action: String, target: String) {
         self.action = action
         self.target = target
     }
 
-    public var displayString: String {
+    var displayString: String {
         "buildozer '\(action)' \(target)"
     }
 
-    public var batchLine: String {
+    var batchLine: String {
         "\(action)|\(target)"
     }
 
-    public func validateForBatchExecution() throws {
+    func validateForBatchExecution() throws {
         try validateBatchField(action, name: "action")
         try validateBatchField(target, name: "target")
     }
@@ -41,17 +41,16 @@ public struct BuildozerCommand {
     }
 }
 
-public enum Buildozer {
+enum Buildozer {
 
-    public struct FixResult {
-        public let command: String
-        public let success: Bool
+    struct FixResult {
+        let success: Bool
         /// True when buildozer exited with code 3 (no changes made).
-        public let noChanges: Bool
-        public let output: String
+        let noChanges: Bool
+        let output: String
     }
 
-    public static func runBatch(
+    static func runBatch(
         commands: [BuildozerCommand],
         workingDirectory: URL? = nil
     ) -> FixResult {
@@ -60,7 +59,6 @@ public enum Buildozer {
                 try command.validateForBatchExecution()
             } catch {
                 return FixResult(
-                    command: "buildozer -f -",
                     success: false,
                     noChanges: false,
                     output: "Refusing to execute invalid buildozer command '\(command.displayString)': \(error)"
@@ -70,7 +68,6 @@ public enum Buildozer {
 
         guard let path = findInRunfiles() else {
             return FixResult(
-                command: "buildozer -f -",
                 success: false,
                 noChanges: false,
                 output: "buildozer not found in runfiles. Run this binary via 'bazel run' or ensure buildozer is available in runfiles."
@@ -102,7 +99,7 @@ public enum Buildozer {
             inPipe.fileHandleForWriting.closeFile()
             proc.waitUntilExit()
         } catch {
-            return FixResult(command: "buildozer -f -", success: false, noChanges: false, output: error.localizedDescription)
+            return FixResult(success: false, noChanges: false, output: error.localizedDescription)
         }
 
         let combinedOutput = [
@@ -113,7 +110,7 @@ public enum Buildozer {
         // Exit code 3 means buildozer made no changes (label not found in BUILD file, etc.)
         let success = exitCode == 0
         let noChanges = exitCode == 3
-        return FixResult(command: "buildozer -f -", success: success, noChanges: noChanges, output: combinedOutput)
+        return FixResult(success: success, noChanges: noChanges, output: combinedOutput)
     }
 
     private static let apparentRepoName = "buildozer_binary"
@@ -159,6 +156,6 @@ public enum Buildozer {
     }
 }
 
-public func printErr(_ message: String) {
+func printErr(_ message: String) {
     FileHandle.standardError.write(Data((message + "\n").utf8))
 }

@@ -50,7 +50,7 @@ final class BatchAnalyzerTests: XCTestCase {
             deps: [DeclaredDep(label: "//Lib:LibA", moduleName: "LibA", kind: .dep)]
         )
 
-        let issues = BatchAnalyzer.unusedImportIssues(
+        let issues = UnusedImportAnalyzer.issues(
             metadata: metadata,
             sourceFileUsage: [
                 SourceFileModuleUsage(
@@ -78,7 +78,7 @@ final class BatchAnalyzerTests: XCTestCase {
             deps: [DeclaredDep(label: "//Lib:LibA", moduleName: "LibA", kind: .dep)]
         )
 
-        let issues = BatchAnalyzer.unusedImportIssues(
+        let issues = UnusedImportAnalyzer.issues(
             metadata: metadata,
             sourceFileUsage: [
                 SourceFileModuleUsage(
@@ -105,7 +105,7 @@ final class BatchAnalyzerTests: XCTestCase {
             ]
         )
 
-        let issues = BatchAnalyzer.unusedImportIssues(
+        let issues = UnusedImportAnalyzer.issues(
             metadata: metadata,
             sourceFileUsage: [
                 SourceFileModuleUsage(
@@ -136,7 +136,7 @@ final class BatchAnalyzerTests: XCTestCase {
             ]
         )
 
-        let issues = BatchAnalyzer.unusedImportIssues(
+        let issues = UnusedImportAnalyzer.issues(
             metadata: metadata,
             sourceFileUsage: [
                 SourceFileModuleUsage(
@@ -166,7 +166,7 @@ final class BatchAnalyzerTests: XCTestCase {
             deps: [DeclaredDep(label: "//Lib:LibA", moduleName: "LibA", kind: .dep)]
         )
 
-        let issues = BatchAnalyzer.unusedImportIssues(
+        let issues = UnusedImportAnalyzer.issues(
             metadata: metadata,
             sourceFileUsage: [
                 SourceFileModuleUsage(
@@ -194,7 +194,7 @@ final class BatchAnalyzerTests: XCTestCase {
             ]
         )
 
-        let issues = BatchAnalyzer.unusedImportIssues(
+        let issues = UnusedImportAnalyzer.issues(
             metadata: metadata,
             sourceFileUsage: [
                 SourceFileModuleUsage(
@@ -225,7 +225,7 @@ final class BatchAnalyzerTests: XCTestCase {
             transitiveModuleMap: ["MacrosPlugin": "//Macros:Plugin"]
         )
 
-        let issues = BatchAnalyzer.unusedImportIssues(
+        let issues = UnusedImportAnalyzer.issues(
             metadata: metadata,
             sourceFileUsage: [
                 SourceFileModuleUsage(
@@ -267,7 +267,7 @@ final class BatchAnalyzerTests: XCTestCase {
             removeDep: false
         )
 
-        let result = BatchAnalyzer.mergeUnusedImportIssues(
+        let result = UnusedImportAnalyzer.merge(
             baseResult: baseResult,
             unusedImportIssues: [unusedImport]
         )

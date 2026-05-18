@@ -1,24 +1,24 @@
 import Foundation
 import IndexStore
 
-public struct SourceFileModuleUsage {
-    public let sourceFile: String
-    public let isGenerated: Bool
-    public let moduleName: String
+struct SourceFileModuleUsage {
+    let sourceFile: String
+    let isGenerated: Bool
+    let moduleName: String
     /// Modules whose symbols are actually referenced (USR cross-reference).
-    public let referencedModules: Set<String>
+    let referencedModules: Set<String>
     /// All modules the compiler loaded for this file (unit dependencies).
-    public let loadedModules: Set<String>
+    let loadedModules: Set<String>
     /// Loaded modules the compiler marked as system modules.
-    public let systemModules: Set<String>
+    let systemModules: Set<String>
     /// Modules explicitly imported in source (`import X` statements).
-    public let directImports: Set<String>
+    let directImports: Set<String>
     /// Modules imported with `@_exported import`.
-    public let reexportedImports: Set<String>
+    let reexportedImports: Set<String>
     /// Modules imported inside conditional compilation blocks.
-    public let conditionalImports: Set<String>
+    let conditionalImports: Set<String>
 
-    public init(
+    init(
         sourceFile: String,
         isGenerated: Bool = false,
         moduleName: String,
@@ -41,21 +41,21 @@ public struct SourceFileModuleUsage {
     }
 }
 
-public enum IndexStoreReader {
+enum IndexStoreReader {
 
     private struct SourceUnitKey: Hashable {
         let sourceFile: String
         let moduleName: String
     }
 
-    public struct Result {
-        public let usage: [SourceFileModuleUsage]
+    struct Result {
+        let usage: [SourceFileModuleUsage]
     }
 
-    public enum Error: Swift.Error, CustomStringConvertible {
+    enum Error: Swift.Error, CustomStringConvertible {
         case storeOpenFailed(path: String, underlying: Swift.Error)
 
-        public var description: String {
+        var description: String {
             switch self {
             case .storeOpenFailed(let path, let error):
                 return "Failed to open index store at '\(path)': \(error)"
@@ -160,7 +160,7 @@ public enum IndexStoreReader {
         }
     }
 
-    public static func readModuleUsage(
+    static func readModuleUsage(
         storePath: String,
         sourceFiles: [SourceFileMetadata] = [],
         definitionStorePaths: [String] = []

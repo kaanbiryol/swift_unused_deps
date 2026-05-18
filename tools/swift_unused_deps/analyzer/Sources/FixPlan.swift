@@ -1,9 +1,9 @@
 import Foundation
 
-public enum FixPlanValidationError: Swift.Error, CustomStringConvertible {
+enum FixPlanValidationError: Swift.Error, CustomStringConvertible {
     case missingMoveDestination(target: String, label: String)
 
-    public var description: String {
+    var description: String {
         switch self {
         case .missingMoveDestination(let target, let label):
             return "Move edit for \(label) in \(target) requires destination_attribute."
@@ -11,18 +11,18 @@ public enum FixPlanValidationError: Swift.Error, CustomStringConvertible {
     }
 }
 
-public enum BuildEditOperation: String, Codable {
+enum BuildEditOperation: String, Codable {
     case add
     case remove
     case move
 }
 
-public struct BuildEdit: Codable, Equatable, Hashable {
-    public let operation: BuildEditOperation
-    public let attribute: String
-    public let label: String
-    public let target: String
-    public let destinationAttribute: String?
+struct BuildEdit: Codable, Equatable, Hashable {
+    let operation: BuildEditOperation
+    let attribute: String
+    let label: String
+    let target: String
+    let destinationAttribute: String?
 
     enum CodingKeys: String, CodingKey {
         case operation
@@ -32,7 +32,7 @@ public struct BuildEdit: Codable, Equatable, Hashable {
         case destinationAttribute = "destination_attribute"
     }
 
-    public init(
+    init(
         operation: BuildEditOperation,
         attribute: String,
         label: String,
@@ -46,7 +46,7 @@ public struct BuildEdit: Codable, Equatable, Hashable {
         self.destinationAttribute = destinationAttribute
     }
 
-    public var buildozerCommand: BuildozerCommand? {
+    var buildozerCommand: BuildozerCommand? {
         switch operation {
         case .add:
             return BuildozerCommand(action: "add \(attribute) \(label)", target: target)
@@ -62,14 +62,14 @@ public struct BuildEdit: Codable, Equatable, Hashable {
         }
     }
 
-    public func validate() throws {
+    func validate() throws {
         if operation == .move,
            destinationAttribute?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty != false {
             throw FixPlanValidationError.missingMoveDestination(target: target, label: label)
         }
     }
 
-    public static func from(command: BuildozerCommand) -> BuildEdit? {
+    static func from(command: BuildozerCommand) -> BuildEdit? {
         guard isWorkspaceEditableTarget(command.target) else {
             return nil
         }
@@ -104,15 +104,15 @@ public struct BuildEdit: Codable, Equatable, Hashable {
         }
     }
 
-    public static func isWorkspaceEditableTarget(_ label: String) -> Bool {
+    static func isWorkspaceEditableTarget(_ label: String) -> Bool {
         label.hasPrefix("//") || label.hasPrefix("@@//")
     }
 }
 
-public struct FixPlan: Codable, Equatable {
-    public let schemaVersion: Int
-    public let sourceImportRemovals: [SourceImportRemoval]
-    public let buildEdits: [BuildEdit]
+struct FixPlan: Codable, Equatable {
+    let schemaVersion: Int
+    let sourceImportRemovals: [SourceImportRemoval]
+    let buildEdits: [BuildEdit]
 
     enum CodingKeys: String, CodingKey {
         case schemaVersion = "schema_version"
@@ -120,7 +120,7 @@ public struct FixPlan: Codable, Equatable {
         case buildEdits = "build_edits"
     }
 
-    public init(
+    init(
         schemaVersion: Int = 1,
         sourceImportRemovals: [SourceImportRemoval],
         buildEdits: [BuildEdit]
@@ -146,15 +146,15 @@ public struct FixPlan: Codable, Equatable {
         }
     }
 
-    public var isEmpty: Bool {
+    var isEmpty: Bool {
         sourceImportRemovals.isEmpty && buildEdits.isEmpty
     }
 
-    public var buildozerCommands: [BuildozerCommand] {
+    var buildozerCommands: [BuildozerCommand] {
         buildEdits.compactMap(\.buildozerCommand)
     }
 
-    public static func from(
+    static func from(
         results: [AnalysisResult],
         minConfidence: Confidence = .high
     ) -> FixPlan {
@@ -172,14 +172,14 @@ public struct FixPlan: Codable, Equatable {
         )
     }
 
-    public static func merge(_ plans: [FixPlan]) -> FixPlan {
+    static func merge(_ plans: [FixPlan]) -> FixPlan {
         FixPlan(
             sourceImportRemovals: Array(Set(plans.flatMap(\.sourceImportRemovals))),
             buildEdits: Array(Set(plans.flatMap(\.buildEdits)))
         )
     }
 
-    public static func formatJSON(_ plan: FixPlan) throws -> String {
+    static func formatJSON(_ plan: FixPlan) throws -> String {
         try plan.validate()
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
@@ -187,7 +187,7 @@ public struct FixPlan: Codable, Equatable {
         return String(decoding: data, as: UTF8.self)
     }
 
-    public static func formatSummary(_ plan: FixPlan) -> String {
+    static func formatSummary(_ plan: FixPlan) -> String {
         var lines = ["Planned fixes:"]
 
         if plan.buildEdits.isEmpty {
@@ -211,14 +211,14 @@ public struct FixPlan: Codable, Equatable {
         return lines.joined(separator: "\n")
     }
 
-    public static func read(from url: URL) throws -> FixPlan {
+    static func read(from url: URL) throws -> FixPlan {
         let data = try Data(contentsOf: url)
         let plan = try JSONDecoder().decode(FixPlan.self, from: data)
         try plan.validate()
         return plan
     }
 
-    public func validate() throws {
+    func validate() throws {
         try buildEdits.forEach { try $0.validate() }
     }
 
