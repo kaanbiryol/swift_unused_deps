@@ -125,7 +125,15 @@ public struct LabelConverter {
         return "\(atPrefix)\(apparentRepo)\(remainder)"
     }
 
-    /// Load the repo mapping by running `bazel mod dump_repo_mapping ""`.
+    static let repoMappingDumpArguments = [
+        "bazel",
+        "mod",
+        "--lockfile_mode=off",
+        "dump_repo_mapping",
+        "",
+    ]
+
+    /// Load the repo mapping by running `bazel mod --lockfile_mode=off dump_repo_mapping ""`.
     ///
     /// Returns `nil` on failure (WORKSPACE mode, old Bazel, or bazel not available).
     public static func loadFromBazel(workspaceDirectory: String? = nil) -> LabelConverter? {
@@ -134,7 +142,7 @@ public struct LabelConverter {
 
         let proc = Process()
         proc.executableURL = URL(fileURLWithPath: "/usr/bin/env")
-        proc.arguments = ["bazel", "mod", "dump_repo_mapping", ""]
+        proc.arguments = repoMappingDumpArguments
         if let ws = workspace {
             proc.currentDirectoryURL = URL(fileURLWithPath: ws)
         }

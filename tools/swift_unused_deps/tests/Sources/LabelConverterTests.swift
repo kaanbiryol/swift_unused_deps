@@ -12,6 +12,13 @@ final class LabelConverterTests: XCTestCase {
         XCTAssertEqual(converter.convert("@@canonical+//:Bar"), "@@canonical+//:Bar")
     }
 
+    func testRepoMappingDumpDisablesLockfileUpdates() {
+        XCTAssertEqual(
+            LabelConverter.repoMappingDumpArguments,
+            ["bazel", "mod", "--lockfile_mode=off", "dump_repo_mapping", ""]
+        )
+    }
+
     // MARK: - Canonical label conversion
 
     func testMainRepoLabelStripsDoubleAt() {
