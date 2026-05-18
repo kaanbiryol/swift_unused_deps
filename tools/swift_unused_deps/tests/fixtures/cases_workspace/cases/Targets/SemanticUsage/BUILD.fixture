@@ -1,0 +1,15 @@
+load("@build_bazel_rules_swift//swift:swift.bzl", "swift_library")
+
+swift_library(
+    name = "SemanticUsage",
+    srcs = ["SemanticUsage.swift"],
+    module_name = "SemanticUsage",
+    visibility = ["//cases:__subpackages__"],
+    deps = [
+        "//cases/Deps/GeneratedAPIProvider",
+        "//cases/Deps/OperatorProvider",
+        "//cases/Deps/ProtocolConformanceProvider",
+        "//cases/Deps/SemanticBase",
+        "//cases/Deps/StaticMemberProvider",
+    ],
+)

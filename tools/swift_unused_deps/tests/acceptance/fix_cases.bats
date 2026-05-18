@@ -65,6 +65,28 @@ teardown_file() {
   assert_file_not_contains "cases/Targets/ExtensionMemberUsage/BUILD.bazel" "//cases/Deps/LibA"
 }
 
+@test "fix keeps semantic provider deps used by shorthand, operators, conformances, and generated APIs" {
+  assert_file_contains "cases/Targets/SemanticUsage/SemanticUsage.swift" "import StaticMemberProvider"
+  assert_file_contains "cases/Targets/SemanticUsage/SemanticUsage.swift" "import OperatorProvider"
+  assert_file_contains "cases/Targets/SemanticUsage/SemanticUsage.swift" "import ProtocolConformanceProvider"
+  assert_file_contains "cases/Targets/SemanticUsage/SemanticUsage.swift" "import GeneratedAPIProvider"
+
+  run_swift_unused_deps_in_workspace //cases/Targets/SemanticUsage:SemanticUsage --apply-fix-plan --min-report-confidence high
+
+  assert_status 0
+  assert_output_contains "0 issues found."
+  assert_stderr_contains "No fixes to apply."
+
+  assert_file_contains "cases/Targets/SemanticUsage/SemanticUsage.swift" "import StaticMemberProvider"
+  assert_file_contains "cases/Targets/SemanticUsage/SemanticUsage.swift" "import OperatorProvider"
+  assert_file_contains "cases/Targets/SemanticUsage/SemanticUsage.swift" "import ProtocolConformanceProvider"
+  assert_file_contains "cases/Targets/SemanticUsage/SemanticUsage.swift" "import GeneratedAPIProvider"
+  assert_file_contains "cases/Targets/SemanticUsage/BUILD.bazel" "//cases/Deps/StaticMemberProvider"
+  assert_file_contains "cases/Targets/SemanticUsage/BUILD.bazel" "//cases/Deps/OperatorProvider"
+  assert_file_contains "cases/Targets/SemanticUsage/BUILD.bazel" "//cases/Deps/ProtocolConformanceProvider"
+  assert_file_contains "cases/Targets/SemanticUsage/BUILD.bazel" "//cases/Deps/GeneratedAPIProvider"
+}
+
 @test "fix leaves low-confidence candidate private dep unchanged" {
   run_swift_unused_deps_in_workspace //cases/Targets/CandidatePrivateDep:CandidatePrivateDep --apply-fix-plan --min-report-confidence high
 

@@ -139,7 +139,27 @@ private struct BuildEditApplicability {
         if normalized.hasPrefix(packagePrefix) {
             representations.append(":" + String(normalized.dropFirst(packagePrefix.count)))
         }
+        if let packageShorthand = packageShorthandLabel(normalized) {
+            representations.append(packageShorthand)
+        }
         return Array(Set(representations))
+    }
+
+    private func packageShorthandLabel(_ label: String) -> String? {
+        guard
+            let slashSlashRange = label.range(of: "//"),
+            let colonIndex = label.lastIndex(of: ":"),
+            colonIndex > slashSlashRange.upperBound
+        else {
+            return nil
+        }
+
+        let package = label[slashSlashRange.upperBound..<colonIndex]
+        guard package.split(separator: "/").last.map(String.init) == String(label[label.index(after: colonIndex)...]) else {
+            return nil
+        }
+
+        return String(label[..<colonIndex])
     }
 
     private func stripMainRepoPrefix(_ label: String) -> String {

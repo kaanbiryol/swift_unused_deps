@@ -1,0 +1,8 @@
+load("@build_bazel_rules_swift//swift:swift.bzl", "swift_library")
+
+swift_library(
+    name = "SemanticBase",
+    srcs = ["SemanticBase.swift"],
+    module_name = "SemanticBase",
+    visibility = ["//cases:__subpackages__"],
+)

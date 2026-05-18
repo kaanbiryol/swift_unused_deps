@@ -30,10 +30,15 @@ expected_reported_targets = {
     "//cases/Deps/DirectDepWithTransitive:DirectDepWithTransitive",
     "//cases/Deps/ExtensionBase:ExtensionBase",
     "//cases/Deps/ExtensionProvider:ExtensionProvider",
+    "//cases/Deps/GeneratedAPIProvider:GeneratedAPIProvider",
     "//cases/Deps/LibA:LibA",
     "//cases/Deps/LibB:LibB",
     "//cases/Deps/LibC:LibC",
     "//cases/Deps/LibraryGroup:LibraryGroup_Impl",
+    "//cases/Deps/OperatorProvider:OperatorProvider",
+    "//cases/Deps/ProtocolConformanceProvider:ProtocolConformanceProvider",
+    "//cases/Deps/SemanticBase:SemanticBase",
+    "//cases/Deps/StaticMemberProvider:StaticMemberProvider",
     "//cases/Deps/TransitiveDep:TransitiveDep",
     "//cases/Targets/CandidatePrivateDep:CandidatePrivateDep",
     "//cases/Targets/CleanLibraryGroupDep:CleanLibraryGroupDep",
@@ -41,6 +46,7 @@ expected_reported_targets = {
     "//cases/Targets/ExtensionMemberUsage:ExtensionMemberUsage",
     "//cases/Targets/MissingDirectDep:MissingDirectDep",
     "//cases/Targets/MultipleUnusedDeps:MultipleUnusedDeps",
+    "//cases/Targets/SemanticUsage:SemanticUsage",
     "//cases/Targets/StdlibOnly:StdlibOnly",
     "//cases/Targets/UnresolvedSystemModule:UnresolvedSystemModule",
     "//cases/Targets/UnusedAttributedImport:UnusedAttributedImport",
@@ -168,6 +174,20 @@ require_issues(
 )
 require_skipped_modules("//cases/Targets/ExtensionMemberUsage:ExtensionMemberUsage", set())
 require_source_removal("//cases/Targets/ExtensionMemberUsage:ExtensionMemberUsage", "LibA")
+
+require_status("//cases/Targets/SemanticUsage:SemanticUsage", "clean")
+require_clean_modules(
+    "//cases/Targets/SemanticUsage:SemanticUsage",
+    {
+        "GeneratedAPIProvider",
+        "OperatorProvider",
+        "ProtocolConformanceProvider",
+        "SemanticBase",
+        "StaticMemberProvider",
+    },
+)
+require_issues("//cases/Targets/SemanticUsage:SemanticUsage", set())
+require_skipped_modules("//cases/Targets/SemanticUsage:SemanticUsage", set())
 
 require_status("//cases/Targets/StdlibOnly:StdlibOnly", "clean")
 require_clean_modules("//cases/Targets/StdlibOnly:StdlibOnly", set())
