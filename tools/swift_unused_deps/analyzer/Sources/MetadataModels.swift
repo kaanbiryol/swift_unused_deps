@@ -3,6 +3,7 @@ import Foundation
 public enum DepKind: String, Codable {
     case dep
     case privateDep = "private_dep"
+    case plugin
 }
 
 public struct SourceFileMetadata: Codable, Equatable, Hashable {
@@ -87,6 +88,7 @@ public struct TargetMetadata: Codable {
     public let schemaVersion: Int
     public let target: TargetInfo
     public let declaredDeps: [DeclaredDep]
+    public let pluginDeps: [DeclaredDep]
     public let transitiveModuleMap: [String: String]
     public let moduleReachableVia: [String: [String]]
     public let indexStorePath: String?
@@ -95,6 +97,7 @@ public struct TargetMetadata: Codable {
         case schemaVersion = "schema_version"
         case target
         case declaredDeps = "declared_deps"
+        case pluginDeps = "plugin_deps"
         case transitiveModuleMap = "transitive_module_map"
         case moduleReachableVia = "module_reachable_via"
         case indexStorePath = "indexstore_path"
@@ -104,6 +107,7 @@ public struct TargetMetadata: Codable {
         schemaVersion: Int,
         target: TargetInfo,
         declaredDeps: [DeclaredDep],
+        pluginDeps: [DeclaredDep] = [],
         transitiveModuleMap: [String: String],
         moduleReachableVia: [String: [String]] = [:],
         indexStorePath: String? = nil
@@ -111,6 +115,7 @@ public struct TargetMetadata: Codable {
         self.schemaVersion = schemaVersion
         self.target = target
         self.declaredDeps = declaredDeps
+        self.pluginDeps = pluginDeps
         self.transitiveModuleMap = transitiveModuleMap
         self.moduleReachableVia = moduleReachableVia
         self.indexStorePath = indexStorePath
@@ -121,6 +126,7 @@ public struct TargetMetadata: Codable {
         schemaVersion = try container.decode(Int.self, forKey: .schemaVersion)
         target = try container.decode(TargetInfo.self, forKey: .target)
         declaredDeps = try container.decode([DeclaredDep].self, forKey: .declaredDeps)
+        pluginDeps = try container.decodeIfPresent([DeclaredDep].self, forKey: .pluginDeps) ?? []
         transitiveModuleMap = try container.decode([String: String].self, forKey: .transitiveModuleMap)
         moduleReachableVia = try container.decodeIfPresent([String: [String]].self, forKey: .moduleReachableVia) ?? [:]
         indexStorePath = try container.decodeIfPresent(String.self, forKey: .indexStorePath)
@@ -140,6 +146,13 @@ public struct TargetMetadata: Codable {
                 sourceFiles: target.sourceFiles
             ),
             declaredDeps: declaredDeps.map {
+                DeclaredDep(
+                    label: converter.convert($0.label, buildFileContent: buildFileContent),
+                    moduleName: $0.moduleName,
+                    kind: $0.kind
+                )
+            },
+            pluginDeps: pluginDeps.map {
                 DeclaredDep(
                     label: converter.convert($0.label, buildFileContent: buildFileContent),
                     moduleName: $0.moduleName,

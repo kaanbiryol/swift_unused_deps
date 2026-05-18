@@ -193,6 +193,13 @@ final class LabelConverterTests: XCTestCase {
                     kind: .dep
                 ),
             ],
+            pluginDeps: [
+                DeclaredDep(
+                    label: "@@swift-syntax+//:SwiftCompilerPlugin",
+                    moduleName: "SwiftCompilerPlugin",
+                    kind: .plugin
+                ),
+            ],
             transitiveModuleMap: [
                 "SwiftSyntax": "@@swift-syntax+//:SwiftSyntax",
                 "A": "@@//Lib:A",
@@ -208,6 +215,9 @@ final class LabelConverterTests: XCTestCase {
         XCTAssertEqual(converted.declaredDeps[0].label, "@swiftpkg_swift_syntax//:SwiftSyntax")
         XCTAssertEqual(converted.declaredDeps[0].moduleName, "SwiftSyntax")
         XCTAssertEqual(converted.declaredDeps[0].kind, .dep)
+        XCTAssertEqual(converted.pluginDeps[0].label, "@swiftpkg_swift_syntax//:SwiftCompilerPlugin")
+        XCTAssertEqual(converted.pluginDeps[0].moduleName, "SwiftCompilerPlugin")
+        XCTAssertEqual(converted.pluginDeps[0].kind, .plugin)
         XCTAssertEqual(converted.transitiveModuleMap["SwiftSyntax"], "@swiftpkg_swift_syntax//:SwiftSyntax")
         XCTAssertEqual(converted.transitiveModuleMap["A"], "//Lib:A")
         XCTAssertEqual(converted.moduleReachableVia["SwiftSyntax"], ["//Lib:Wrapper"])

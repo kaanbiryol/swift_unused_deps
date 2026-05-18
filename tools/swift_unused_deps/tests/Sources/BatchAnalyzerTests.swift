@@ -217,6 +217,30 @@ final class BatchAnalyzerTests: XCTestCase {
         ])
     }
 
+    func testUnusedImportIssuesDoNotTreatPluginDepsAsTransitiveImports() {
+        let metadata = makeMetadata(
+            label: "//Lib:A",
+            moduleName: "A",
+            pluginDeps: [DeclaredDep(label: "//Macros:Plugin", moduleName: "MacrosPlugin", kind: .plugin)],
+            transitiveModuleMap: ["MacrosPlugin": "//Macros:Plugin"]
+        )
+
+        let issues = BatchAnalyzer.unusedImportIssues(
+            metadata: metadata,
+            sourceFileUsage: [
+                SourceFileModuleUsage(
+                    sourceFile: "/tmp/A.swift",
+                    moduleName: "A",
+                    referencedModules: [],
+                    loadedModules: ["MacrosPlugin"],
+                    directImports: ["MacrosPlugin"]
+                ),
+            ]
+        )
+
+        XCTAssertTrue(issues.isEmpty)
+    }
+
     func testMergeUnusedImportIssuesSuppressesMatchingMissingDirectDep() {
         let missingDep = DeclaredDep(label: "//Lib:TransitiveDep", moduleName: "TransitiveDep", kind: .dep)
         let baseResult = AnalysisResult(
@@ -294,12 +318,14 @@ final class BatchAnalyzerTests: XCTestCase {
         label: String,
         moduleName: String,
         deps: [DeclaredDep] = [],
+        pluginDeps: [DeclaredDep] = [],
         transitiveModuleMap: [String: String] = [:]
     ) -> TargetMetadata {
         TargetMetadata(
             schemaVersion: 1,
             target: TargetInfo(label: label, moduleName: moduleName),
             declaredDeps: deps,
+            pluginDeps: pluginDeps,
             transitiveModuleMap: transitiveModuleMap
         )
     }

@@ -7,15 +7,18 @@ final class AnalyzerTests: XCTestCase {
         label: String,
         moduleName: String,
         deps: [(label: String, moduleName: String, kind: DepKind)] = [],
+        pluginDeps: [(label: String, moduleName: String, kind: DepKind)] = [],
         transitive: [String: String] = [:],
         moduleReachableVia: [String: [String]] = [:],
         isMixed: Bool = false
     ) -> TargetMetadata {
         let declaredDeps = deps.map { DeclaredDep(label: $0.label, moduleName: $0.moduleName, kind: $0.kind) }
+        let declaredPluginDeps = pluginDeps.map { DeclaredDep(label: $0.label, moduleName: $0.moduleName, kind: $0.kind) }
         return TargetMetadata(
             schemaVersion: 1,
             target: TargetInfo(label: label, moduleName: moduleName, isMixedSource: isMixed),
             declaredDeps: declaredDeps,
+            pluginDeps: declaredPluginDeps,
             transitiveModuleMap: transitive,
             moduleReachableVia: moduleReachableVia
         )
@@ -255,6 +258,37 @@ final class AnalyzerTests: XCTestCase {
 
         let candidates = result.issues.filter { $0.kind == .candidatePrivateDep }
         XCTAssertEqual(candidates.count, 0)
+    }
+
+    func testPluginDepDoesNotBecomeMissingDep() {
+        let metadata = makeMetadata(
+            label: "//Lib:A",
+            moduleName: "A",
+            pluginDeps: [("//Macros:Plugin", "MacrosPlugin", .plugin)],
+            transitive: ["MacrosPlugin": "//Macros:Plugin"]
+        )
+        let modules = makeModules([("MacrosPlugin", false)])
+        let resolver = ModuleResolver(transitiveModuleMap: metadata.transitiveModuleMap)
+
+        let result = Analyzer.analyze(metadata: metadata, loadedModules: modules, resolver: resolver)
+
+        XCTAssertTrue(result.issues.isEmpty)
+        XCTAssertTrue(result.cleanDeps.isEmpty)
+    }
+
+    func testPluginDepIsNotReportedUnused() {
+        let metadata = makeMetadata(
+            label: "//Lib:A",
+            moduleName: "A",
+            pluginDeps: [("//Macros:Plugin", "MacrosPlugin", .plugin)],
+            transitive: ["MacrosPlugin": "//Macros:Plugin"]
+        )
+        let resolver = ModuleResolver(transitiveModuleMap: metadata.transitiveModuleMap)
+
+        let result = Analyzer.analyze(metadata: metadata, loadedModules: [], resolver: resolver)
+
+        XCTAssertTrue(result.issues.isEmpty)
+        XCTAssertTrue(result.cleanDeps.isEmpty)
     }
 
     func testMissingDepIndirectLowConfidence() {

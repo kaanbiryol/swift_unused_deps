@@ -225,6 +225,15 @@ def _swift_deps_aspect_impl(target, ctx):
                     seen_modules[info["module_name"]] = True
                     declared_private_deps.append(info)
 
+    plugin_deps = []
+    seen_plugin_modules = {}
+    if hasattr(ctx.rule.attr, "plugins"):
+        for dep in ctx.rule.attr.plugins:
+            for info in _dep_info_entries(dep, "plugin"):
+                if info["module_name"] not in seen_plugin_modules:
+                    seen_plugin_modules[info["module_name"]] = True
+                    plugin_deps.append(info)
+
     # Build transitive module map.
     transitive_map = _transitive_modules(
         ctx.rule.attr.deps if hasattr(ctx.rule.attr, "deps") else [],
@@ -264,6 +273,7 @@ def _swift_deps_aspect_impl(target, ctx):
             "rule_kind": ctx.rule.kind,
         },
         "declared_deps": declared_deps + declared_private_deps,
+        "plugin_deps": plugin_deps,
         "transitive_module_map": transitive_map,
         "module_reachable_via": module_reachable_via,
         "indexstore_path": indexstore_directory.short_path if indexstore_directory else "",

@@ -288,7 +288,7 @@ public enum BatchAnalyzer {
         allMetadataByLabel: [String: TargetMetadata],
         bazelBin: String
     ) -> [String] {
-        metadata.declaredDeps.compactMap { dep in
+        (metadata.declaredDeps + metadata.pluginDeps).compactMap { dep in
             guard let dependencyMetadata = allMetadataByLabel[dep.label] else {
                 return nil
             }
@@ -479,6 +479,7 @@ public enum BatchAnalyzer {
         conditionalImportModules: Set<String>
     ) -> [Issue] {
         let declaredModuleNames = Set(metadata.declaredDeps.map(\.moduleName))
+            .union(metadata.pluginDeps.map(\.moduleName))
         let directImports = sourceFileUsage.reduce(into: Set<String>()) { partial, usage in
             partial.formUnion(usage.directImports)
         }

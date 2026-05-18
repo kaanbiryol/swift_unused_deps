@@ -40,7 +40,7 @@ public enum Analyzer {
         ))
         issues.append(contentsOf: missingDirectDepIssues(
             metadata: metadata,
-            declaredByModule: declaredByModule,
+            declaredModuleNames: declaredModuleNamesIncludingPlugins(metadata),
             usedModulesByName: resolvedUsage.usedModulesByName
         ))
         issues.append(contentsOf: candidatePrivateDepIssues(
@@ -131,11 +131,9 @@ public enum Analyzer {
 
     private static func missingDirectDepIssues(
         metadata: TargetMetadata,
-        declaredByModule: [String: DeclaredDep],
+        declaredModuleNames: Set<String>,
         usedModulesByName: [String: UsedModule]
     ) -> [Issue] {
-        let declaredModuleNames = Set(declaredByModule.keys)
-
         return usedModulesByName
             .sorted(by: { $0.key < $1.key })
             .compactMap { moduleName, info in
@@ -148,6 +146,11 @@ public enum Analyzer {
                     targetLabel: metadata.target.label
                 )
             }
+    }
+
+    private static func declaredModuleNamesIncludingPlugins(_ metadata: TargetMetadata) -> Set<String> {
+        Set(metadata.declaredDeps.map(\.moduleName))
+            .union(metadata.pluginDeps.map(\.moduleName))
     }
 
     private static func candidatePrivateDepIssues(
