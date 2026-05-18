@@ -12,8 +12,10 @@ public enum SourceImportEditor {
     }
 
     struct PlannedEdit {
+        let displayFilePath: String
         let filePath: String
         let updated: String
+        let removedModuleNames: Set<String>
     }
 
     public enum Error: Swift.Error, CustomStringConvertible {
@@ -38,7 +40,8 @@ public enum SourceImportEditor {
 
     static func plan(
         removals: [SourceImportRemoval],
-        workspaceDirectory: URL? = nil
+        workspaceDirectory: URL? = nil,
+        skipMissingImports: Bool = false
     ) throws -> [PlannedEdit] {
         let grouped = Dictionary(grouping: Set(removals), by: \.filePath)
 
@@ -47,12 +50,18 @@ public enum SourceImportEditor {
             let filePath = resolvePath(rawPath, workspaceDirectory: workspaceDirectory)
             let original = try readFile(at: filePath)
             let moduleNames = Set(fileRemovals.map(\.moduleName))
-            let updated = try removeImports(
+            let result = try removeImportsDetailed(
                 in: original,
                 filePath: filePath,
-                moduleNames: moduleNames
+                moduleNames: moduleNames,
+                skipMissingImports: skipMissingImports
             )
-            return updated == original ? nil : PlannedEdit(filePath: filePath, updated: updated)
+            return result.updated == original ? nil : PlannedEdit(
+                displayFilePath: rawPath,
+                filePath: filePath,
+                updated: result.updated,
+                removedModuleNames: result.removedModuleNames
+            )
         }
     }
 
@@ -67,6 +76,20 @@ public enum SourceImportEditor {
         filePath: String,
         moduleNames: Set<String>
     ) throws -> String {
+        try removeImportsDetailed(
+            in: source,
+            filePath: filePath,
+            moduleNames: moduleNames,
+            skipMissingImports: false
+        ).updated
+    }
+
+    private static func removeImportsDetailed(
+        in source: String,
+        filePath: String,
+        moduleNames: Set<String>,
+        skipMissingImports: Bool
+    ) throws -> (updated: String, removedModuleNames: Set<String>) {
         var foundModules = Set<String>()
         var protectedModuleErrors: [String: Error] = [:]
         let hadTrailingNewline = source.hasSuffix("\n")
@@ -103,16 +126,16 @@ public enum SourceImportEditor {
             if let error = protectedModuleErrors[moduleName] {
                 throw error
             }
-            if !foundModules.contains(moduleName) {
+            if !foundModules.contains(moduleName), !skipMissingImports {
                 throw Error.importNotFound(path: filePath, moduleName: moduleName)
             }
         }
 
         let updated = filteredLines.joined(separator: "\n")
         if hadTrailingNewline {
-            return updated + "\n"
+            return (updated + "\n", foundModules)
         }
-        return updated
+        return (updated, foundModules)
     }
 
     static func importedModuleNames(in source: String) -> Set<String> {

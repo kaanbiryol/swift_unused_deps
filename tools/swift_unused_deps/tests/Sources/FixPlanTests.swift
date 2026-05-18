@@ -186,6 +186,90 @@ final class FixPlanTests: XCTestCase {
         XCTAssertTrue(updated.contains("import LibB"))
     }
 
+    func testApplierSkipsAlreadyAppliedFixPlan() throws {
+        let workspace = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: workspace) }
+
+        let appDirectory = workspace.appendingPathComponent("App", isDirectory: true)
+        try FileManager.default.createDirectory(at: appDirectory, withIntermediateDirectories: true)
+        try """
+        load("@build_bazel_rules_swift//swift:swift.bzl", "swift_library")
+
+        swift_library(
+            name = "App",
+            srcs = ["App.swift"],
+            deps = [
+                "//Lib:Existing",
+            ],
+            private_deps = [
+                "//Lib:Moved",
+            ],
+        )
+        """.write(to: appDirectory.appendingPathComponent("BUILD.bazel"), atomically: true, encoding: .utf8)
+
+        let sourceURL = appDirectory.appendingPathComponent("App.swift")
+        let originalSource = """
+        import Existing
+
+        public struct App {}
+        """
+        try originalSource.write(to: sourceURL, atomically: true, encoding: .utf8)
+
+        let plan = FixPlan(
+            sourceImportRemovals: [
+                SourceImportRemoval(filePath: "App/App.swift", moduleName: "AlreadyRemoved"),
+            ],
+            buildEdits: [
+                BuildEdit(operation: .add, attribute: "deps", label: "//Lib:Existing", target: "//App:App"),
+                BuildEdit(operation: .remove, attribute: "deps", label: "//Lib:AlreadyRemoved", target: "//App:App"),
+                BuildEdit(
+                    operation: .move,
+                    attribute: "deps",
+                    label: "//Lib:Moved",
+                    target: "//App:App",
+                    destinationAttribute: "private_deps"
+                ),
+            ]
+        )
+
+        let result = try FixPlanApplier.apply(plan, workspaceDirectory: workspace)
+        let updatedSource = try String(contentsOf: sourceURL, encoding: .utf8)
+
+        XCTAssertFalse(result.applied)
+        XCTAssertEqual(result.buildFixCount, 0)
+        XCTAssertEqual(result.sourceImportRemovalCount, 0)
+        XCTAssertEqual(updatedSource, originalSource)
+    }
+
+    func testApplierCountsOnlyPresentSourceImports() throws {
+        let workspace = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: workspace) }
+
+        let sourceURL = workspace.appendingPathComponent("App.swift")
+        try """
+        import LibA
+        import LibB
+
+        public struct App {}
+        """.write(to: sourceURL, atomically: true, encoding: .utf8)
+
+        let plan = FixPlan(
+            sourceImportRemovals: [
+                SourceImportRemoval(filePath: "App.swift", moduleName: "AlreadyRemoved"),
+                SourceImportRemoval(filePath: "App.swift", moduleName: "LibA"),
+            ],
+            buildEdits: []
+        )
+
+        let result = try FixPlanApplier.apply(plan, workspaceDirectory: workspace)
+        let updated = try String(contentsOf: sourceURL, encoding: .utf8)
+
+        XCTAssertTrue(result.applied)
+        XCTAssertEqual(result.sourceImportRemovalCount, 1)
+        XCTAssertFalse(updated.contains("import LibA"))
+        XCTAssertTrue(updated.contains("import LibB"))
+    }
+
     private func makeTemporaryDirectory() throws -> URL {
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
