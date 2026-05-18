@@ -117,10 +117,14 @@ public enum SourceImportEditor {
             }
         )
 
-        let filteredLines = lines.enumerated().filter { offset, _ in
+        var filteredLines = lines.enumerated().filter { offset, _ in
             !removedLineNumbers.contains(offset + 1)
         }
         .map(\.element)
+
+        if hadTrailingNewline, filteredLines.last == "" {
+            filteredLines.removeLast()
+        }
 
         for moduleName in moduleNames {
             if let error = protectedModuleErrors[moduleName] {
@@ -131,8 +135,9 @@ public enum SourceImportEditor {
             }
         }
 
-        let updated = filteredLines.joined(separator: "\n")
-        if hadTrailingNewline {
+        let normalizedLines = normalizeImportPreambleBlankLines(filteredLines)
+        let updated = normalizedLines.joined(separator: "\n")
+        if hadTrailingNewline, !updated.isEmpty {
             return (updated + "\n", foundModules)
         }
         return (updated, foundModules)
@@ -167,6 +172,41 @@ public enum SourceImportEditor {
         guard !path.hasPrefix("/") else { return path }
         guard let workspaceDirectory else { return path }
         return workspaceDirectory.appendingPathComponent(path).path
+    }
+
+    private static func normalizeImportPreambleBlankLines(_ lines: [Substring]) -> [String] {
+        var normalized = lines.map(String.init)
+
+        while normalized.first?.trimmingCharacters(in: .whitespaces).isEmpty == true {
+            normalized.removeFirst()
+        }
+
+        let preambleEnd = normalized.firstIndex { line in
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            if trimmed.isEmpty { return false }
+            if importedModuleName(in: line) != nil { return false }
+            if trimmed.hasPrefix("//") || trimmed.hasPrefix("/*") || trimmed.hasPrefix("*") {
+                return false
+            }
+            return true
+        } ?? normalized.endIndex
+
+        guard preambleEnd > 0 else {
+            return normalized
+        }
+
+        var preamble: [String] = []
+        var previousWasBlank = false
+        for line in normalized[..<preambleEnd] {
+            let isBlank = line.trimmingCharacters(in: .whitespaces).isEmpty
+            if isBlank, previousWasBlank {
+                continue
+            }
+            preamble.append(line)
+            previousWasBlank = isBlank
+        }
+
+        return preamble + Array(normalized[preambleEnd...])
     }
 
     private static func importStatements(in source: String) -> [ImportStatement] {

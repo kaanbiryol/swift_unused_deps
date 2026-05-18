@@ -151,6 +151,55 @@ final class SourceImportEditorTests: XCTestCase {
         """)
     }
 
+    func testRemoveOnlyImportInHeaderDoesNotLeaveLeadingBlankLine() throws {
+        let source = """
+        import LibA
+
+        struct Demo {}
+        """
+
+        let updated = try SourceImportEditor.removeImports(
+            in: source,
+            filePath: "/tmp/Demo.swift",
+            moduleNames: ["LibA"]
+        )
+
+        XCTAssertEqual(updated, """
+        struct Demo {}
+        """)
+    }
+
+    func testRemoveOnlyImportFromFileProducesEmptyFile() throws {
+        let updated = try SourceImportEditor.removeImports(
+            in: "import LibA\n",
+            filePath: "/tmp/Demo.swift",
+            moduleNames: ["LibA"]
+        )
+
+        XCTAssertEqual(updated, "")
+    }
+
+    func testRemoveImportBlockCollapsesDuplicatePreambleBlanks() throws {
+        let source = """
+        import LibA
+
+        import LibB
+
+
+        struct Demo {}
+        """
+
+        let updated = try SourceImportEditor.removeImports(
+            in: source,
+            filePath: "/tmp/Demo.swift",
+            moduleNames: ["LibA", "LibB"]
+        )
+
+        XCTAssertEqual(updated, """
+        struct Demo {}
+        """)
+    }
+
     func testRemoveImportsFailsWhenImportMissing() {
         XCTAssertThrowsError(
             try SourceImportEditor.removeImports(
