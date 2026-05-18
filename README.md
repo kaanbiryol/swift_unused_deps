@@ -157,6 +157,10 @@ inside the analyzer.
 - `@_exported import` re-exports are treated as non-removable by fix outputs.
 - Scoped imports like `import struct LibA.Button` are not analyzed reliably end to end yet.
 - Unused Swift `import` statements are fixed only when the analyzer has index store data for per-file source edits.
+- Runtime resource usage is not analyzed today. Calls such as `UIImage(named:)`, `Image(_:)`,
+  `Color(_:)`, `Font.custom`, `Bundle` resource lookups, and localized string lookups may depend
+  on resources from another Bazel target without creating Swift symbol usage. Review resource
+  dependencies manually before applying BUILD fixes.
 
 ## Development
 
