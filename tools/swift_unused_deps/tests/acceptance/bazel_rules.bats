@@ -27,6 +27,18 @@ teardown_file() {
   assert_status 3
 }
 
+@test "bazel-native test failure output explains dependency findings" {
+  run_in_workspace bazel test \
+    --test_output=errors \
+    --features=swift.index_while_building \
+    //:unused_import_unused_deps
+
+  assert_status 3
+  assert_combined_output_contains "swift_unused_deps failed: dependency issues were found."
+  assert_combined_output_contains "[HIGH] UNUSED_IMPORT"
+  assert_combined_output_contains "Summary: 3 targets analyzed, 1 issue found."
+}
+
 @test "bazel-native test runs on host when target platform is iOS" {
   run_in_workspace bazel test \
     --features=swift.index_while_building \

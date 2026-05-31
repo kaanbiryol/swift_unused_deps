@@ -1,4 +1,5 @@
 build:swift-unused-deps --features=swift.index_while_building
+test:swift-unused-deps --test_output=errors
 build:swift-unused-deps-metadata --features=swift.index_while_building
 build:swift-unused-deps-metadata --aspects=@swift_unused_deps//tools/swift_unused_deps:defs.bzl%swift_unused_deps_aspect
 build:swift-unused-deps-metadata --output_groups=swift_unused_deps_metadata

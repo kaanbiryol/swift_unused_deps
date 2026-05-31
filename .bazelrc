@@ -1,6 +1,7 @@
 build:swift-unused-deps --features=swift.index_while_building
 build:swift-unused-deps --aspects=//tools/swift_unused_deps:defs.bzl%swift_unused_deps_aspect
 build:swift-unused-deps --output_groups=swift_unused_deps_metadata
+test:swift-unused-deps --test_output=errors
 
 build:swift-unused-deps-ios --config=swift-unused-deps
 build:swift-unused-deps-ios --platforms=@apple_support//platforms:ios_sim_arm64

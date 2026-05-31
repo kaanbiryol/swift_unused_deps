@@ -1,7 +1,7 @@
 """Bazel aspect for detecting unused Swift dependencies.
 
-Propagates through deps and private_deps of swift_library targets and emits
-per-target metadata for analysis.
+Propagates through dependency-like attributes of Swift and test aggregation
+targets and emits per-target metadata for analysis.
 
 The public swift_unused_deps macro wires this aspect into Bazel-native report,
 test, and fix targets.
@@ -128,7 +128,7 @@ def _passthrough_transitive_modules(ctx):
     transitive_fix_low_sets = []
     direct_dep_modules = []
     direct_indexstore_sets = []
-    for attr_name in ["deps", "private_deps", "plugins"]:
+    for attr_name in ["deps", "private_deps", "plugins", "tests"]:
         if hasattr(ctx.rule.attr, attr_name):
             for dep in getattr(ctx.rule.attr, attr_name):
                 if SwiftDepsInfo in dep:
@@ -383,7 +383,7 @@ swift_deps_aspect = aspect(
 
     For Bazel-first analysis workflows, request swift_unused_deps_metadata.
     """,
-    attr_aspects = ["deps", "private_deps", "plugins"],
+    attr_aspects = ["deps", "private_deps", "plugins", "tests"],
     attrs = {
         "_analyzer": attr.label(
             default = Label("//tools/swift_unused_deps/analyzer:swift_unused_deps"),

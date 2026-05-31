@@ -171,9 +171,14 @@ def _swift_unused_deps_test_impl(ctx):
         content = _runfiles_prelude(strict = False) + """
 report="$(resolve_runfile "%s")"
 exit_code_file="$(resolve_runfile "%s")"
+exit_code="$(cat "${exit_code_file}")"
 
+if [[ "${exit_code}" != "0" ]]; then
+  echo "swift_unused_deps failed: dependency issues were found."
+  echo
+fi
 cat "${report}"
-exit "$(cat "${exit_code_file}")"
+exit "${exit_code}"
 """ % (outputs.report_text.short_path, outputs.exit_code.short_path),
     )
 
@@ -282,12 +287,14 @@ swift_unused_deps_fix = rule(
     executable = True,
 )
 
-def _target_kwargs(visibility = None, tags = None):
+def _target_kwargs(visibility = None, tags = None, testonly = None):
     kwargs = {}
     if visibility != None:
         kwargs["visibility"] = visibility
     if tags != None:
         kwargs["tags"] = tags
+    if testonly != None:
+        kwargs["testonly"] = testonly
     return kwargs
 
 def swift_unused_deps(
@@ -295,6 +302,7 @@ def swift_unused_deps(
         targets,
         report_confidence = "low",
         fix_confidence = "high",
+        testonly = False,
         visibility = None,
         tags = None,
         test_tags = None,
@@ -312,6 +320,7 @@ def swift_unused_deps(
       targets: Top-level Bazel targets whose Swift dependency closure should be analyzed.
       report_confidence: Minimum confidence level to report and fail the test on.
       fix_confidence: Minimum confidence level to include in the generated fix plan.
+      testonly: Whether the generated targets may depend on testonly targets.
       visibility: Optional visibility applied to all generated targets.
       tags: Optional tags applied to all generated targets unless target-specific tags are set.
       test_tags: Optional tags for the generated test target.
@@ -328,6 +337,7 @@ def swift_unused_deps(
         **_target_kwargs(
             visibility = visibility,
             tags = report_tags if report_tags != None else tags,
+            testonly = testonly,
         )
     )
 
@@ -339,6 +349,7 @@ def swift_unused_deps(
         **_target_kwargs(
             visibility = visibility,
             tags = test_tags if test_tags != None else tags,
+            testonly = testonly,
         )
     )
 
@@ -348,5 +359,6 @@ def swift_unused_deps(
         **_target_kwargs(
             visibility = visibility,
             tags = fix_tags if fix_tags != None else tags,
+            testonly = testonly,
         )
     )

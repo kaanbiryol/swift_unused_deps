@@ -26,6 +26,9 @@ fixture packages from becoming Bazel packages in the repository checkout.
 | `//cases/Targets/UnusedLibraryGroupDep:UnusedLibraryGroupDep` | Reports `unused_dep` for an unused `swift_library_group` dep | Bats asserts report metadata and verifies fix/apply removes the group BUILD dep |
 | `//cases/Targets/SemanticUsage:SemanticUsage` | Reports clean for shorthand static members, operator overloads, protocol conformances, and generated-style extension APIs | Bats asserts report metadata and verifies fix/apply keeps all semantic provider deps |
 | `//cases/Apps:FixtureApp` | Simulates an app-like top-level target without `SwiftInfo` | Bats asserts the analyzer reports the Swift dependency closure |
+| `//cases/Tests/SwiftTestTraversal:TraversalRootTests` | Simulates a `swift_test` top-level target | Bats asserts the analyzer reports the Swift dependency closure, not the test rule itself |
+| `//cases/Tests/TestSupportLibrary:TestSupportLibrary` | Simulates test-only Swift code in an analyzable `swift_library` | Bats asserts the library target itself is analyzed and reports an unused import |
+| `//cases/Tests/Suites:AllSwiftTests` | Simulates a large-project `test_suite` of runnable test targets | Bats asserts the analyzer reports each member test's Swift dependency closure |
 
 Use the materializer helper to inspect a fixture manually:
 

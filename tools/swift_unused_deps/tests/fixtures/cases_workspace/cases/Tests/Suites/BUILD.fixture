@@ -1,0 +1,8 @@
+test_suite(
+    name = "AllSwiftTests",
+    tests = [
+        "//cases/Tests/SwiftTestTraversal:TraversalRootTests",
+        "//cases/Tests/TestSupportLibrary:TestSupportLibraryTests",
+    ],
+    visibility = ["//cases:__subpackages__"],
+)

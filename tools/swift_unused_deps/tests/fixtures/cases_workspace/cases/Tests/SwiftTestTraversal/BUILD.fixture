@@ -1,0 +1,8 @@
+load("@build_bazel_rules_swift//swift:swift.bzl", "swift_test")
+
+swift_test(
+    name = "TraversalRootTests",
+    srcs = ["TraversalRootTests.swift"],
+    visibility = ["//cases:__subpackages__"],
+    deps = ["//cases/Targets/CandidatePrivateDep"],
+)

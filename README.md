@@ -25,10 +25,11 @@ git_override(
 )
 ```
 
-### 2. Enable Swift indexing for analysis builds
+### 2. Enable Swift indexing and failure output
 
 ```text
 build:swift-unused-deps --features=swift.index_while_building
+test:swift-unused-deps --test_output=errors
 ```
 
 > Unused Swift `import` edits require index store data.
@@ -55,8 +56,8 @@ The macro creates three targets:
 | Target | Command | Use |
 |--------|---------|-----|
 | `:swift_unused_deps` | `bazel test` | Check deps and fail on findings |
-| `:swift_unused_deps_report` | `bazel build` | Emit merged report and fix artifacts |
 | `:swift_unused_deps_fix` | `bazel run` | Apply the generated fix plan |
+| `:swift_unused_deps_report` | `bazel build` | Optional: emit report and fix artifacts without running the check or applying fixes |
 
 ### 4. Run the check
 
@@ -80,6 +81,87 @@ bazel test --config=swift-unused-deps \
 The test prints a merged text report and fails when configured findings are
 present.
 
+If you are not using the `swift-unused-deps` config, pass `--test_output=errors`
+to show the report inline when findings fail the test:
+
+```sh
+bazel test --test_output=errors --features=swift.index_while_building //tools:swift_unused_deps
+```
+
+## Test Target Examples
+
+When an analysis target points at a `swift_test`, mark the generated targets as
+`testonly` so Bazel allows them to depend on test-only labels:
+
+```starlark
+swift_test(
+    name = "FeatureTests",
+    srcs = ["FeatureTests.swift"],
+    deps = [":Feature"],
+)
+
+swift_unused_deps(
+    name = "feature_tests_unused_deps",
+    testonly = True,
+    targets = [":FeatureTests"],
+)
+```
+
+Today this checks the Swift dependency closure below `FeatureTests`. It does not
+analyze `FeatureTests.swift` itself unless the test rule exposes a direct Swift
+module through `SwiftInfo`.
+
+To analyze test-only Swift code directly today, put that code in a `testonly`
+Swift library and point `swift_unused_deps` at the library:
+
+```starlark
+swift_library(
+    name = "FeatureTestSupport",
+    testonly = True,
+    srcs = ["FeatureTestSupport.swift"],
+    deps = [
+        ":Feature",
+        "//tests/support:SnapshotHelpers",
+    ],
+)
+
+swift_test(
+    name = "FeatureTests",
+    srcs = ["FeatureTests.swift"],
+    deps = [":FeatureTestSupport"],
+)
+
+swift_unused_deps(
+    name = "feature_test_support_unused_deps",
+    testonly = True,
+    targets = [":FeatureTestSupport"],
+)
+```
+
+For larger projects, put the runnable test targets in a `test_suite` and point
+one `swift_unused_deps` target at the suite:
+
+```starlark
+test_suite(
+    name = "all_ios_unit_tests",
+    tests = [
+        "//Features/Login/Tests:LoginTests",
+        "//Features/Profile/Tests:ProfileTests",
+        "//Features/Search/Tests:SearchTests",
+    ],
+)
+
+swift_unused_deps(
+    name = "ios_tests_unused_deps",
+    testonly = True,
+    targets = [":all_ios_unit_tests"],
+)
+```
+
+The aspect traverses the suite's `tests`, then the normal dependency attributes
+under those tests. This works best when each runnable Apple test target depends
+on a test-only `swift_library` that owns the test sources.
+
 ## Configuration
 
 Common macro attributes:
@@ -89,11 +171,29 @@ Common macro attributes:
 | `targets` | Top-level Bazel targets whose Swift dependency closure should be analyzed |
 | `report_confidence` | `low` or `high`; minimum confidence level to report and fail tests on. Defaults to `low` |
 | `fix_confidence` | `low` or `high`; minimum confidence level to include in the merged fix plan. Defaults to `high` |
+| `testonly` | Set to `True` when analyzing `swift_test` or other test-only targets |
 
-## Reports And Fixes
+## Fixes And Optional Artifacts
 
-Build the report target when you want standalone report and fix artifacts, or
-before applying changes:
+After reviewing the report from `bazel test`, apply generated fixes with the
+macro-generated fix target:
+
+```sh
+bazel run --config=swift-unused-deps //tools:swift_unused_deps_fix
+```
+
+No separate `bazel build` step is required before this. `bazel run` builds the
+fix target and its generated fix plan before invoking the applier.
+
+Applying fixes mutates source and BUILD files, so it intentionally stays outside
+normal Bazel build/test actions. After applying fixes, rerun the check:
+
+```sh
+bazel test --config=swift-unused-deps //tools:swift_unused_deps
+```
+
+The report target is optional. Build it when you want standalone JSON/text/fix
+artifacts without running the check wrapper or applying fixes:
 
 ```sh
 bazel build --config=swift-unused-deps //tools:swift_unused_deps_report
@@ -112,25 +212,6 @@ For the example target above, inspect the text report with:
 cat bazel-bin/tools/swift_unused_deps_report.swift_unused_deps.report.txt
 ```
 
-After reviewing the report and fix plan, apply generated fixes with the
-macro-generated fix target:
-
-```sh
-bazel run --config=swift-unused-deps //tools:swift_unused_deps_fix
-```
-
-No separate `bazel build` step is required before this either. `bazel run`
-builds the fix target and its generated fix plan before invoking the applier.
-Building the report target first is recommended when you want to inspect the
-planned changes before mutating files.
-
-Applying fixes mutates source and BUILD files, so it intentionally stays outside
-normal Bazel build/test actions. After applying fixes, rerun the check:
-
-```sh
-bazel test --config=swift-unused-deps //tools:swift_unused_deps
-```
-
 ## What It Detects
 
 | Issue | Description | Confidence |
@@ -143,6 +224,10 @@ bazel test --config=swift-unused-deps //tools:swift_unused_deps
 ## Limitations
 
 - Pure Swift targets only. Mixed Swift/ObjC targets emit a warning.
+- `swift_test` and `test_suite` targets are accepted as top-level roots for
+  dependency-closure traversal, but their own test source files are not analyzed
+  unless the Swift sources live in a target that exposes a direct Swift module
+  through `SwiftInfo`, such as a `testonly` `swift_library`.
 - `@_exported import` re-exports are treated as non-removable by fix outputs.
 - Scoped imports like `import struct LibA.Button` are not analyzed reliably end to end yet.
 - Unused Swift `import` statements are fixed only when the analyzer has index store data for per-file source edits.
@@ -215,7 +300,7 @@ tools/swift_unused_deps/tests/helpers/materialize_fixture_workspace.sh \
 
 cd "${FIXTURE_WORKSPACE}"
 
-bazel test --features=swift.index_while_building //:candidate_private_dep_unused_deps
+bazel test --config=swift-unused-deps //:candidate_private_dep_unused_deps
 ```
 
 Run the acceptance tests:

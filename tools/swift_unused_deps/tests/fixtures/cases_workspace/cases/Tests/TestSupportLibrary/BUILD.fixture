@@ -1,0 +1,19 @@
+load("@build_bazel_rules_swift//swift:swift.bzl", "swift_library", "swift_test")
+
+swift_library(
+    name = "TestSupportLibrary",
+    testonly = True,
+    srcs = ["TestSupportLibrary.swift"],
+    visibility = ["//cases:__subpackages__"],
+    deps = [
+        "//cases/Deps/LibA",
+        "//cases/Deps/LibB",
+    ],
+)
+
+swift_test(
+    name = "TestSupportLibraryTests",
+    srcs = ["TestSupportLibraryTests.swift"],
+    visibility = ["//cases:__subpackages__"],
+    deps = [":TestSupportLibrary"],
+)

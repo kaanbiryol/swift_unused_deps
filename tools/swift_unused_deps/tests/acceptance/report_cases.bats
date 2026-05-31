@@ -328,6 +328,131 @@ if issues != {("candidate_private_dep", "TransitiveDep")}:
 PY
 }
 
+@test "swift_test top-level target analyzes swift dependency closure" {
+  run_swift_unused_deps_in_workspace --testonly //cases/Tests/SwiftTestTraversal:TraversalRootTests --json
+
+  assert_status 1
+
+  REPORT_JSON="${output}" python3 - <<'PY'
+import json
+import os
+import sys
+
+report = json.loads(os.environ["REPORT_JSON"])
+results = {result["target"]: result for result in report["results"]}
+expected_targets = {
+    "//cases/Deps/DirectDepWithTransitive:DirectDepWithTransitive",
+    "//cases/Deps/TransitiveDep:TransitiveDep",
+    "//cases/Targets/CandidatePrivateDep:CandidatePrivateDep",
+}
+
+if set(results) != expected_targets:
+    print(f"unexpected targets: {sorted(results)}", file=sys.stderr)
+    sys.exit(1)
+
+issues = {
+    (issue.get("kind"), issue.get("dep_module"))
+    for issue in results["//cases/Targets/CandidatePrivateDep:CandidatePrivateDep"].get("issues", [])
+}
+if issues != {("candidate_private_dep", "TransitiveDep")}:
+    print(f"unexpected issues: {sorted(issues)}", file=sys.stderr)
+    sys.exit(1)
+PY
+}
+
+@test "testonly swift library target is analyzed directly" {
+  run_swift_unused_deps_in_workspace --testonly //cases/Tests/TestSupportLibrary:TestSupportLibrary --json
+
+  assert_status 1
+
+  REPORT_JSON="${output}" python3 - <<'PY'
+import json
+import os
+import sys
+
+report = json.loads(os.environ["REPORT_JSON"])
+results = {result["target"]: result for result in report["results"]}
+target = "//cases/Tests/TestSupportLibrary:TestSupportLibrary"
+expected_targets = {
+    "//cases/Deps/LibA:LibA",
+    "//cases/Deps/LibB:LibB",
+    target,
+}
+
+if set(results) != expected_targets:
+    print(f"unexpected targets: {sorted(results)}", file=sys.stderr)
+    sys.exit(1)
+
+result = results[target]
+clean_modules = {dep.get("module_name") for dep in result.get("clean_deps", [])}
+issues = {
+    (issue.get("kind"), issue.get("dep_module"))
+    for issue in result.get("issues", [])
+}
+source_removals = {
+    removal.get("module_name")
+    for issue in result.get("issues", [])
+    for removal in issue.get("source_import_removals", [])
+}
+
+if result.get("status") != "issues_found":
+    print(f"{target} should have issues_found, got {result.get('status')}", file=sys.stderr)
+    sys.exit(1)
+if clean_modules != {"LibB"}:
+    print(f"{target} clean deps mismatch: {sorted(clean_modules)}", file=sys.stderr)
+    sys.exit(1)
+if issues != {("unused_import", "LibA")}:
+    print(f"{target} issues mismatch: {sorted(issues)}", file=sys.stderr)
+    sys.exit(1)
+if source_removals != {"LibA"}:
+    print(f"{target} should include a source import removal for LibA", file=sys.stderr)
+    sys.exit(1)
+PY
+}
+
+@test "test_suite top-level target analyzes member test dependency closures" {
+  run_swift_unused_deps_in_workspace --testonly //cases/Tests/Suites:AllSwiftTests --json
+
+  assert_status 1
+
+  REPORT_JSON="${output}" python3 - <<'PY'
+import json
+import os
+import sys
+
+report = json.loads(os.environ["REPORT_JSON"])
+results = {result["target"]: result for result in report["results"]}
+expected_targets = {
+    "//cases/Deps/DirectDepWithTransitive:DirectDepWithTransitive",
+    "//cases/Deps/LibA:LibA",
+    "//cases/Deps/LibB:LibB",
+    "//cases/Deps/TransitiveDep:TransitiveDep",
+    "//cases/Targets/CandidatePrivateDep:CandidatePrivateDep",
+    "//cases/Tests/TestSupportLibrary:TestSupportLibrary",
+}
+
+if set(results) != expected_targets:
+    print(f"unexpected targets: {sorted(results)}", file=sys.stderr)
+    sys.exit(1)
+
+candidate_issues = {
+    (issue.get("kind"), issue.get("dep_module"))
+    for issue in results["//cases/Targets/CandidatePrivateDep:CandidatePrivateDep"].get("issues", [])
+}
+if candidate_issues != {("candidate_private_dep", "TransitiveDep")}:
+    print(f"unexpected candidate issues: {sorted(candidate_issues)}", file=sys.stderr)
+    sys.exit(1)
+
+support_issues = {
+    (issue.get("kind"), issue.get("dep_module"))
+    for issue in results["//cases/Tests/TestSupportLibrary:TestSupportLibrary"].get("issues", [])
+}
+if support_issues != {("unused_import", "LibA")}:
+    print(f"unexpected test support issues: {sorted(support_issues)}", file=sys.stderr)
+    sys.exit(1)
+PY
+}
+
 @test "shorthand target pattern reports target dependency closure" {
   run_swift_unused_deps_in_workspace //cases/Targets/CleanTarget --json
 

@@ -52,9 +52,14 @@ run_swift_unused_deps_in_workspace() {
     has_platform="false"
     report_confidence="low"
     fix_confidence="high"
+    testonly="false"
 
     while [[ $# -gt 0 ]]; do
       case "$1" in
+        --testonly)
+          testonly="true"
+          shift
+          ;;
         --build-config)
           build_config="$2"
           shift 2
@@ -154,6 +159,9 @@ run_swift_unused_deps_in_workspace() {
       printf "    name = \"%s\",\n" "${analysis_name}"
       printf "    report_confidence = \"%s\",\n" "${report_confidence}"
       printf "    fix_confidence = \"%s\",\n" "${fix_confidence}"
+      if [[ "${testonly}" == "true" ]]; then
+        printf "%s\n" "    testonly = True,"
+      fi
       printf "    targets = [\n"
       for label in "${target_labels[@]}"; do
         printf "        \"%s\",\n" "${label}"
@@ -230,6 +238,18 @@ assert_stderr_not_contains() {
   local unexpected="$1"
   if [[ "${stderr}" == *"${unexpected}"* ]]; then
     echo "expected stderr not to contain: ${unexpected}" >&2
+    echo "--- stderr ---" >&2
+    echo "${stderr}" >&2
+    return 1
+  fi
+}
+
+assert_combined_output_contains() {
+  local expected="$1"
+  if [[ "${output}${stderr}" != *"${expected}"* ]]; then
+    echo "expected command output to contain: ${expected}" >&2
+    echo "--- stdout ---" >&2
+    echo "${output}" >&2
     echo "--- stderr ---" >&2
     echo "${stderr}" >&2
     return 1
