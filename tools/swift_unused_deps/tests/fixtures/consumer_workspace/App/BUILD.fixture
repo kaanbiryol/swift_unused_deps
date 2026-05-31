@@ -4,5 +4,6 @@ swift_library(
     name = "App",
     srcs = ["App.swift"],
     module_name = "App",
+    visibility = ["//visibility:public"],
     deps = ["//Lib"],
 )

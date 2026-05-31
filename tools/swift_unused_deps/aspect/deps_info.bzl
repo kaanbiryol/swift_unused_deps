@@ -3,13 +3,8 @@
 Propagates through deps and private_deps of swift_library targets and emits
 per-target metadata for analysis.
 
-Enable this aspect from Bazel, then run the Swift analyzer over the produced
-metadata and index store:
-
-    bazel build //App/... \
-        --features=swift.index_while_building \
-        --aspects=//tools/swift_unused_deps:defs.bzl%swift_unused_deps_aspect \
-        --output_groups=swift_unused_deps_metadata
+The public swift_unused_deps macro wires this aspect into Bazel-native report,
+test, and fix targets.
 """
 
 load("@build_bazel_rules_swift//swift:providers.bzl", "SwiftInfo")
@@ -127,6 +122,7 @@ def _passthrough_transitive_modules(ctx):
     """
     transitive_sets = []
     transitive_metadata_sets = []
+    transitive_source_sets = []
     transitive_report_sets = []
     transitive_fix_high_sets = []
     transitive_fix_low_sets = []
@@ -138,6 +134,7 @@ def _passthrough_transitive_modules(ctx):
                 if SwiftDepsInfo in dep:
                     transitive_sets.append(dep[SwiftDepsInfo].transitive_modules)
                     transitive_metadata_sets.append(dep[SwiftDepsInfo].transitive_metadata_files)
+                    transitive_source_sets.append(dep[SwiftDepsInfo].transitive_source_files)
                     transitive_report_sets.append(dep[SwiftDepsInfo].transitive_report_files)
                     transitive_fix_high_sets.append(dep[SwiftDepsInfo].transitive_fix_high_files)
                     transitive_fix_low_sets.append(dep[SwiftDepsInfo].transitive_fix_low_files)
@@ -150,12 +147,14 @@ def _passthrough_transitive_modules(ctx):
                             direct_dep_modules.append(module.name)
     if transitive_sets or transitive_metadata_sets or transitive_report_sets:
         transitive_metadata_files = depset(transitive = transitive_metadata_sets)
+        transitive_source_files = depset(transitive = transitive_source_sets)
         transitive_report_files = depset(transitive = transitive_report_sets)
         transitive_fix_high_files = depset(transitive = transitive_fix_high_sets)
         transitive_fix_low_files = depset(transitive = transitive_fix_low_sets)
         return [
             SwiftDepsInfo(
                 transitive_metadata_files = transitive_metadata_files,
+                transitive_source_files = transitive_source_files,
                 transitive_report_files = transitive_report_files,
                 transitive_fix_high_files = transitive_fix_high_files,
                 transitive_fix_low_files = transitive_fix_low_files,
@@ -189,6 +188,7 @@ def _swift_deps_aspect_impl(target, ctx):
     self_module_tuple = "{}={}".format(module_name, _label_string(ctx.label))
     transitive_sets = [depset([self_module_tuple])]
     transitive_metadata_sets = []
+    transitive_source_sets = []
     transitive_report_sets = []
     transitive_fix_high_sets = []
     transitive_fix_low_sets = []
@@ -199,11 +199,14 @@ def _swift_deps_aspect_impl(target, ctx):
                 if SwiftDepsInfo in dep:
                     transitive_sets.append(dep[SwiftDepsInfo].transitive_modules)
                     transitive_metadata_sets.append(dep[SwiftDepsInfo].transitive_metadata_files)
+                    transitive_source_sets.append(dep[SwiftDepsInfo].transitive_source_files)
                     transitive_report_sets.append(dep[SwiftDepsInfo].transitive_report_files)
                     transitive_fix_high_sets.append(dep[SwiftDepsInfo].transitive_fix_high_files)
                     transitive_fix_low_sets.append(dep[SwiftDepsInfo].transitive_fix_low_files)
                     dependency_indexstore_sets.append(dep[SwiftDepsInfo].direct_indexstore_files)
     transitive_modules = depset(transitive = transitive_sets)
+    dependency_metadata_files = depset(transitive = transitive_metadata_sets).to_list()
+    dependency_source_files = depset(transitive = transitive_source_sets).to_list()
     dependency_indexstore_files = depset(transitive = dependency_indexstore_sets).to_list()
 
     # Record declared deps, deduplicating by module name (a module can
@@ -316,6 +319,7 @@ def _swift_deps_aspect_impl(target, ctx):
     analyzer_args.add("analyze-target")
     analyzer_args.add("--metadata-file")
     analyzer_args.add(metadata_file)
+    analyzer_args.add_all(dependency_metadata_files, before_each = "--dependency-metadata-file")
     analyzer_args.add("--bazel-bin")
     analyzer_args.add(".")
     if indexstore_directory:
@@ -331,7 +335,7 @@ def _swift_deps_aspect_impl(target, ctx):
     analyzer_args.add("--fix-low-output")
     analyzer_args.add(fix_low_file)
 
-    analyzer_inputs = [metadata_file] + source_inputs
+    analyzer_inputs = [metadata_file] + source_inputs + dependency_metadata_files + dependency_source_files
     if indexstore_directory:
         analyzer_inputs.append(indexstore_directory)
     analyzer_inputs.extend(dependency_indexstore_files)
@@ -346,6 +350,7 @@ def _swift_deps_aspect_impl(target, ctx):
     )
 
     transitive_metadata_files = depset([metadata_file], transitive = transitive_metadata_sets)
+    transitive_source_files = depset(source_inputs, transitive = transitive_source_sets)
     transitive_report_files = depset([report_file], transitive = transitive_report_sets)
     transitive_fix_high_files = depset([fix_high_file], transitive = transitive_fix_high_sets)
     transitive_fix_low_files = depset([fix_low_file], transitive = transitive_fix_low_sets)
@@ -354,6 +359,7 @@ def _swift_deps_aspect_impl(target, ctx):
     return [
         SwiftDepsInfo(
             transitive_metadata_files = transitive_metadata_files,
+            transitive_source_files = transitive_source_files,
             transitive_report_files = transitive_report_files,
             transitive_fix_high_files = transitive_fix_high_files,
             transitive_fix_low_files = transitive_fix_low_files,

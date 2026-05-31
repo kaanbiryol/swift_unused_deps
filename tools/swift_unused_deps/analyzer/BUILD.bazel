@@ -4,7 +4,6 @@ swift_library(
     name = "SwiftUnusedDepsLib",
     srcs = [
         "Sources/AnalysisModels.swift",
-        "Sources/AnalysisRunner.swift",
         "Sources/Analyzer.swift",
         "Sources/BatchAnalyzer.swift",
         "Sources/Buildozer.swift",

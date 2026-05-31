@@ -4,7 +4,6 @@ load "test_helper.bash"
 
 setup_file() {
   make_fixture_workspace "cases_workspace"
-  build_swift_unused_deps_cli
   export_fixture_workspace
 }
 

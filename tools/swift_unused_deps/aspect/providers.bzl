@@ -9,6 +9,7 @@ SwiftDepsInfo = provider(
     """,
     fields = {
         "transitive_metadata_files": "Depset of metadata JSON files for this target and its transitive Swift deps.",
+        "transitive_source_files": "Depset of Swift source files for this target and its transitive Swift deps.",
         "transitive_report_files": "Depset of JSON report files for this target and its transitive Swift deps.",
         "transitive_fix_high_files": "Depset of high-confidence fix JSON files for this target and its transitive Swift deps.",
         "transitive_fix_low_files": "Depset of all fix JSON files for this target and its transitive Swift deps.",

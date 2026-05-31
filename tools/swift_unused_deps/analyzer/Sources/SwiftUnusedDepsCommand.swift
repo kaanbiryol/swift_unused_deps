@@ -1,233 +1,40 @@
 import ArgumentParser
 import Foundation
 
-struct SwiftUnusedDepsAnalyzeCommand: ParsableCommand {
-    static let configuration = CommandConfiguration(
-        commandName: "analyze",
-        abstract: "Analyze already-produced swift_unused_deps metadata and Swift index-store artifacts."
-    )
+struct BazelInfoProvider {
+    private let lookupImpl: (String, URL) -> String?
 
-    @Flag(help: .hidden)
-    var json = false
-
-    @Argument(help: "Bazel target pattern to analyze.")
-    var targetPattern: String?
-
-    @Option(name: .customLong("fix-output"), help: "Write a structured JSON fix file.")
-    var fixOutput: String?
-
-    @Option(
-        name: .customLong("min-report-confidence"),
-        help: .hidden
-    )
-    var minReportConfidence: String?
-
-    @Option(
-        name: .customLong("min-fix-confidence"),
-        help: "Minimum confidence level included in --fix-output. Use: low, high. Defaults to high."
-    )
-    var minFixConfidence: String?
-
-    @Option(help: .hidden)
-    var extraSystemModules: String?
-
-    @Option(help: .hidden)
-    var metadataRoot: String?
-
-    @Option(help: .hidden)
-    var indexStorePath: String?
-
-    @Option(help: .hidden)
-    var filter: String?
-
-    @Option(help: .hidden)
-    var workspaceDirectory: String?
-
-    @Option(
-        name: .customLong("report-output"),
-        help: "Write a JSON analysis report to a file while still printing the text report."
-    )
-    var reportOutput: String?
-
-    @Option(help: .hidden)
-    var exitCodeOutput: String?
-
-    init() {}
-
-    func validate() throws {
-        try SwiftUnusedDepsCommand.validateNonEmpty(metadataRoot, option: "--metadata-root")
-        try SwiftUnusedDepsCommand.validateNonEmpty(targetPattern, option: "TARGET_PATTERN")
-        try SwiftUnusedDepsCommand.validateNonEmpty(filter, option: "--filter")
-        try SwiftUnusedDepsCommand.validateNonEmpty(workspaceDirectory, option: "--workspace-directory")
-        try SwiftUnusedDepsCommand.validateNonEmpty(fixOutput, option: "--fix-output")
-        try SwiftUnusedDepsCommand.validateNonEmpty(reportOutput, option: "--report-output")
-        try SwiftUnusedDepsCommand.validateNonEmpty(exitCodeOutput, option: "--exit-code-output")
-        if let targetPattern, let filter, targetPattern != filter {
-            throw ValidationError("Provide either TARGET_PATTERN or --filter, not both.")
-        }
+    init(_ lookup: @escaping (String, URL) -> String?) {
+        self.lookupImpl = lookup
     }
 
-    func run() throws {
-        let reportConfidence = try SwiftUnusedDepsCommand.confidence(
-            minReportConfidence ?? "low",
-            option: "--min-report-confidence"
-        )
-        let fixConfidence = try SwiftUnusedDepsCommand.fixConfidence(
-            minFixConfidence: minFixConfidence
-        )
-
-        let run = try SwiftUnusedDepsCommand.runAnalysis(AnalysisInvocation(
-            targetPattern: targetPattern,
-            filter: filter,
-            workspaceDirectory: workspaceDirectory,
-            metadataRoot: metadataRoot,
-            indexStorePath: indexStorePath,
-            extraSystemModules: extraSystemModules
-        ))
-        SwiftUnusedDepsCommand.printWarnings(run.output)
-        try SwiftUnusedDepsCommand.validateFoundMetadata(run.output, metadataRoot: run.metadataRoot)
-
-        let jsonReport = Report.formatJSON(results: run.output.results, minConfidence: reportConfidence)
-        if let fixOutput {
-            let plan = FixPlan.from(results: run.output.results, minConfidence: fixConfidence)
-            try SwiftUnusedDepsCommand.write(FixPlan.formatJSON(plan), to: fixOutput)
-        }
-        if let reportOutput {
-            try SwiftUnusedDepsCommand.write(jsonReport, to: reportOutput)
-        }
-
-        let rendered = json
-            ? jsonReport
-            : Report.formatText(
-                results: run.output.results,
-                minConfidence: reportConfidence,
-                includesFixPlanHint: fixOutput == nil
-            )
-
-        let exitCode = SwiftUnusedDepsCommand.analysisExitCode(
-            output: run.output,
-            minConfidence: reportConfidence
-        )
-
-        print(rendered)
-
-        if let exitCodeOutput {
-            try SwiftUnusedDepsCommand.write("\(exitCode)\n", to: exitCodeOutput)
-            return
-        }
-
-        if exitCode != 0 {
-            throw ExitCode(exitCode)
-        }
-    }
-}
-
-struct SwiftUnusedDepsFixCommand: ParsableCommand {
-    static let configuration = CommandConfiguration(
-        commandName: "fix",
-        abstract: "Analyze and apply swift_unused_deps fixes to the workspace."
-    )
-
-    @Argument(help: "Bazel target pattern to analyze and fix.")
-    var targetPattern: String?
-
-    @Option(name: .customLong("fix-output"), help: "Write the structured JSON fix file before applying it.")
-    var fixOutput: String?
-
-    @Option(
-        name: .customLong("report-output"),
-        help: "Write a JSON analysis report to a file before applying fixes."
-    )
-    var reportOutput: String?
-
-    @Option(name: .customLong("min-report-confidence"), help: .hidden)
-    var minReportConfidence: String?
-
-    @Option(
-        name: .customLong("min-fix-confidence"),
-        help: "Minimum confidence level to apply. Use: low, high. Defaults to high."
-    )
-    var minFixConfidence: String?
-
-    @Option(help: .hidden)
-    var extraSystemModules: String?
-
-    @Option(help: .hidden)
-    var metadataRoot: String?
-
-    @Option(help: .hidden)
-    var indexStorePath: String?
-
-    @Option(help: .hidden)
-    var filter: String?
-
-    @Option(help: .hidden)
-    var workspaceDirectory: String?
-
-    init() {}
-
-    func validate() throws {
-        try SwiftUnusedDepsCommand.validateNonEmpty(targetPattern, option: "TARGET_PATTERN")
-        try SwiftUnusedDepsCommand.validateNonEmpty(filter, option: "--filter")
-        try SwiftUnusedDepsCommand.validateNonEmpty(workspaceDirectory, option: "--workspace-directory")
-        try SwiftUnusedDepsCommand.validateNonEmpty(fixOutput, option: "--fix-output")
-        try SwiftUnusedDepsCommand.validateNonEmpty(reportOutput, option: "--report-output")
-        if let targetPattern, let filter, targetPattern != filter {
-            throw ValidationError("Provide either TARGET_PATTERN or --filter, not both.")
-        }
+    func lookup(_ key: String, currentDirectory: URL) -> String? {
+        lookupImpl(key, currentDirectory)
     }
 
-    func run() throws {
-        let reportConfidence = try SwiftUnusedDepsCommand.confidence(
-            minReportConfidence ?? "low",
-            option: "--min-report-confidence"
-        )
-        let fixConfidence = try SwiftUnusedDepsCommand.fixConfidence(
-            minFixConfidence: minFixConfidence
-        )
+    static let process = BazelInfoProvider { key, currentDirectory in
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
+        process.arguments = ["bazel", "info", key]
+        process.currentDirectoryURL = currentDirectory
 
-        let run = try SwiftUnusedDepsCommand.runAnalysis(AnalysisInvocation(
-            targetPattern: targetPattern,
-            filter: filter,
-            workspaceDirectory: workspaceDirectory,
-            metadataRoot: metadataRoot,
-            indexStorePath: indexStorePath,
-            extraSystemModules: extraSystemModules
-        ))
-        SwiftUnusedDepsCommand.printWarnings(run.output)
-        try SwiftUnusedDepsCommand.validateFoundMetadata(run.output, metadataRoot: run.metadataRoot)
+        let stdout = Pipe()
+        process.standardOutput = stdout
+        process.standardError = FileHandle.nullDevice
 
-        let textReport = Report.formatText(
-            results: run.output.results,
-            minConfidence: reportConfidence,
-            includesFixPlanHint: false
-        )
-        print(textReport)
-
-        if let reportOutput {
-            try SwiftUnusedDepsCommand.write(
-                Report.formatJSON(results: run.output.results, minConfidence: reportConfidence),
-                to: reportOutput
-            )
+        do {
+            try process.run()
+            process.waitUntilExit()
+        } catch {
+            return nil
         }
 
-        let exitCode = SwiftUnusedDepsCommand.analysisExitCode(
-            output: run.output,
-            minConfidence: reportConfidence
-        )
-        if exitCode == 2 {
-            throw ExitCode(exitCode)
-        }
-
-        let plan = FixPlan.from(results: run.output.results, minConfidence: fixConfidence)
-        if let fixOutput {
-            try SwiftUnusedDepsCommand.write(FixPlan.formatJSON(plan), to: fixOutput)
-        }
-
-        let result = try FixPlanApplier.apply(plan, workspaceDirectory: run.workspaceDirectory)
-        if result.applied {
-            printErr("Done: \(result.buildFixCount) BUILD fix(es) and \(result.sourceImportRemovalCount) source import removal(s) applied.")
-        }
+        guard process.terminationStatus == 0 else { return nil }
+        let data = stdout.fileHandleForReading.readDataToEndOfFile()
+        let value = String(data: data, encoding: .utf8)?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let value, !value.isEmpty else { return nil }
+        return value
     }
 }
 
@@ -286,6 +93,9 @@ struct SwiftUnusedDepsAnalyzeTargetCommand: ParsableCommand {
     @Option(help: .hidden)
     var metadataFile: String?
 
+    @Option(name: .customLong("dependency-metadata-file"), help: .hidden)
+    var dependencyMetadataFiles: [String] = []
+
     @Option(help: .hidden)
     var bazelBin: String = "."
 
@@ -311,6 +121,9 @@ struct SwiftUnusedDepsAnalyzeTargetCommand: ParsableCommand {
 
     func validate() throws {
         try SwiftUnusedDepsCommand.validateNonEmpty(metadataFile, option: "--metadata-file")
+        try dependencyMetadataFiles.forEach {
+            try SwiftUnusedDepsCommand.validateNonEmpty($0, option: "--dependency-metadata-file")
+        }
         try SwiftUnusedDepsCommand.validateNonEmpty(bazelBin, option: "--bazel-bin")
         try SwiftUnusedDepsCommand.validateNonEmpty(indexStorePath, option: "--index-store-path")
         try SwiftUnusedDepsCommand.validateNonEmpty(reportOutput, option: "--report-output")
@@ -322,13 +135,39 @@ struct SwiftUnusedDepsAnalyzeTargetCommand: ParsableCommand {
         guard let metadataFile, let reportOutput, let fixOutput, let fixLowOutput else {
             throw ValidationError("analyze-target requires --metadata-file, --report-output, --fix-output, and --fix-low-output.")
         }
+        let primaryMetadataFile = URL(fileURLWithPath: metadataFile)
+        var metadataWarnings: [String] = []
+        let includedLabels = MetadataArtifactDiscovery
+            .loadMetadata(from: primaryMetadataFile, warnings: &metadataWarnings)
+            .map { Set([$0.target.label]) }
+        if includedLabels == nil {
+            let output = BatchAnalyzer.Output(results: [], warnings: metadataWarnings)
+            SwiftUnusedDepsCommand.printWarnings(output)
+            try SwiftUnusedDepsCommand.write(
+                Report.formatJSON(results: output.results, minConfidence: .low),
+                to: reportOutput
+            )
+            try SwiftUnusedDepsCommand.write(
+                FixPlan.formatJSON(FixPlan(sourceImportRemovals: [], buildEdits: [])),
+                to: fixOutput
+            )
+            try SwiftUnusedDepsCommand.write(
+                FixPlan.formatJSON(FixPlan(sourceImportRemovals: [], buildEdits: [])),
+                to: fixLowOutput
+            )
+            return
+        }
+
         let output = BatchAnalyzer.analyze(
-            metadataFiles: [URL(fileURLWithPath: metadataFile)],
+            metadataFiles: [primaryMetadataFile] + dependencyMetadataFiles.map {
+                URL(fileURLWithPath: $0)
+            },
             options: .init(
                 bazelBin: bazelBin,
                 indexStorePath: indexStorePath,
                 dependencyIndexStorePaths: dependencyIndexStorePaths,
                 extraSystemModules: SwiftUnusedDepsCommand.parseExtraSystemModules(extraSystemModules),
+                includedLabels: includedLabels,
                 labelConverter: .identity,
                 workspaceDirectory: nil
             )
@@ -441,8 +280,6 @@ public struct SwiftUnusedDepsCommand: ParsableCommand {
         commandName: "swift_unused_deps",
         abstract: "Detect unused and missing direct Bazel deps for Swift targets.",
         subcommands: [
-            SwiftUnusedDepsAnalyzeCommand.self,
-            SwiftUnusedDepsFixCommand.self,
             SwiftUnusedDepsApplyCommand.self,
             SwiftUnusedDepsAnalyzeTargetCommand.self,
             SwiftUnusedDepsMergeReportsCommand.self,
@@ -469,23 +306,22 @@ public struct SwiftUnusedDepsCommand: ParsableCommand {
         environment: [String: String] = ProcessInfo.processInfo.environment,
         bazelInfo: BazelInfoProvider = .process
     ) -> URL? {
-        AnalysisRunner.workspaceDirectory(environment: environment, bazelInfo: bazelInfo)
-    }
-
-    static func runAnalysis(_ invocation: AnalysisInvocation) throws -> AnalysisRun {
-        try AnalysisRunner.run(invocation)
+        if let workingDirectory = environment["BUILD_WORKING_DIRECTORY"],
+           let workspace = bazelInfo.lookup(
+               "workspace",
+               currentDirectory: URL(fileURLWithPath: workingDirectory, isDirectory: true)
+           ) {
+            return URL(fileURLWithPath: workspace, isDirectory: true)
+        }
+        if let workspace = environment["BUILD_WORKSPACE_DIRECTORY"] {
+            return URL(fileURLWithPath: workspace, isDirectory: true)
+        }
+        return nil
     }
 
     static func printWarnings(_ output: BatchAnalyzer.Output) {
         for warning in output.warnings {
             printErr("WARNING: \(warning)")
-        }
-    }
-
-    static func validateFoundMetadata(_ output: BatchAnalyzer.Output, metadataRoot: String) throws {
-        if output.results.isEmpty && output.warnings.isEmpty {
-            printErr("ERROR: No metadata files found under \(metadataRoot).")
-            throw ExitCode(2)
         }
     }
 
@@ -496,28 +332,10 @@ public struct SwiftUnusedDepsCommand: ParsableCommand {
         return confidence
     }
 
-    static func fixConfidence(minFixConfidence: String?) throws -> Confidence {
-        let rawValue = minFixConfidence ?? "high"
-        return try confidence(rawValue, option: "--min-fix-confidence")
-    }
-
     static func validateNonEmpty(_ value: String?, option: String) throws {
         if let value, value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             throw ValidationError("\(option) cannot be empty.")
         }
-    }
-
-    static func analysisExitCode(
-        output: BatchAnalyzer.Output,
-        minConfidence: Confidence
-    ) -> Int32 {
-        if !output.warnings.isEmpty {
-            return 2
-        }
-        let hasIssues = output.results.contains { result in
-            result.issues.contains { $0.confidence >= minConfidence }
-        }
-        return hasIssues ? 1 : 0
     }
 
     static func analysisExitCode(

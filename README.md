@@ -4,11 +4,18 @@
 
 Detect unused and missing direct Bazel dependencies for Swift targets.
 
-## Setup
+## Quick Start
 
-### 1. Add the dependency
+### Prerequisites
 
-```python
+- Bazel 9+ with [rules_swift](https://github.com/bazelbuild/rules_swift) 3.6+
+
+### 1. Add the dependency with a Git override
+
+Add the `bazel_dep` declaration and a root-module `git_override` that tells Bazel where
+to fetch the module to your `MODULE.bazel`:
+
+```starlark
 bazel_dep(name = "swift_unused_deps", version = "0.1.0")
 
 git_override(
@@ -24,15 +31,15 @@ git_override(
 build:swift-unused-deps --features=swift.index_while_building
 ```
 
-### Prerequisites
+> Unused Swift `import` edits require index store data.
 
-- Bazel 9+ with [rules_swift](https://github.com/bazelbuild/rules_swift) 3.6+
+### 3. Add an analysis target
 
-## Usage
+Create a BUILD file for the analysis target, for example `tools/BUILD.bazel`.
+Point `targets` at the app, test, or package-level targets whose Swift
+dependency closure should be checked:
 
-Create a BUILD file for the analysis target, for example `tools/BUILD.bazel`:
-
-```python
+```starlark
 load("@swift_unused_deps//tools/swift_unused_deps:defs.bzl", "swift_unused_deps")
 
 swift_unused_deps(
@@ -43,7 +50,7 @@ swift_unused_deps(
 )
 ```
 
-This creates three targets:
+The macro creates three targets:
 
 | Target | Command | Use |
 |--------|---------|-----|
@@ -51,11 +58,16 @@ This creates three targets:
 | `:swift_unused_deps_report` | `bazel build` | Emit merged report and fix artifacts |
 | `:swift_unused_deps_fix` | `bazel run` | Apply the generated fix plan |
 
+### 4. Run the check
+
 Run the check like any other Bazel test:
 
 ```sh
 bazel test --config=swift-unused-deps //tools:swift_unused_deps
 ```
+
+> No separate `bazel build` step is required before this. The test target builds
+> and merges the analysis artifacts as part of `bazel test`.
 
 For iOS or other configured builds, pass the platform to Bazel:
 
@@ -68,7 +80,20 @@ bazel test --config=swift-unused-deps \
 The test prints a merged text report and fails when configured findings are
 present.
 
-## Report And Fix Targets
+## Configuration
+
+Common macro attributes:
+
+| Attribute | Use |
+|-----------|-----|
+| `targets` | Top-level Bazel targets whose Swift dependency closure should be analyzed |
+| `report_confidence` | `low` or `high`; minimum confidence level to report and fail tests on. Defaults to `low` |
+| `fix_confidence` | `low` or `high`; minimum confidence level to include in the merged fix plan. Defaults to `high` |
+
+## Reports And Fixes
+
+Build the report target when you want standalone report and fix artifacts, or
+before applying changes:
 
 ```sh
 bazel build --config=swift-unused-deps //tools:swift_unused_deps_report
@@ -81,19 +106,23 @@ This produces:
 - `*.swift_unused_deps.fix.json`
 - `*.swift_unused_deps.exit_code`
 
-Common macro attributes:
+For the example target above, inspect the text report with:
 
-| Attribute | Use |
-|-----------|-----|
-| `targets` | Top-level Bazel targets whose Swift dependency closure should be analyzed |
-| `report_confidence` | `low` or `high`; minimum confidence level to report and fail tests on. Defaults to `low` |
-| `fix_confidence` | `low` or `high`; minimum confidence level to include in the merged fix plan. Defaults to `high` |
+```sh
+cat bazel-bin/tools/swift_unused_deps_report.swift_unused_deps.report.txt
+```
 
-Apply generated fixes with the macro-generated fix target:
+After reviewing the report and fix plan, apply generated fixes with the
+macro-generated fix target:
 
 ```sh
 bazel run --config=swift-unused-deps //tools:swift_unused_deps_fix
 ```
+
+No separate `bazel build` step is required before this either. `bazel run`
+builds the fix target and its generated fix plan before invoking the applier.
+Building the report target first is recommended when you want to inspect the
+planned changes before mutating files.
 
 Applying fixes mutates source and BUILD files, so it intentionally stays outside
 normal Bazel build/test actions. After applying fixes, rerun the check:
@@ -102,10 +131,33 @@ normal Bazel build/test actions. After applying fixes, rerun the check:
 bazel test --config=swift-unused-deps //tools:swift_unused_deps
 ```
 
-## Low-Level Output Groups
+## What It Detects
 
-The aspect also exposes per-target artifacts through output groups for debugging
-and custom integrations:
+| Issue | Description | Confidence |
+|-------|-------------|------------|
+| **Unused dep** | Declared in BUILD but module never loaded by compiler | High |
+| **Unused import** | Imported in Swift source but no symbols from that module are referenced anywhere in the target | High |
+| **Missing direct dep** | Imported in source but not declared, only reachable transitively | High if directly imported, low if indirect |
+| **private_deps candidate** | Loaded by compiler but not explicitly imported in source | Low |
+
+## Limitations
+
+- Pure Swift targets only. Mixed Swift/ObjC targets emit a warning.
+- `@_exported import` re-exports are treated as non-removable by fix outputs.
+- Scoped imports like `import struct LibA.Button` are not analyzed reliably end to end yet.
+- Unused Swift `import` statements are fixed only when the analyzer has index store data for per-file source edits.
+- Runtime resource usage is not analyzed today. Calls such as `UIImage(named:)`, `Image(_:)`,
+  `Color(_:)`, `Font.custom`, `Bundle` resource lookups, and localized string lookups may depend
+  on resources from another Bazel target without creating Swift symbol usage. Review resource
+  dependencies manually before applying BUILD fixes.
+
+## Advanced Usage
+
+Normal CI and local checks should use the `swift_unused_deps` macro. The lower
+level output groups below are useful for debugging generated artifacts or
+building custom integrations.
+
+The aspect exposes per-target artifacts through output groups:
 
 ```sh
 bazel build --features=swift.index_while_building \
@@ -121,31 +173,7 @@ Available output groups:
 - `swift_unused_deps_fix_low`
 - `swift_unused_deps_metadata`
 
-## Debug CLI
-
-The Swift executable is used by Bazel actions. `analyze --metadata-root` remains
-available only for debugging already-produced metadata:
-
-```sh
-bazel run @swift_unused_deps//:swift_unused_deps -- analyze //apps/Example:ExampleApp \
-  --metadata-root /path/to/bazel-bin
-```
-
-Use `--min-fix-confidence low` with `analyze --fix-output` or `fix` to include
-low-confidence fixes.
-
-Normal CI and local checks should use the `swift_unused_deps` macro instead.
-
-## What It Detects
-
-| Issue | Description | Confidence |
-|-------|-------------|------------|
-| **Unused dep** | Declared in BUILD but module never loaded by compiler | High |
-| **Unused import** | Imported in Swift source but no symbols from that module are referenced anywhere in the target | High |
-| **Missing direct dep** | Imported in source but not declared, only reachable transitively | High if directly imported, low if indirect |
-| **private_deps candidate** | Loaded by compiler but not explicitly imported in source | Low |
-
-## How It Works
+## Internals
 
 The `swift_unused_deps` macro creates test, report, and fix targets. Under the
 macro, Bazel rules apply an aspect to the requested targets. The aspect reads
@@ -154,23 +182,24 @@ actions. The aggregation rule consumes the aspect's `SwiftDepsInfo` provider
 directly and merges declared report/fix artifacts without invoking Bazel from
 inside the analyzer.
 
-## Limitations
-
-- Pure Swift targets only. Mixed Swift/ObjC targets emit a warning.
-- `@_exported import` re-exports are treated as non-removable by fix outputs.
-- Scoped imports like `import struct LibA.Button` are not analyzed reliably end to end yet.
-- Unused Swift `import` statements are fixed only when the analyzer has index store data for per-file source edits.
-- Runtime resource usage is not analyzed today. Calls such as `UIImage(named:)`, `Image(_:)`,
-  `Color(_:)`, `Font.custom`, `Bundle` resource lookups, and localized string lookups may depend
-  on resources from another Bazel target without creating Swift symbol usage. Review resource
-  dependencies manually before applying BUILD fixes.
-
 ## Development
 
 Run the unit tests:
 
 ```sh
 bazel test //tools/swift_unused_deps/tests:swift_unused_deps_tests
+```
+
+Run the full local test suite:
+
+```sh
+bazel test //...
+```
+
+Check Bazel formatting:
+
+```sh
+buildifier -mode=check $(git ls-files '*.bazel' '*.bzl' '*.fixture')
 ```
 
 Try the fixture workspace:
@@ -187,6 +216,12 @@ tools/swift_unused_deps/tests/helpers/materialize_fixture_workspace.sh \
 cd "${FIXTURE_WORKSPACE}"
 
 bazel test --features=swift.index_while_building //:candidate_private_dep_unused_deps
+```
+
+Run the acceptance tests:
+
+```sh
+bats tools/swift_unused_deps/tests/acceptance
 ```
 
 ## License

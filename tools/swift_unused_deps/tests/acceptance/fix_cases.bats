@@ -4,7 +4,6 @@ load "test_helper.bash"
 
 setup_file() {
   make_fixture_workspace "cases_workspace"
-  build_swift_unused_deps_cli
   export_fixture_workspace
 }
 
@@ -18,7 +17,7 @@ teardown_file() {
   assert_file_contains "cases/Targets/UnusedImport/BUILD.bazel" "//cases/Deps/LibA"
   assert_file_contains "cases/Targets/UnusedImport/BUILD.bazel" "//cases/Deps/LibB"
 
-  run_swift_unused_deps_in_workspace //cases/Targets/UnusedImport:UnusedImport --direct-fix --min-report-confidence high
+  run_swift_unused_deps_in_workspace //cases/Targets/UnusedImport:UnusedImport --apply-fix-plan --min-report-confidence high
 
   assert_status 0
   assert_output_contains "0 issues found."
@@ -166,7 +165,7 @@ teardown_file() {
   assert_file_contains "cases/Targets/UnusedTransitiveImport/BUILD.bazel" "//cases/Deps/DirectDepWithTransitive"
   assert_file_not_contains "cases/Targets/UnusedTransitiveImport/BUILD.bazel" "//cases/Deps/TransitiveDep"
 
-  run_swift_unused_deps_in_workspace //cases/Targets/UnusedTransitiveImport:UnusedTransitiveImport --direct-fix --min-report-confidence high
+  run_swift_unused_deps_in_workspace //cases/Targets/UnusedTransitiveImport:UnusedTransitiveImport --apply-fix-plan --min-report-confidence high
 
   assert_status 0
   assert_output_contains "0 issues found."
