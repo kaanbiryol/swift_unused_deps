@@ -10,11 +10,81 @@ test, and fix targets.
 load("@build_bazel_rules_swift//swift:providers.bzl", "SwiftInfo")
 load(":providers.bzl", "SwiftDepsInfo")
 
+_DEPS_ATTR_TAG_PREFIX = "swift_unused_deps.deps_attr="
+_FIX_TARGET_TAG_PREFIX = "swift_unused_deps.fix_target="
+_IDENTIFIER_START_CHARS = "_abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
+_IDENTIFIER_CHARS = _IDENTIFIER_START_CHARS + "0123456789"
+_SIMPLE_TARGET_NAME_CHARS = _IDENTIFIER_CHARS + ".+-"
+
 def _label_string(label):
     value = str(label)
     if value.startswith("@@//"):
         return value[2:]
     return value
+
+def _tag_value(tags, prefix):
+    result = None
+    for tag in tags:
+        if not tag.startswith(prefix):
+            continue
+        value = tag[len(prefix):]
+        if not value:
+            fail("Tag '{}' must include a value.".format(prefix[:-1]))
+        if result != None and result != value:
+            fail("Conflicting '{}' tags: '{}' and '{}'.".format(prefix[:-1], result, value))
+        result = value
+    return result
+
+def _is_valid_identifier(value):
+    if not value or value[0] not in _IDENTIFIER_START_CHARS:
+        return False
+    for i in range(len(value)):
+        if value[i] not in _IDENTIFIER_CHARS:
+            return False
+    return True
+
+def _is_simple_target_name(value):
+    if not value:
+        return False
+    for i in range(len(value)):
+        if value[i] not in _SIMPLE_TARGET_NAME_CHARS:
+            return False
+    return True
+
+def _same_package_label(analyzed_label, target_name):
+    package_label = analyzed_label.split(":")[0]
+    return "{}:{}".format(package_label, target_name)
+
+def _build_edit_metadata(ctx):
+    analyzed_label = _label_string(ctx.label)
+    tags = ctx.rule.attr.tags if hasattr(ctx.rule.attr, "tags") else []
+
+    fix_target_name = _tag_value(tags, _FIX_TARGET_TAG_PREFIX)
+    if fix_target_name != None:
+        if not _is_simple_target_name(fix_target_name):
+            fail(
+                "Invalid swift_unused_deps.fix_target value '{}' on {}. Use a simple same-package target name.".format(
+                    fix_target_name,
+                    analyzed_label,
+                ),
+            )
+        fix_target = _same_package_label(analyzed_label, fix_target_name)
+    else:
+        fix_target = analyzed_label
+
+    deps_attr = _tag_value(tags, _DEPS_ATTR_TAG_PREFIX) or "deps"
+    if not _is_valid_identifier(deps_attr):
+        fail(
+            "Invalid swift_unused_deps.deps_attr value '{}' on {}. Use a valid Bazel attribute identifier.".format(
+                deps_attr,
+                analyzed_label,
+            ),
+        )
+
+    return {
+        "target": fix_target,
+        "deps_attr": deps_attr,
+    }
 
 def _get_module_name(target):
     """Get the Swift module name from SwiftInfo."""
@@ -274,6 +344,7 @@ def _swift_deps_aspect_impl(target, ctx):
             "source_files": source_files,
             "is_mixed_source": _has_mixed_sources(ctx),
             "rule_kind": ctx.rule.kind,
+            "build_edit": _build_edit_metadata(ctx),
         },
         "declared_deps": declared_deps + declared_private_deps,
         "plugin_deps": plugin_deps,

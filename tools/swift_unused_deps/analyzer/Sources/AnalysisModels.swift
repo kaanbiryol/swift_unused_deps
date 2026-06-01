@@ -118,8 +118,12 @@ struct Issue {
         )
     }
 
-    static func unusedDep(_ dep: DeclaredDep, targetLabel: String) -> Issue {
-        let attrName = dep.kind == .privateDep ? "private_deps" : "deps"
+    static func unusedDep(
+        _ dep: DeclaredDep,
+        targetLabel: String,
+        depsAttribute: String = "deps"
+    ) -> Issue {
+        let attrName = dep.kind == .privateDep ? "private_deps" : depsAttribute
         return Issue(
             kind: .unusedDep,
             confidence: .high,
@@ -138,9 +142,10 @@ struct Issue {
         _ dep: DeclaredDep,
         targetLabel: String,
         sourceImportRemovals: [SourceImportRemoval],
-        removeDep: Bool = true
+        removeDep: Bool = true,
+        depsAttribute: String = "deps"
     ) -> Issue {
-        let attrName = dep.kind == .privateDep ? "private_deps" : "deps"
+        let attrName = dep.kind == .privateDep ? "private_deps" : depsAttribute
         return Issue(
             kind: .unusedImport,
             confidence: .high,
@@ -167,7 +172,8 @@ struct Issue {
         moduleName: String,
         currentlyReachableVia: [String],
         isImportedDirectly: Bool,
-        targetLabel: String
+        targetLabel: String,
+        depsAttribute: String = "deps"
     ) -> Issue {
         let action: SuggestedAction = isImportedDirectly ? .addDep : .investigate
         return Issue(
@@ -182,23 +188,29 @@ struct Issue {
                 isImportedDirectly: isImportedDirectly
             ),
             buildozerCommand: action == .addDep
-                ? BuildozerCommand(action: "add deps \(depLabel)", target: targetLabel)
+                ? BuildozerCommand(action: "add \(depsAttribute) \(depLabel)", target: targetLabel)
                 : nil,
             sourceImportRemovals: []
         )
     }
 
-    static func candidatePrivateDep(_ dep: DeclaredDep, targetLabel: String) -> Issue {
+    static func candidatePrivateDep(
+        _ dep: DeclaredDep,
+        targetLabel: String,
+        depsAttribute: String = "deps"
+    ) -> Issue {
         Issue(
             kind: .candidatePrivateDep,
             confidence: .low,
             reason: "Module '\(dep.moduleName)' is loaded but not directly imported in source code - may be suitable for private_deps",
             suggestedAction: .moveToPrivateDeps,
             context: .candidatePrivateDep(dep),
-            buildozerCommand: BuildozerCommand(
-                action: "move deps private_deps \(dep.label)",
-                target: targetLabel
-            ),
+            buildozerCommand: depsAttribute == "deps"
+                ? BuildozerCommand(
+                    action: "move deps private_deps \(dep.label)",
+                    target: targetLabel
+                )
+                : nil,
             sourceImportRemovals: []
         )
     }

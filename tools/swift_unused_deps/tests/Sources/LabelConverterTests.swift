@@ -1,3 +1,4 @@
+import Foundation
 import XCTest
 @testable import SwiftUnusedDepsLib
 
@@ -212,6 +213,8 @@ final class LabelConverterTests: XCTestCase {
         let converted = metadata.convertingLabels(with: converter)
 
         XCTAssertEqual(converted.target.label, "//Lib:A")
+        XCTAssertEqual(converted.target.buildEdit.target, "//Lib:A")
+        XCTAssertEqual(converted.target.buildEdit.depsAttribute, "deps")
         XCTAssertEqual(converted.declaredDeps[0].label, "@swiftpkg_swift_syntax//:SwiftSyntax")
         XCTAssertEqual(converted.declaredDeps[0].moduleName, "SwiftSyntax")
         XCTAssertEqual(converted.declaredDeps[0].kind, .dep)
@@ -221,6 +224,46 @@ final class LabelConverterTests: XCTestCase {
         XCTAssertEqual(converted.transitiveModuleMap["SwiftSyntax"], "@swiftpkg_swift_syntax//:SwiftSyntax")
         XCTAssertEqual(converted.transitiveModuleMap["A"], "//Lib:A")
         XCTAssertEqual(converted.moduleReachableVia["SwiftSyntax"], ["//Lib:Wrapper"])
+    }
+
+    func testMetadataConvertingLabelsConvertsBuildEditTarget() {
+        let converter = LabelConverter(canonicalToApparent: [:])
+        let metadata = TargetMetadata(
+            schemaVersion: 1,
+            target: TargetInfo(
+                label: "@@//Lib:Generated",
+                moduleName: "Generated",
+                buildEdit: BuildEditMetadata(target: "@@//Lib:Owner", depsAttribute: "test_deps")
+            ),
+            declaredDeps: [],
+            transitiveModuleMap: [:]
+        )
+
+        let converted = metadata.convertingLabels(with: converter)
+
+        XCTAssertEqual(converted.target.label, "//Lib:Generated")
+        XCTAssertEqual(converted.target.buildEdit.target, "//Lib:Owner")
+        XCTAssertEqual(converted.target.buildEdit.depsAttribute, "test_deps")
+    }
+
+    func testMetadataDecodingDefaultsBuildEdit() throws {
+        let json = """
+        {
+          "schema_version": 1,
+          "target": {
+            "label": "//Lib:A",
+            "module_name": "A"
+          },
+          "declared_deps": [],
+          "plugin_deps": [],
+          "transitive_module_map": {}
+        }
+        """
+
+        let metadata = try JSONDecoder().decode(TargetMetadata.self, from: Data(json.utf8))
+
+        XCTAssertEqual(metadata.target.buildEdit.target, "//Lib:A")
+        XCTAssertEqual(metadata.target.buildEdit.depsAttribute, "deps")
     }
 
     func testMetadataConvertingLabelsWithBuildFileDisambiguation() {

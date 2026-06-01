@@ -10,13 +10,14 @@ final class AnalyzerTests: XCTestCase {
         pluginDeps: [(label: String, moduleName: String, kind: DepKind)] = [],
         transitive: [String: String] = [:],
         moduleReachableVia: [String: [String]] = [:],
-        isMixed: Bool = false
+        isMixed: Bool = false,
+        buildEdit: BuildEditMetadata? = nil
     ) -> TargetMetadata {
         let declaredDeps = deps.map { DeclaredDep(label: $0.label, moduleName: $0.moduleName, kind: $0.kind) }
         let declaredPluginDeps = pluginDeps.map { DeclaredDep(label: $0.label, moduleName: $0.moduleName, kind: $0.kind) }
         return TargetMetadata(
             schemaVersion: 1,
-            target: TargetInfo(label: label, moduleName: moduleName, isMixedSource: isMixed),
+            target: TargetInfo(label: label, moduleName: moduleName, isMixedSource: isMixed, buildEdit: buildEdit),
             declaredDeps: declaredDeps,
             pluginDeps: declaredPluginDeps,
             transitiveModuleMap: transitive,
@@ -68,6 +69,24 @@ final class AnalyzerTests: XCTestCase {
         XCTAssertEqual(unused[0].suggestedAction, .remove)
         XCTAssertNotNil(unused[0].buildozerCommand)
         XCTAssertEqual(unused[0].buildozerCommand?.batchLine, "remove deps //Lib:B|//Lib:A")
+    }
+
+    func testUnusedDepUsesMacroBuildEditMetadata() {
+        let metadata = makeMetadata(
+            label: "//Pkg:FooTestsLib",
+            moduleName: "FooTestsLib",
+            deps: [("//Lib:Unused", "Unused", .dep)],
+            transitive: ["Unused": "//Lib:Unused"],
+            buildEdit: BuildEditMetadata(target: "//Pkg:Foo", depsAttribute: "test_deps")
+        )
+        let resolver = ModuleResolver(transitiveModuleMap: metadata.transitiveModuleMap)
+
+        let result = Analyzer.analyze(metadata: metadata, loadedModules: [], resolver: resolver)
+
+        let unused = result.issues.filter { $0.kind == .unusedDep }
+        XCTAssertEqual(unused.count, 1)
+        XCTAssertEqual(result.target, "//Pkg:FooTestsLib")
+        XCTAssertEqual(unused[0].buildozerCommand?.batchLine, "remove test_deps //Lib:Unused|//Pkg:Foo")
     }
 
     func testPartiallyUsedMultiModuleLabelIsNotRemoved() {
@@ -127,6 +146,28 @@ final class AnalyzerTests: XCTestCase {
         XCTAssertEqual(missing[0].currentlyReachableVia, ["//Lib:B"])
     }
 
+    func testMissingDirectDepUsesMacroBuildEditMetadata() {
+        let metadata = makeMetadata(
+            label: "//Pkg:FooTestsLib",
+            moduleName: "FooTestsLib",
+            deps: [("//Lib:Wrapper", "Wrapper", .dep)],
+            transitive: [
+                "Wrapper": "//Lib:Wrapper",
+                "Missing": "//Lib:Missing",
+            ],
+            moduleReachableVia: ["Missing": ["//Lib:Wrapper"]],
+            buildEdit: BuildEditMetadata(target: "//Pkg:Foo", depsAttribute: "test_deps")
+        )
+        let modules = makeModules([("Wrapper", true), ("Missing", true)])
+        let resolver = ModuleResolver(transitiveModuleMap: metadata.transitiveModuleMap)
+
+        let result = Analyzer.analyze(metadata: metadata, loadedModules: modules, resolver: resolver)
+
+        let missing = result.issues.filter { $0.kind == .missingDirectDep }
+        XCTAssertEqual(missing.count, 1)
+        XCTAssertEqual(missing[0].buildozerCommand?.batchLine, "add test_deps //Lib:Missing|//Pkg:Foo")
+    }
+
     func testMissingDirectDepReachableViaDoesNotListUnrelatedDeclaredDeps() {
         let metadata = makeMetadata(
             label: "//App:App",
@@ -171,6 +212,24 @@ final class AnalyzerTests: XCTestCase {
         XCTAssertEqual(candidates[0].depLabel, "//Lib:D")
         XCTAssertEqual(candidates[0].confidence, .low)
         XCTAssertEqual(candidates[0].suggestedAction, .moveToPrivateDeps)
+    }
+
+    func testCandidatePrivateDepDoesNotEmitBuildEditForCustomDepsAttribute() {
+        let metadata = makeMetadata(
+            label: "//Pkg:FooTestsLib",
+            moduleName: "FooTestsLib",
+            deps: [("//Lib:D", "D", .dep)],
+            transitive: ["D": "//Lib:D"],
+            buildEdit: BuildEditMetadata(target: "//Pkg:Foo", depsAttribute: "test_deps")
+        )
+        let modules = makeModules([("D", false)])
+        let resolver = ModuleResolver(transitiveModuleMap: metadata.transitiveModuleMap)
+
+        let result = Analyzer.analyze(metadata: metadata, loadedModules: modules, resolver: resolver)
+
+        let candidates = result.issues.filter { $0.kind == .candidatePrivateDep }
+        XCTAssertEqual(candidates.count, 1)
+        XCTAssertNil(candidates[0].buildozerCommand)
     }
 
     func testSystemOnly() {

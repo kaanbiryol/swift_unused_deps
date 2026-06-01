@@ -58,4 +58,32 @@ final class ReportTests: XCTestCase {
 
         XCTAssertFalse(report.contains("Run with --fix-output"))
     }
+
+    func testFormatJSONUsesRedirectedBuildozerCommand() throws {
+        let dep = DeclaredDep(label: "//Lib:B", moduleName: "B", kind: .dep)
+        let result = AnalysisResult(
+            target: "//Pkg:FooTestsLib",
+            moduleName: "FooTestsLib",
+            issues: [
+                Issue.unusedDep(dep, targetLabel: "//Pkg:Foo", depsAttribute: "test_deps"),
+            ],
+            cleanDeps: [],
+            skippedModules: []
+        )
+
+        let json = Report.formatJSON(results: [result], minConfidence: .low)
+        let object = try XCTUnwrap(
+            try JSONSerialization.jsonObject(with: Data(json.utf8)) as? [String: Any]
+        )
+        let results = try XCTUnwrap(object["results"] as? [[String: Any]])
+        let firstResult = try XCTUnwrap(results.first)
+        let issues = try XCTUnwrap(firstResult["issues"] as? [[String: Any]])
+        let firstIssue = try XCTUnwrap(issues.first)
+
+        XCTAssertEqual(firstResult["target"] as? String, "//Pkg:FooTestsLib")
+        XCTAssertEqual(
+            firstIssue["buildozer_command"] as? String,
+            "buildozer 'remove test_deps //Lib:B' //Pkg:Foo"
+        )
+    }
 }

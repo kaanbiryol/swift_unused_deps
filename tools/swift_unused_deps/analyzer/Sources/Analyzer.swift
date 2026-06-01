@@ -36,7 +36,7 @@ enum Analyzer {
         issues.append(contentsOf: unusedDepIssues(
             declaredGroups: declaredGroups,
             usedModulesByName: resolvedUsage.usedModulesByName,
-            targetLabel: metadata.target.label
+            buildEdit: metadata.target.buildEdit
         ))
         issues.append(contentsOf: missingDirectDepIssues(
             metadata: metadata,
@@ -46,7 +46,7 @@ enum Analyzer {
         issues.append(contentsOf: candidatePrivateDepIssues(
             declaredGroups: declaredGroups,
             usedModulesByName: resolvedUsage.usedModulesByName,
-            targetLabel: metadata.target.label
+            buildEdit: metadata.target.buildEdit
         ))
 
         return AnalysisResult(
@@ -119,13 +119,17 @@ enum Analyzer {
     private static func unusedDepIssues(
         declaredGroups: [DeclaredDepGroup],
         usedModulesByName: [String: UsedModule],
-        targetLabel: String
+        buildEdit: BuildEditMetadata
     ) -> [Issue] {
         declaredGroups.compactMap { group in
             guard group.moduleNames.isDisjoint(with: usedModulesByName.keys) else {
                 return nil
             }
-            return Issue.unusedDep(group.representative, targetLabel: targetLabel)
+            return Issue.unusedDep(
+                group.representative,
+                targetLabel: buildEdit.target,
+                depsAttribute: buildEdit.depsAttribute
+            )
         }
     }
 
@@ -143,7 +147,8 @@ enum Analyzer {
                     moduleName: moduleName,
                     currentlyReachableVia: metadata.moduleReachableVia[moduleName] ?? [],
                     isImportedDirectly: info.isImportedDirectly,
-                    targetLabel: metadata.target.label
+                    targetLabel: metadata.target.buildEdit.target,
+                    depsAttribute: metadata.target.buildEdit.depsAttribute
                 )
             }
     }
@@ -156,14 +161,18 @@ enum Analyzer {
     private static func candidatePrivateDepIssues(
         declaredGroups: [DeclaredDepGroup],
         usedModulesByName: [String: UsedModule],
-        targetLabel: String
+        buildEdit: BuildEditMetadata
     ) -> [Issue] {
         declaredGroups.compactMap { group in
             guard group.key.kind == .dep else { return nil }
             let usedModules = group.moduleNames.compactMap { usedModulesByName[$0] }
             guard !usedModules.isEmpty else { return nil }
             guard usedModules.allSatisfy({ !$0.isImportedDirectly }) else { return nil }
-            return Issue.candidatePrivateDep(group.representative, targetLabel: targetLabel)
+            return Issue.candidatePrivateDep(
+                group.representative,
+                targetLabel: buildEdit.target,
+                depsAttribute: buildEdit.depsAttribute
+            )
         }
     }
 }

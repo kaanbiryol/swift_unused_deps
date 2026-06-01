@@ -86,9 +86,10 @@ enum UnusedImportAnalyzer {
                 shouldRemoveDep = false
                 return Issue.unusedImport(
                     dep,
-                    targetLabel: metadata.target.label,
+                    targetLabel: metadata.target.buildEdit.target,
                     sourceImportRemovals: removals,
-                    removeDep: removeDep
+                    removeDep: removeDep,
+                    depsAttribute: metadata.target.buildEdit.depsAttribute
                 )
             }
         } + transitiveIssues(
@@ -138,7 +139,7 @@ enum UnusedImportAnalyzer {
                 guard !removals.isEmpty else { return nil }
                 return Issue.unusedImport(
                     DeclaredDep(label: label, moduleName: moduleName, kind: .dep),
-                    targetLabel: metadata.target.label,
+                    targetLabel: metadata.target.buildEdit.target,
                     sourceImportRemovals: removals,
                     removeDep: false
                 )

@@ -1,0 +1,12 @@
+load(":macro_module.bzl", "macro_module")
+
+macro_module(
+    name = "MacroFeature",
+    srcs = ["MacroFeature.swift"],
+    test_deps = [
+        "//cases/Deps/LibA",
+        "//cases/Deps/LibB",
+    ],
+    test_srcs = ["MacroFeatureTests.swift"],
+    visibility = ["//visibility:public"],
+)

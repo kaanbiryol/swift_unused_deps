@@ -32,29 +32,48 @@ struct SourceFileMetadata: Codable, Equatable, Hashable {
     }
 }
 
+struct BuildEditMetadata: Codable, Equatable, Hashable {
+    let target: String
+    let depsAttribute: String
+
+    enum CodingKeys: String, CodingKey {
+        case target
+        case depsAttribute = "deps_attr"
+    }
+
+    init(target: String, depsAttribute: String = "deps") {
+        self.target = target
+        self.depsAttribute = depsAttribute
+    }
+}
+
 struct TargetInfo: Codable {
     let label: String
     let moduleName: String
     let isMixedSource: Bool
     let sourceFiles: [SourceFileMetadata]
+    let buildEdit: BuildEditMetadata
 
     enum CodingKeys: String, CodingKey {
         case label
         case moduleName = "module_name"
         case isMixedSource = "is_mixed_source"
         case sourceFiles = "source_files"
+        case buildEdit = "build_edit"
     }
 
     init(
         label: String,
         moduleName: String,
         isMixedSource: Bool = false,
-        sourceFiles: [SourceFileMetadata] = []
+        sourceFiles: [SourceFileMetadata] = [],
+        buildEdit: BuildEditMetadata? = nil
     ) {
         self.label = label
         self.moduleName = moduleName
         self.isMixedSource = isMixedSource
         self.sourceFiles = sourceFiles
+        self.buildEdit = buildEdit ?? BuildEditMetadata(target: label)
     }
 
     init(from decoder: Decoder) throws {
@@ -63,6 +82,8 @@ struct TargetInfo: Codable {
         moduleName = try container.decode(String.self, forKey: .moduleName)
         isMixedSource = try container.decodeIfPresent(Bool.self, forKey: .isMixedSource) ?? false
         sourceFiles = try container.decodeIfPresent([SourceFileMetadata].self, forKey: .sourceFiles) ?? []
+        buildEdit = try container.decodeIfPresent(BuildEditMetadata.self, forKey: .buildEdit)
+            ?? BuildEditMetadata(target: label)
     }
 }
 
@@ -143,7 +164,11 @@ struct TargetMetadata: Codable {
                 label: converter.convert(target.label, buildFileContent: buildFileContent),
                 moduleName: target.moduleName,
                 isMixedSource: target.isMixedSource,
-                sourceFiles: target.sourceFiles
+                sourceFiles: target.sourceFiles,
+                buildEdit: BuildEditMetadata(
+                    target: converter.convert(target.buildEdit.target, buildFileContent: buildFileContent),
+                    depsAttribute: target.buildEdit.depsAttribute
+                )
             ),
             declaredDeps: declaredDeps.map {
                 DeclaredDep(

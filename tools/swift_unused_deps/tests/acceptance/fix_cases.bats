@@ -187,3 +187,20 @@ teardown_file() {
   assert_file_contains "cases/Targets/UnusedDepIOSTarget/BUILD.bazel" "//cases/Deps/iOSLib"
   assert_file_not_contains "cases/Targets/UnusedDepIOSTarget/BUILD.bazel" "//cases/Deps/LibA"
 }
+
+@test "fix redirects macro-generated secondary target BUILD edits" {
+  assert_file_contains "cases/Targets/MacroGeneratedSecondary/BUILD.bazel" "test_deps = ["
+  assert_file_contains "cases/Targets/MacroGeneratedSecondary/BUILD.bazel" "//cases/Deps/LibA"
+  assert_file_contains "cases/Targets/MacroGeneratedSecondary/BUILD.bazel" "//cases/Deps/LibB"
+  assert_file_not_contains "cases/Targets/MacroGeneratedSecondary/BUILD.bazel" "MacroFeatureTestsLib"
+
+  run_swift_unused_deps_in_workspace //cases/Targets/MacroGeneratedSecondary:MacroFeatureTestsLib --testonly --apply-fix-plan --min-report-confidence high
+
+  assert_status 0
+  assert_output_contains "0 issues found."
+  assert_stderr_contains "remove //cases/Deps/LibA:LibA from test_deps of //cases/Targets/MacroGeneratedSecondary:MacroFeature"
+
+  assert_file_not_contains "cases/Targets/MacroGeneratedSecondary/BUILD.bazel" "//cases/Deps/LibA"
+  assert_file_contains "cases/Targets/MacroGeneratedSecondary/BUILD.bazel" "//cases/Deps/LibB"
+  assert_file_not_contains "cases/Targets/MacroGeneratedSecondary/BUILD.bazel" "MacroFeatureTestsLib"
+}
