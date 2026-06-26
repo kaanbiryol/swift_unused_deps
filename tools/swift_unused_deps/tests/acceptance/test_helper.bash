@@ -142,6 +142,9 @@ run_swift_unused_deps_in_workspace() {
     if [[ "${has_platform}" != "true" ]]; then
       query_expr="${query_expr} except attr(\"target_compatible_with\", \".*@platforms//.*\", ${target})"
     fi
+    if [[ "${testonly}" != "true" ]]; then
+      query_expr="${query_expr} except attr(\"testonly\", \"1\", ${target})"
+    fi
 
     target_labels=()
     while IFS= read -r label; do

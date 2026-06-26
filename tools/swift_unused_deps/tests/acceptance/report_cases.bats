@@ -43,6 +43,7 @@ expected_reported_targets = {
     "//cases/Targets/CleanLibraryGroupDep:CleanLibraryGroupDep",
     "//cases/Targets/CleanTarget:CleanTarget",
     "//cases/Targets/ExtensionMemberUsage:ExtensionMemberUsage",
+    "//cases/Targets/MacroGeneratedSecondary:MacroFeature",
     "//cases/Targets/MissingDirectDep:MissingDirectDep",
     "//cases/Targets/MultipleUnusedDeps:MultipleUnusedDeps",
     "//cases/Targets/SemanticUsage:SemanticUsage",
@@ -187,6 +188,11 @@ require_clean_modules(
 )
 require_issues("//cases/Targets/SemanticUsage:SemanticUsage", set())
 require_skipped_modules("//cases/Targets/SemanticUsage:SemanticUsage", set())
+
+require_status("//cases/Targets/MacroGeneratedSecondary:MacroFeature", "clean")
+require_clean_modules("//cases/Targets/MacroGeneratedSecondary:MacroFeature", set())
+require_issues("//cases/Targets/MacroGeneratedSecondary:MacroFeature", set())
+require_skipped_modules("//cases/Targets/MacroGeneratedSecondary:MacroFeature", set())
 
 require_status("//cases/Targets/StdlibOnly:StdlibOnly", "clean")
 require_clean_modules("//cases/Targets/StdlibOnly:StdlibOnly", set())
