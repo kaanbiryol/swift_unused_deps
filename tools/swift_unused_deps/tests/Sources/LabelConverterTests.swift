@@ -233,7 +233,11 @@ final class LabelConverterTests: XCTestCase {
             target: TargetInfo(
                 label: "@@//Lib:Generated",
                 moduleName: "Generated",
-                buildEdit: BuildEditMetadata(target: "@@//Lib:Owner", depsAttribute: "test_deps")
+                buildEdit: BuildEditMetadata(
+                    target: "@@//Lib:Owner",
+                    depsAttribute: "test_deps",
+                    nonRemovableDeps: ["@@//Lib:Owner"]
+                )
             ),
             declaredDeps: [],
             transitiveModuleMap: [:]
@@ -244,6 +248,7 @@ final class LabelConverterTests: XCTestCase {
         XCTAssertEqual(converted.target.label, "//Lib:Generated")
         XCTAssertEqual(converted.target.buildEdit.target, "//Lib:Owner")
         XCTAssertEqual(converted.target.buildEdit.depsAttribute, "test_deps")
+        XCTAssertEqual(converted.target.buildEdit.nonRemovableDeps, ["//Lib:Owner"])
     }
 
     func testMetadataDecodingDefaultsBuildEdit() throws {
@@ -264,6 +269,7 @@ final class LabelConverterTests: XCTestCase {
 
         XCTAssertEqual(metadata.target.buildEdit.target, "//Lib:A")
         XCTAssertEqual(metadata.target.buildEdit.depsAttribute, "deps")
+        XCTAssertTrue(metadata.target.buildEdit.nonRemovableDeps.isEmpty)
     }
 
     func testMetadataConvertingLabelsWithBuildFileDisambiguation() {

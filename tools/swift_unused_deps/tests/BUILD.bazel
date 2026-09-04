@@ -3,5 +3,6 @@ load("@build_bazel_rules_swift//swift:swift.bzl", "swift_test")
 swift_test(
     name = "swift_unused_deps_tests",
     srcs = glob(["Sources/**/*.swift"]),
+    data = ["@buildozer_binary//:buildozer.exe"],
     deps = ["//tools/swift_unused_deps/analyzer:SwiftUnusedDepsLib"],
 )

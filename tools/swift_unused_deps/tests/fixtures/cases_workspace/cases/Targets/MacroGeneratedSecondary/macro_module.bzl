@@ -17,6 +17,7 @@ def macro_module(name, srcs, test_srcs, test_deps = [], visibility = None, tags 
         tags = tags + [
             "swift_unused_deps.fix_target=%s" % name,
             "swift_unused_deps.deps_attr=test_deps",
+            "swift_unused_deps.non_removable_dep=%s" % name,
         ],
         visibility = visibility,
     )

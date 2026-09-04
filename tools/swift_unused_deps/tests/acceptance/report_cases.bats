@@ -416,6 +416,50 @@ if source_removals != {"LibA"}:
 PY
 }
 
+@test "testable imports distinguish internal, public-only, and unused access" {
+  run_swift_unused_deps_in_workspace --testonly //cases/Tests/TestableImports/... --json
+
+  assert_status 1
+
+  REPORT_JSON="${output}" python3 - <<'PY'
+import json
+import os
+import sys
+
+report = json.loads(os.environ["REPORT_JSON"])
+results = {result["target"]: result for result in report["results"]}
+required = "//cases/Tests/TestableImports:RequiredTestableImportTests"
+public_only = "//cases/Tests/TestableImports:PublicOnlyTestableImportTests"
+unused = "//cases/Tests/TestableImports:UnusedTestableImportTests"
+
+if results[required].get("issues"):
+    print(f"required @testable import should be preserved: {results[required]['issues']}", file=sys.stderr)
+    sys.exit(1)
+
+public_issues = results[public_only].get("issues", [])
+if [(issue.get("kind"), issue.get("confidence")) for issue in public_issues] != [
+    ("unnecessary_testable_attribute", "low")
+]:
+    print(f"unexpected public-only issues: {public_issues}", file=sys.stderr)
+    sys.exit(1)
+
+unused_issues = results[unused].get("issues", [])
+if [(issue.get("kind"), issue.get("confidence")) for issue in unused_issues] != [
+    ("unused_testable_import", "low")
+]:
+    print(f"unexpected unused issues: {unused_issues}", file=sys.stderr)
+    sys.exit(1)
+
+for issue in public_issues + unused_issues:
+    if issue.get("buildozer_command") or issue.get("source_import_removals"):
+        print(f"testable finding must be report-only: {issue}", file=sys.stderr)
+        sys.exit(1)
+    if not issue.get("source_file", "").endswith("TestableImportTests.swift"):
+        print(f"missing source file context: {issue}", file=sys.stderr)
+        sys.exit(1)
+PY
+}
+
 @test "test_suite top-level target analyzes member test dependency closures" {
   run_swift_unused_deps_in_workspace --testonly //cases/Tests/Suites:AllSwiftTests --json
 

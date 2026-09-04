@@ -89,6 +89,30 @@ final class AnalyzerTests: XCTestCase {
         XCTAssertEqual(unused[0].buildozerCommand?.batchLine, "remove test_deps //Lib:Unused|//Pkg:Foo")
     }
 
+    func testMacroInjectedUnusedDepIsInformationalAndNotFixable() {
+        let metadata = makeMetadata(
+            label: "//Pkg:FooTestsLib",
+            moduleName: "FooTestsLib",
+            deps: [("//Pkg:Foo", "Foo", .dep)],
+            transitive: ["Foo": "//Pkg:Foo"],
+            buildEdit: BuildEditMetadata(
+                target: "//Pkg:Foo",
+                depsAttribute: "test_deps",
+                nonRemovableDeps: ["//Pkg:Foo"]
+            )
+        )
+        let resolver = ModuleResolver(transitiveModuleMap: metadata.transitiveModuleMap)
+
+        let result = Analyzer.analyze(metadata: metadata, loadedModules: [], resolver: resolver)
+
+        let unused = result.issues.filter { $0.kind == .unusedDep }
+        XCTAssertEqual(unused.count, 1)
+        XCTAssertEqual(unused[0].confidence, .low)
+        XCTAssertEqual(unused[0].suggestedAction, .investigate)
+        XCTAssertNil(unused[0].buildozerCommand)
+        XCTAssertTrue(FixPlan.from(results: [result], minConfidence: .low).isEmpty)
+    }
+
     func testPartiallyUsedMultiModuleLabelIsNotRemoved() {
         let metadata = makeMetadata(
             label: "//Lib:A", moduleName: "A",

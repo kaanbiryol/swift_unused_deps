@@ -199,8 +199,10 @@ teardown_file() {
   assert_status 0
   assert_output_contains "0 issues found."
   assert_stderr_contains "remove //cases/Deps/LibA:LibA from test_deps of //cases/Targets/MacroGeneratedSecondary:MacroFeature"
+  assert_stderr_not_contains "remove //cases/Targets/MacroGeneratedSecondary:MacroFeature from test_deps"
 
   assert_file_not_contains "cases/Targets/MacroGeneratedSecondary/BUILD.bazel" "//cases/Deps/LibA"
   assert_file_contains "cases/Targets/MacroGeneratedSecondary/BUILD.bazel" "//cases/Deps/LibB"
   assert_file_not_contains "cases/Targets/MacroGeneratedSecondary/BUILD.bazel" "MacroFeatureTestsLib"
+  assert_file_contains "cases/Targets/MacroGeneratedSecondary/BUILD.bazel" "name = \"MacroFeature\""
 }

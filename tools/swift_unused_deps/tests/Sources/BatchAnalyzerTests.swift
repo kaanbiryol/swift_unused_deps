@@ -71,6 +71,38 @@ final class BatchAnalyzerTests: XCTestCase {
         ])
     }
 
+    func testUnusedImportForMacroInjectedDepOnlyRemovesSourceImport() {
+        let metadata = makeMetadata(
+            label: "//Lib:ATestsLib",
+            moduleName: "ATestsLib",
+            deps: [DeclaredDep(label: "//Lib:A", moduleName: "A", kind: .dep)],
+            buildEdit: BuildEditMetadata(
+                target: "//Lib:A",
+                depsAttribute: "test_deps",
+                nonRemovableDeps: ["//Lib:A"]
+            )
+        )
+
+        let issues = UnusedImportAnalyzer.issues(
+            metadata: metadata,
+            sourceFileUsage: [
+                SourceFileModuleUsage(
+                    sourceFile: "/tmp/ATests.swift",
+                    moduleName: "ATestsLib",
+                    referencedModules: [],
+                    loadedModules: ["A"],
+                    directImports: ["A"]
+                ),
+            ]
+        )
+
+        XCTAssertEqual(issues.count, 1)
+        XCTAssertNil(issues[0].buildozerCommand)
+        XCTAssertEqual(issues[0].sourceImportRemovals, [
+            SourceImportRemoval(filePath: "/tmp/ATests.swift", moduleName: "A"),
+        ])
+    }
+
     func testUnusedImportIssuesSkipReexportedImports() {
         let metadata = makeMetadata(
             label: "//Lib:A",
@@ -88,6 +120,141 @@ final class BatchAnalyzerTests: XCTestCase {
                     loadedModules: ["LibA"],
                     directImports: ["LibA"],
                     reexportedImports: ["LibA"]
+                ),
+            ]
+        )
+
+        XCTAssertTrue(issues.isEmpty)
+    }
+
+    func testUnusedTestableImportIsReportedWithoutAutomaticFix() {
+        let metadata = makeMetadata(
+            label: "//Lib:ATests",
+            moduleName: "ATests",
+            deps: [DeclaredDep(label: "//Lib:A", moduleName: "A", kind: .dep)]
+        )
+
+        let issues = UnusedImportAnalyzer.issues(
+            metadata: metadata,
+            sourceFileUsage: [
+                SourceFileModuleUsage(
+                    sourceFile: "/tmp/ATests.swift",
+                    moduleName: "ATests",
+                    referencedModules: [],
+                    loadedModules: ["A"],
+                    directImports: ["A"],
+                    testableImports: ["A"]
+                ),
+            ]
+        )
+
+        XCTAssertEqual(issues.count, 1)
+        XCTAssertEqual(issues[0].kind, .unusedTestableImport)
+        XCTAssertEqual(issues[0].confidence, .low)
+        XCTAssertEqual(issues[0].suggestedAction, .investigate)
+        XCTAssertEqual(issues[0].depModule, "A")
+        XCTAssertEqual(issues[0].sourceFile, "/tmp/ATests.swift")
+        XCTAssertNil(issues[0].buildozerCommand)
+        XCTAssertTrue(issues[0].sourceImportRemovals.isEmpty)
+    }
+
+    func testRequiredTestableImportIsNotReported() {
+        let metadata = makeMetadata(
+            label: "//Lib:ATests",
+            moduleName: "ATests",
+            deps: [DeclaredDep(label: "//Lib:A", moduleName: "A", kind: .dep)]
+        )
+
+        let issues = UnusedImportAnalyzer.issues(
+            metadata: metadata,
+            sourceFileUsage: [
+                SourceFileModuleUsage(
+                    sourceFile: "/tmp/ATests.swift",
+                    moduleName: "ATests",
+                    referencedModules: ["A"],
+                    loadedModules: ["A"],
+                    directImports: ["A"],
+                    testableImports: ["A"],
+                    requiredTestableImports: ["A"]
+                ),
+            ]
+        )
+
+        XCTAssertTrue(issues.isEmpty)
+    }
+
+    func testUnnecessaryTestableAttributeIsReportedWithoutAutomaticFix() {
+        let metadata = makeMetadata(
+            label: "//Lib:ATests",
+            moduleName: "ATests",
+            deps: [DeclaredDep(label: "//Lib:A", moduleName: "A", kind: .dep)]
+        )
+
+        let issues = UnusedImportAnalyzer.issues(
+            metadata: metadata,
+            sourceFileUsage: [
+                SourceFileModuleUsage(
+                    sourceFile: "/tmp/ATests.swift",
+                    moduleName: "ATests",
+                    referencedModules: ["A"],
+                    loadedModules: ["A"],
+                    directImports: ["A"],
+                    testableImports: ["A"],
+                    unnecessaryTestableImports: ["A"]
+                ),
+            ]
+        )
+
+        XCTAssertEqual(issues.count, 1)
+        XCTAssertEqual(issues[0].kind, .unnecessaryTestableAttribute)
+        XCTAssertEqual(issues[0].confidence, .low)
+        XCTAssertEqual(issues[0].suggestedAction, .investigate)
+        XCTAssertNil(issues[0].buildozerCommand)
+        XCTAssertTrue(issues[0].sourceImportRemovals.isEmpty)
+    }
+
+    func testUnknownTestableRequirementIsNotReported() {
+        let metadata = makeMetadata(
+            label: "//Lib:ATests",
+            moduleName: "ATests",
+            deps: [DeclaredDep(label: "//Lib:A", moduleName: "A", kind: .dep)]
+        )
+
+        let issues = UnusedImportAnalyzer.issues(
+            metadata: metadata,
+            sourceFileUsage: [
+                SourceFileModuleUsage(
+                    sourceFile: "/tmp/ATests.swift",
+                    moduleName: "ATests",
+                    referencedModules: ["A"],
+                    loadedModules: ["A"],
+                    directImports: ["A"],
+                    testableImports: ["A"]
+                ),
+            ]
+        )
+
+        XCTAssertTrue(issues.isEmpty)
+    }
+
+    func testConditionalTestableImportIsNotReported() {
+        let metadata = makeMetadata(
+            label: "//Lib:ATests",
+            moduleName: "ATests",
+            deps: [DeclaredDep(label: "//Lib:A", moduleName: "A", kind: .dep)]
+        )
+
+        let issues = UnusedImportAnalyzer.issues(
+            metadata: metadata,
+            sourceFileUsage: [
+                SourceFileModuleUsage(
+                    sourceFile: "/tmp/ATests.swift",
+                    moduleName: "ATests",
+                    referencedModules: [],
+                    loadedModules: ["A"],
+                    directImports: ["A"],
+                    testableImports: ["A"],
+                    conditionalImports: ["A"]
                 ),
             ]
         )
@@ -319,11 +486,12 @@ final class BatchAnalyzerTests: XCTestCase {
         moduleName: String,
         deps: [DeclaredDep] = [],
         pluginDeps: [DeclaredDep] = [],
-        transitiveModuleMap: [String: String] = [:]
+        transitiveModuleMap: [String: String] = [:],
+        buildEdit: BuildEditMetadata? = nil
     ) -> TargetMetadata {
         TargetMetadata(
             schemaVersion: 1,
-            target: TargetInfo(label: label, moduleName: moduleName),
+            target: TargetInfo(label: label, moduleName: moduleName, buildEdit: buildEdit),
             declaredDeps: deps,
             pluginDeps: pluginDeps,
             transitiveModuleMap: transitiveModuleMap

@@ -15,6 +15,14 @@ struct SourceFileModuleUsage {
     let directImports: Set<String>
     /// Modules imported with `@_exported import`.
     let reexportedImports: Set<String>
+    /// Modules imported with `@testable import`.
+    let testableImports: Set<String>
+    /// `@testable` imports that reference at least one declaration unavailable
+    /// through a plain import.
+    let requiredTestableImports: Set<String>
+    /// `@testable` imports whose indexed references all resolve to public API.
+    /// Imports absent from both sets could not be classified safely.
+    let unnecessaryTestableImports: Set<String>
     /// Modules imported inside conditional compilation blocks.
     let conditionalImports: Set<String>
 
@@ -27,6 +35,9 @@ struct SourceFileModuleUsage {
         systemModules: Set<String> = [],
         directImports: Set<String> = [],
         reexportedImports: Set<String> = [],
+        testableImports: Set<String> = [],
+        requiredTestableImports: Set<String> = [],
+        unnecessaryTestableImports: Set<String> = [],
         conditionalImports: Set<String> = []
     ) {
         self.sourceFile = sourceFile
@@ -37,6 +48,9 @@ struct SourceFileModuleUsage {
         self.systemModules = systemModules
         self.directImports = directImports
         self.reexportedImports = reexportedImports
+        self.testableImports = testableImports
+        self.requiredTestableImports = requiredTestableImports
+        self.unnecessaryTestableImports = unnecessaryTestableImports
         self.conditionalImports = conditionalImports
     }
 }
@@ -74,11 +88,33 @@ enum IndexStoreReader {
         let isGenerated: Bool
         let moduleName: String
         let referencedUSRs: Set<String>
+        let overrideUSRs: Set<String>
         let loadedModules: Set<String>
         let systemModules: Set<String>
         let directImports: Set<String>
         let reexportedImports: Set<String>
+        let testableImports: Set<String>
         let conditionalImports: Set<String>
+    }
+
+    private enum TestableDefinitionAccess: Equatable {
+        case accessibleWithoutTestable
+        case requiresTestable
+        case publicButNotOpen
+        case ignored
+        case unknown
+
+        func resolved(isOverride: Bool) -> TestableDefinitionAccess {
+            if self == .publicButNotOpen {
+                return isOverride ? .requiresTestable : .accessibleWithoutTestable
+            }
+            return self
+        }
+    }
+
+    private enum TestableImportRequirement {
+        case required
+        case unnecessary
     }
 
     private struct SourceFileLookup {
@@ -177,6 +213,8 @@ enum IndexStoreReader {
         // the module that defines them, even when the USR is attached to an
         // extended type from another module.
         var moduleDefinedUSRs: [String: Set<String>] = [:]
+        var definitionAccessByModuleUSR: [String: [String: [TestableDefinitionAccess]]] = [:]
+        var sourceLinesByPath: [String: [String]?] = [:]
         let sourceLookup = SourceFileLookup(sourceFiles: sourceFiles)
         var sourceFileEntries: [SourceFileEntry] = []
         var seenSourceUnits = Set<SourceUnitKey>()
@@ -186,6 +224,8 @@ enum IndexStoreReader {
             sourceLookup: sourceLookup,
             collectsSourceEntries: true,
             moduleDefinedUSRs: &moduleDefinedUSRs,
+            definitionAccessByModuleUSR: &definitionAccessByModuleUSR,
+            sourceLinesByPath: &sourceLinesByPath,
             sourceFileEntries: &sourceFileEntries,
             seenSourceUnits: &seenSourceUnits
         )
@@ -196,9 +236,11 @@ enum IndexStoreReader {
             }
             read(
                 store: definitionStore,
-                sourceLookup: nil,
+                sourceLookup: sourceLookup,
                 collectsSourceEntries: false,
                 moduleDefinedUSRs: &moduleDefinedUSRs,
+                definitionAccessByModuleUSR: &definitionAccessByModuleUSR,
+                sourceLinesByPath: &sourceLinesByPath,
                 sourceFileEntries: &sourceFileEntries,
                 seenSourceUnits: &seenSourceUnits
             )
@@ -225,6 +267,24 @@ enum IndexStoreReader {
                 }
             }
 
+            var requiredTestableImports = Set<String>()
+            var unnecessaryTestableImports = Set<String>()
+            for moduleName in entry.testableImports where referencedModules.contains(moduleName) {
+                switch testableImportRequirement(
+                    moduleName: moduleName,
+                    referencedUSRs: entry.referencedUSRs,
+                    overrideUSRs: entry.overrideUSRs,
+                    definitionAccessByModuleUSR: definitionAccessByModuleUSR
+                ) {
+                case .required:
+                    requiredTestableImports.insert(moduleName)
+                case .unnecessary:
+                    unnecessaryTestableImports.insert(moduleName)
+                case nil:
+                    break
+                }
+            }
+
             results.append(SourceFileModuleUsage(
                 sourceFile: entry.sourceFile,
                 isGenerated: entry.isGenerated,
@@ -234,6 +294,9 @@ enum IndexStoreReader {
                 systemModules: entry.systemModules,
                 directImports: entry.directImports,
                 reexportedImports: entry.reexportedImports,
+                testableImports: entry.testableImports,
+                requiredTestableImports: requiredTestableImports,
+                unnecessaryTestableImports: unnecessaryTestableImports,
                 conditionalImports: entry.conditionalImports
             ))
         }
@@ -246,6 +309,8 @@ enum IndexStoreReader {
         sourceLookup: SourceFileLookup?,
         collectsSourceEntries: Bool,
         moduleDefinedUSRs: inout [String: Set<String>],
+        definitionAccessByModuleUSR: inout [String: [String: [TestableDefinitionAccess]]],
+        sourceLinesByPath: inout [String: [String]?],
         sourceFileEntries: inout [SourceFileEntry],
         seenSourceUnits: inout Set<SourceUnitKey>
     ) {
@@ -265,8 +330,10 @@ enum IndexStoreReader {
 
             var definedUSRs = Set<String>()
             var referencedUSRs = Set<String>()
+            var overrideUSRs = Set<String>()
             var directImports = Set<String>()
             var reexportedImports = Set<String>()
+            var testableImports = Set<String>()
             var conditionalImports = Set<String>()
             var importLineNumbers = Set<Int>()
             let resolvedSource = sourceLookup?.resolve(unitReader.mainFile) ?? ResolvedSourceFile(
@@ -281,6 +348,7 @@ enum IndexStoreReader {
                 let importSummary = SourceImportEditor.importSummary(in: source)
                 directImports.formUnion(importSummary.importedModuleNames)
                 reexportedImports.formUnion(importSummary.reexportedImportModuleNames)
+                testableImports.formUnion(importSummary.testableImportModuleNames)
                 conditionalImports.formUnion(importSummary.conditionalImportModuleNames)
                 importLineNumbers = importSummary.importLineNumbers
             }
@@ -288,6 +356,13 @@ enum IndexStoreReader {
             recordReader.forEach { (occurrence: SymbolOccurrence) in
                 if occurrence.roles.contains(.definition) {
                     definedUSRs.insert(occurrence.symbol.usr)
+                    let access = testableDefinitionAccess(
+                        occurrence,
+                        sourcePath: resolvedSource.readablePath,
+                        sourceLinesByPath: &sourceLinesByPath
+                    )
+                    definitionAccessByModuleUSR[mod, default: [:]][occurrence.symbol.usr, default: []]
+                        .append(access)
                 } else if collectsSourceEntries, occurrence.roles.contains(.reference) {
                     // Symbol-scoped imports like `import struct LibA.Type` appear as
                     // references in the index store, but they are import declarations,
@@ -297,6 +372,9 @@ enum IndexStoreReader {
                     }
                     if occurrence.symbol.kind == .module {
                         directImports.insert(occurrence.symbol.name)
+                    }
+                    if occurrence.roles.contains(.overrideOf) || occurrence.roles.contains(.baseOf) {
+                        overrideUSRs.insert(occurrence.symbol.usr)
                     }
                 }
             }
@@ -323,15 +401,127 @@ enum IndexStoreReader {
                     isGenerated: resolvedSource.isGenerated,
                     moduleName: mod,
                     referencedUSRs: referencedUSRs,
+                    overrideUSRs: overrideUSRs,
                     loadedModules: loadedModules,
                     systemModules: systemModules,
                     directImports: directImports,
                     reexportedImports: reexportedImports,
+                    testableImports: testableImports,
                     conditionalImports: conditionalImports
                 ))
             }
             seenSourceUnits.insert(sourceUnitKey)
         }
+    }
+
+    private static func testableImportRequirement(
+        moduleName: String,
+        referencedUSRs: Set<String>,
+        overrideUSRs: Set<String>,
+        definitionAccessByModuleUSR: [String: [String: [TestableDefinitionAccess]]]
+    ) -> TestableImportRequirement? {
+        let definitionsByUSR = definitionAccessByModuleUSR[moduleName] ?? [:]
+        let moduleUSRs = referencedUSRs.filter { usr in
+            definitionsByUSR[usr] != nil || self.moduleName(fromUSR: usr) == moduleName
+        }
+        guard !moduleUSRs.isEmpty else { return nil }
+
+        var sawClassifiableDefinition = false
+        var sawUnknownDefinition = false
+
+        for usr in moduleUSRs {
+            guard let definitions = definitionsByUSR[usr], !definitions.isEmpty else {
+                sawUnknownDefinition = true
+                continue
+            }
+
+            for definition in definitions {
+                switch definition.resolved(isOverride: overrideUSRs.contains(usr)) {
+                case .requiresTestable:
+                    return .required
+                case .accessibleWithoutTestable:
+                    sawClassifiableDefinition = true
+                case .unknown:
+                    sawUnknownDefinition = true
+                case .ignored:
+                    break
+                case .publicButNotOpen:
+                    preconditionFailure("publicButNotOpen must be resolved before classification")
+                }
+            }
+        }
+
+        guard sawClassifiableDefinition, !sawUnknownDefinition else { return nil }
+        return .unnecessary
+    }
+
+    private static func testableDefinitionAccess(
+        _ occurrence: SymbolOccurrence,
+        sourcePath: String?,
+        sourceLinesByPath: inout [String: [String]?]
+    ) -> TestableDefinitionAccess {
+        if isChildOfProtocol(occurrence) || isGetterOrSetterFunction(occurrence) {
+            return .ignored
+        }
+
+        if occurrence.roles.contains(.implicit) {
+            return .requiresTestable
+        }
+
+        if occurrence.symbol.kind == .enumConstant {
+            return .accessibleWithoutTestable
+        }
+
+        guard let sourcePath else { return .unknown }
+        let lines: [String]?
+        if let cached = sourceLinesByPath[sourcePath] {
+            lines = cached
+        } else {
+            lines = try? String(contentsOfFile: sourcePath, encoding: .utf8)
+                .components(separatedBy: .newlines)
+            sourceLinesByPath[sourcePath] = lines
+        }
+        guard let lines,
+              occurrence.location.line > 0,
+              occurrence.location.line <= lines.count
+        else {
+            return .unknown
+        }
+
+        let line = lines[occurrence.location.line - 1]
+        if line.contains("open ") {
+            return .accessibleWithoutTestable
+        }
+        if line.contains("public ") {
+            return line.contains(" internal(") ? .requiresTestable : .publicButNotOpen
+        }
+        return .requiresTestable
+    }
+
+    private static func isChildOfProtocol(_ occurrence: SymbolOccurrence) -> Bool {
+        let protocolMemberKinds: [SymbolKind] = [
+            .instanceMethod,
+            .classMethod,
+            .staticMethod,
+            .instanceProperty,
+            .classProperty,
+            .staticProperty,
+        ]
+        guard protocolMemberKinds.contains(occurrence.symbol.kind) else { return false }
+
+        var result = false
+        occurrence.forEach { symbol, roles in
+            if roles.contains(.childOf), symbol.kind == .protocol {
+                result = true
+            }
+        }
+        return result
+    }
+
+    private static func isGetterOrSetterFunction(_ occurrence: SymbolOccurrence) -> Bool {
+        let functionKinds: [SymbolKind] = [.classMethod, .instanceMethod, .staticMethod]
+        return functionKinds.contains(occurrence.symbol.kind)
+            && occurrence.roles.contains(.accessorOf)
     }
 
     static func moduleName(fromUSR usr: String) -> String? {

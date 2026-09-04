@@ -180,6 +180,10 @@ enum Report {
 
         lines.append("         \(issue.reason)")
 
+        if let sourceFile = issue.sourceFile {
+            lines.append("         Source: \(sourceFile)")
+        }
+
         if let currentlyReachableVia = issue.currentlyReachableVia,
            !currentlyReachableVia.isEmpty {
             lines.append("         Currently reachable transitively via: \(currentlyReachableVia.joined(separator: ", "))")
@@ -307,6 +311,7 @@ enum Report {
         let depLabel: String?
         let depModule: String?
         let depKind: String?
+        let sourceFile: String?
         let currentlyReachableVia: [String]?
         let buildozerCommand: String?
         let sourceImportRemovals: [JSONSourceImportRemoval]?
@@ -319,6 +324,7 @@ enum Report {
             depLabel = issue.depLabel
             depModule = issue.depModule
             depKind = issue.depKind?.rawValue
+            sourceFile = issue.sourceFile
             currentlyReachableVia = issue.currentlyReachableVia.isEmpty
                 ? nil
                 : issue.currentlyReachableVia
@@ -336,6 +342,7 @@ enum Report {
             case depLabel = "dep_label"
             case depModule = "dep_module"
             case depKind = "dep_kind"
+            case sourceFile = "source_file"
             case currentlyReachableVia = "currently_reachable_via"
             case buildozerCommand = "buildozer_command"
             case sourceImportRemovals = "source_import_removals"

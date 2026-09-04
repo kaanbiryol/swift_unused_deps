@@ -8,12 +8,14 @@ enum SourceImportEditor {
         let lineNumber: Int
         let moduleName: String
         let isReexported: Bool
+        let isTestable: Bool
         let isConditional: Bool
     }
 
     struct ImportSummary {
         let importedModuleNames: Set<String>
         let reexportedImportModuleNames: Set<String>
+        let testableImportModuleNames: Set<String>
         let conditionalImportModuleNames: Set<String>
         let importLineNumbers: Set<Int>
     }
@@ -29,6 +31,7 @@ enum SourceImportEditor {
         case fileNotUTF8(path: String)
         case importNotFound(path: String, moduleName: String)
         case reexportedImportNotRemovable(path: String, moduleName: String)
+        case testableImportNotRemovable(path: String, moduleName: String)
         case conditionalImportNotRemovable(path: String, moduleName: String)
 
         var description: String {
@@ -39,6 +42,8 @@ enum SourceImportEditor {
                 return "Did not find an import for module '\(moduleName)' in \(path)"
             case .reexportedImportNotRemovable(let path, let moduleName):
                 return "Refusing to remove re-exported import for module '\(moduleName)' in \(path)"
+            case .testableImportNotRemovable(let path, let moduleName):
+                return "Refusing to remove @testable import for module '\(moduleName)' in \(path)"
             case .conditionalImportNotRemovable(let path, let moduleName):
                 return "Refusing to remove conditional import for module '\(moduleName)' in \(path)"
             }
@@ -112,6 +117,13 @@ enum SourceImportEditor {
                     )
                     return nil
                 }
+                if statement.isTestable {
+                    protectedModuleErrors[statement.moduleName] = .testableImportNotRemovable(
+                        path: filePath,
+                        moduleName: statement.moduleName
+                    )
+                    return nil
+                }
                 if statement.isConditional {
                     protectedModuleErrors[statement.moduleName] = .conditionalImportNotRemovable(
                         path: filePath,
@@ -166,11 +178,16 @@ enum SourceImportEditor {
         importSummary(in: source).conditionalImportModuleNames
     }
 
+    static func testableImportModuleNames(in source: String) -> Set<String> {
+        importSummary(in: source).testableImportModuleNames
+    }
+
     static func importSummary(in source: String) -> ImportSummary {
         let statements = importStatements(in: source)
         return ImportSummary(
             importedModuleNames: Set(statements.filter { !$0.isConditional }.map(\.moduleName)),
             reexportedImportModuleNames: Set(statements.filter(\.isReexported).map(\.moduleName)),
+            testableImportModuleNames: Set(statements.filter(\.isTestable).map(\.moduleName)),
             conditionalImportModuleNames: Set(statements.filter(\.isConditional).map(\.moduleName)),
             importLineNumbers: Set(statements.map(\.lineNumber))
         )
@@ -270,6 +287,7 @@ enum SourceImportEditor {
                 lineNumber: lineNumber,
                 moduleName: moduleName,
                 isReexported: isReexportedImport(text),
+                isTestable: isTestableImport(text),
                 isConditional: conditionalDepth > 0
             ))
             return .skipChildren
@@ -298,6 +316,16 @@ enum SourceImportEditor {
             return false
         }
         return line[..<importRange.lowerBound].contains("@_exported")
+    }
+
+    private static func isTestableImport(_ line: String) -> Bool {
+        guard let importRange = line.range(of: #"\bimport\b"#, options: .regularExpression) else {
+            return false
+        }
+        return line[..<importRange.lowerBound].range(
+            of: #"(?<![A-Za-z0-9_])@testable(?![A-Za-z0-9_])"#,
+            options: .regularExpression
+        ) != nil
     }
 
     private static func lineNumber(atUTF8Offset offset: Int, in source: String) -> Int {

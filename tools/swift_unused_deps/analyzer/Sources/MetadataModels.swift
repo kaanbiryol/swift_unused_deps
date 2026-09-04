@@ -35,15 +35,35 @@ struct SourceFileMetadata: Codable, Equatable, Hashable {
 struct BuildEditMetadata: Codable, Equatable, Hashable {
     let target: String
     let depsAttribute: String
+    let nonRemovableDeps: [String]
 
     enum CodingKeys: String, CodingKey {
         case target
         case depsAttribute = "deps_attr"
+        case nonRemovableDeps = "non_removable_deps"
     }
 
-    init(target: String, depsAttribute: String = "deps") {
+    init(
+        target: String,
+        depsAttribute: String = "deps",
+        nonRemovableDeps: [String] = []
+    ) {
         self.target = target
         self.depsAttribute = depsAttribute
+        self.nonRemovableDeps = Array(Set(nonRemovableDeps)).sorted()
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        target = try container.decode(String.self, forKey: .target)
+        depsAttribute = try container.decodeIfPresent(String.self, forKey: .depsAttribute) ?? "deps"
+        nonRemovableDeps = Array(Set(
+            try container.decodeIfPresent([String].self, forKey: .nonRemovableDeps) ?? []
+        )).sorted()
+    }
+
+    func canRemove(_ label: String) -> Bool {
+        !nonRemovableDeps.contains(label)
     }
 }
 
@@ -167,7 +187,10 @@ struct TargetMetadata: Codable {
                 sourceFiles: target.sourceFiles,
                 buildEdit: BuildEditMetadata(
                     target: converter.convert(target.buildEdit.target, buildFileContent: buildFileContent),
-                    depsAttribute: target.buildEdit.depsAttribute
+                    depsAttribute: target.buildEdit.depsAttribute,
+                    nonRemovableDeps: target.buildEdit.nonRemovableDeps.map {
+                        converter.convert($0, buildFileContent: buildFileContent)
+                    }
                 )
             ),
             declaredDeps: declaredDeps.map {

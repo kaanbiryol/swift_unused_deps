@@ -71,12 +71,16 @@ final class CLITests: XCTestCase {
             try SwiftUnusedDepsCommand.parseAsRoot([
                 "apply",
                 "--workspace-directory", "/tmp/workspace",
-                "/tmp/fix_plan.json",
+                "/tmp/first_fix_plan.json",
+                "/tmp/second_fix_plan.json",
             ]) as? SwiftUnusedDepsApplyCommand
         )
 
         XCTAssertEqual(command.workspaceDirectory, "/tmp/workspace")
-        XCTAssertEqual(command.fixPlanPaths, ["/tmp/fix_plan.json"])
+        XCTAssertEqual(command.fixPlanPaths, [
+            "/tmp/first_fix_plan.json",
+            "/tmp/second_fix_plan.json",
+        ])
     }
 
     func testParseApplyRequiresFixPlanPath() {

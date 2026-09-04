@@ -20,6 +20,7 @@ swift_library(
     tags = [
         "swift_unused_deps.fix_target=%s" % name,
         "swift_unused_deps.deps_attr=test_deps",
+        "swift_unused_deps.non_removable_dep=%s" % name,
     ],
 )
 ```
@@ -30,6 +31,7 @@ The tags mean:
 |-----|---------|
 | `swift_unused_deps.fix_target=<name>` | Edit the same-package target or macro call named `<name>` instead of the analyzed generated target |
 | `swift_unused_deps.deps_attr=<attr>` | Add and remove normal deps through `<attr>` instead of `deps` |
+| `swift_unused_deps.non_removable_dep=<label>` | Keep an injected dependency out of automatic BUILD edits; repeat for each injected dependency |
 
 Example:
 
@@ -58,6 +60,8 @@ buildozer 'remove deps //x:Bar' //pkg:FooTestsLib
 
 - `fix_target` must be a simple same-package target name, not a full label.
 - `deps_attr` must be a valid Bazel attribute identifier.
+- `non_removable_dep` accepts a same-package target name, `:name`, or a full
+  Bazel label. Repeat the tag when a macro injects multiple dependencies.
 - Duplicate conflicting tags fail analysis.
 - `deps_attr` is generic; it can be `test_deps`, `snapshot_test_deps`,
   `example_deps`, or any macro attribute that owns the generated rule's normal
@@ -66,3 +70,8 @@ buildozer 'remove deps //x:Bar' //pkg:FooTestsLib
 Low-confidence `private_deps` move suggestions are not auto-fixed when
 `deps_attr` is not `deps`, because the tool cannot infer a corresponding private
 macro attribute.
+
+An unloaded dependency marked `non_removable_dep` is reported at low confidence
+and never produces a BUILD edit. An independently unused source import may still
+be removed. This distinguishes dependencies visible in the configured rule from
+dependencies actually owned by the editable macro attribute.

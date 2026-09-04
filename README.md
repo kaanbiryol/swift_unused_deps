@@ -72,8 +72,14 @@ For iOS or other configured builds, pass the platform to Bazel:
 ```sh
 bazel test --config=swift-unused-deps \
   --platforms=@apple_support//platforms:ios_sim_arm64 \
+  --apple_platform_type=ios \
+  --ios_minimum_os=15.0 \
   //tools:swift_unused_deps
 ```
+
+The Apple platform type and minimum OS flags are still required by dependencies
+that use Apple configuration transitions; selecting an iOS platform does not set
+those legacy flags for them.
 
 The test prints a merged text report and fails when configured findings are
 present.
@@ -162,6 +168,7 @@ swift_library(
     tags = [
         "swift_unused_deps.fix_target=%s" % name,
         "swift_unused_deps.deps_attr=test_deps",
+        "swift_unused_deps.non_removable_dep=%s" % name,
     ],
 )
 ```
@@ -231,6 +238,8 @@ swift_unused_deps(
 |-------|-------------|------------|
 | **Unused dep** | Declared in BUILD but module never loaded by compiler | High |
 | **Unused import** | Imported in Swift source but no symbols from that module are referenced anywhere in the target | High |
+| **Unused testable import** | `@testable import` has no indexed symbol references in its source file | Low, report only |
+| **Unnecessary testable attribute** | All indexed references are available through a plain `import` | Low, report only |
 | **Missing direct dep** | Imported in source but not declared, only reachable transitively | High if directly imported, low if indirect |
 | **private_deps candidate** | Loaded by compiler but not explicitly imported in source | Low |
 
@@ -240,6 +249,8 @@ swift_unused_deps(
 - Runnable test rules and `test_suite` targets are traversal roots. To analyze
   test source files directly, put them in a `testonly` `swift_library`.
 - `@_exported import` re-exports are treated as non-removable by fix outputs.
+- `@testable import` findings are report-only. Access-level detection is conservative;
+  uncertain imports are preserved, and neither source nor BUILD edits are generated.
 - Scoped imports like `import struct LibA.Button` are not analyzed reliably end to end yet.
 - Unused Swift `import` statements are fixed only when the analyzer has index store data for per-file source edits.
 - Runtime resource usage is not analyzed today. Calls such as `UIImage(named:)`, `Image(_:)`,
@@ -260,6 +271,17 @@ bazel build --features=swift.index_while_building \
   --aspects=@swift_unused_deps//tools/swift_unused_deps:defs.bzl%swift_unused_deps_aspect \
   --output_groups=swift_unused_deps_reports,swift_unused_deps_fix_high \
   //apps/Example:ExampleApp
+```
+
+For an iOS aspect build, also pass `--platforms`, `--apple_platform_type=ios`,
+and a matching `--ios_minimum_os` as shown above.
+
+Apply one or more fix-plan files produced directly by the aspect with the public
+applier target:
+
+```sh
+bazel run @swift_unused_deps//tools/swift_unused_deps:apply -- \
+  bazel-bin/apps/Example/ExampleApp.swift_unused_deps.fix_high.json
 ```
 
 Available output groups:

@@ -12,6 +12,7 @@ load(":providers.bzl", "SwiftDepsInfo")
 
 _DEPS_ATTR_TAG_PREFIX = "swift_unused_deps.deps_attr="
 _FIX_TARGET_TAG_PREFIX = "swift_unused_deps.fix_target="
+_NON_REMOVABLE_DEP_TAG_PREFIX = "swift_unused_deps.non_removable_dep="
 _IDENTIFIER_START_CHARS = "_abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
 _IDENTIFIER_CHARS = _IDENTIFIER_START_CHARS + "0123456789"
 _SIMPLE_TARGET_NAME_CHARS = _IDENTIFIER_CHARS + ".+-"
@@ -35,6 +36,18 @@ def _tag_value(tags, prefix):
         result = value
     return result
 
+def _tag_values(tags, prefix):
+    result = []
+    for tag in tags:
+        if not tag.startswith(prefix):
+            continue
+        value = tag[len(prefix):]
+        if not value:
+            fail("Tag '{}' must include a value.".format(prefix[:-1]))
+        if value not in result:
+            result.append(value)
+    return result
+
 def _is_valid_identifier(value):
     if not value or value[0] not in _IDENTIFIER_START_CHARS:
         return False
@@ -54,6 +67,20 @@ def _is_simple_target_name(value):
 def _same_package_label(analyzed_label, target_name):
     package_label = analyzed_label.split(":")[0]
     return "{}:{}".format(package_label, target_name)
+
+def _dependency_label(analyzed_label, value):
+    if value.startswith(":"):
+        return analyzed_label.split(":")[0] + value
+    if _is_simple_target_name(value):
+        return _same_package_label(analyzed_label, value)
+    if value.startswith("//") or (value.startswith("@") and "//" in value):
+        return value
+    fail(
+        "Invalid swift_unused_deps.non_removable_dep value '{}' on {}. Use a same-package target name or a Bazel label.".format(
+            value,
+            analyzed_label,
+        ),
+    )
 
 def _build_edit_metadata(ctx):
     analyzed_label = _label_string(ctx.label)
@@ -81,9 +108,15 @@ def _build_edit_metadata(ctx):
             ),
         )
 
+    non_removable_deps = [
+        _dependency_label(analyzed_label, value)
+        for value in _tag_values(tags, _NON_REMOVABLE_DEP_TAG_PREFIX)
+    ]
+
     return {
         "target": fix_target,
         "deps_attr": deps_attr,
+        "non_removable_deps": sorted(non_removable_deps),
     }
 
 def _get_module_name(target):

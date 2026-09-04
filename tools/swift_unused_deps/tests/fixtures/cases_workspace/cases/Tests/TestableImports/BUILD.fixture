@@ -1,0 +1,28 @@
+load("@build_bazel_rules_swift//swift:swift.bzl", "swift_library")
+
+swift_library(
+    name = "RequiredTestableImportTests",
+    testonly = True,
+    srcs = ["RequiredTestableImportTests.swift"],
+    module_name = "RequiredTestableImportTests",
+    visibility = ["//cases:__subpackages__"],
+    deps = ["//cases/Deps/TestableSubject"],
+)
+
+swift_library(
+    name = "PublicOnlyTestableImportTests",
+    testonly = True,
+    srcs = ["PublicOnlyTestableImportTests.swift"],
+    module_name = "PublicOnlyTestableImportTests",
+    visibility = ["//cases:__subpackages__"],
+    deps = ["//cases/Deps/TestableSubject"],
+)
+
+swift_library(
+    name = "UnusedTestableImportTests",
+    testonly = True,
+    srcs = ["UnusedTestableImportTests.swift"],
+    module_name = "UnusedTestableImportTests",
+    visibility = ["//cases:__subpackages__"],
+    deps = ["//cases/Deps/TestableSubject"],
+)

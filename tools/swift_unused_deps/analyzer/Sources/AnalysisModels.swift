@@ -3,6 +3,8 @@ import Foundation
 enum IssueKind: String, Codable {
     case unusedDep = "unused_dep"
     case unusedImport = "unused_import"
+    case unusedTestableImport = "unused_testable_import"
+    case unnecessaryTestableAttribute = "unnecessary_testable_attribute"
     case missingDirectDep = "missing_direct_dep"
     case candidatePrivateDep = "candidate_private_dep"
     case unresolvedModule = "unresolved_module"
@@ -83,6 +85,7 @@ enum IssueContext {
     case candidatePrivateDep(DeclaredDep)
     case unresolvedModule(name: String)
     case mixedSourceTarget(label: String)
+    case testableImport(moduleName: String, sourceFile: String)
 }
 
 struct Issue {
@@ -121,19 +124,24 @@ struct Issue {
     static func unusedDep(
         _ dep: DeclaredDep,
         targetLabel: String,
-        depsAttribute: String = "deps"
+        depsAttribute: String = "deps",
+        isRemovable: Bool = true
     ) -> Issue {
         let attrName = dep.kind == .privateDep ? "private_deps" : depsAttribute
         return Issue(
             kind: .unusedDep,
-            confidence: .high,
-            reason: "Module '\(dep.moduleName)' is declared as a \(dep.kind.rawValue) but was not loaded during compilation",
-            suggestedAction: .remove,
+            confidence: isRemovable ? .high : .low,
+            reason: isRemovable
+                ? "Module '\(dep.moduleName)' is declared as a \(dep.kind.rawValue) but was not loaded during compilation"
+                : "Module '\(dep.moduleName)' was not loaded during compilation, but its dependency is injected by a macro and is not removable from '\(depsAttribute)'",
+            suggestedAction: isRemovable ? .remove : .investigate,
             context: .unusedDep(dep),
-            buildozerCommand: BuildozerCommand(
-                action: "remove \(attrName) \(dep.label)",
-                target: targetLabel
-            ),
+            buildozerCommand: isRemovable
+                ? BuildozerCommand(
+                    action: "remove \(attrName) \(dep.label)",
+                    target: targetLabel
+                )
+                : nil,
             sourceImportRemovals: []
         )
     }
@@ -164,6 +172,30 @@ struct Issue {
                 }
                 return $0.filePath < $1.filePath
             }
+        )
+    }
+
+    static func unusedTestableImport(moduleName: String, sourceFile: String) -> Issue {
+        Issue(
+            kind: .unusedTestableImport,
+            confidence: .low,
+            reason: "No symbols from module '\(moduleName)' are referenced in this file; its @testable import may be unnecessary",
+            suggestedAction: .investigate,
+            context: .testableImport(moduleName: moduleName, sourceFile: sourceFile),
+            buildozerCommand: nil,
+            sourceImportRemovals: []
+        )
+    }
+
+    static func unnecessaryTestableAttribute(moduleName: String, sourceFile: String) -> Issue {
+        Issue(
+            kind: .unnecessaryTestableAttribute,
+            confidence: .low,
+            reason: "All indexed references to module '\(moduleName)' resolve to API available through a plain import; @testable may be unnecessary",
+            suggestedAction: .investigate,
+            context: .testableImport(moduleName: moduleName, sourceFile: sourceFile),
+            buildozerCommand: nil,
+            sourceImportRemovals: []
         )
     }
 
@@ -225,7 +257,7 @@ struct Issue {
             return depLabel
         case .candidatePrivateDep(let dep):
             return dep.label
-        case .unresolvedModule, .mixedSourceTarget:
+        case .unresolvedModule, .mixedSourceTarget, .testableImport:
             return nil
         }
     }
@@ -244,6 +276,8 @@ struct Issue {
             return name
         case .mixedSourceTarget:
             return nil
+        case .testableImport(let moduleName, _):
+            return moduleName
         }
     }
 
@@ -251,7 +285,7 @@ struct Issue {
         switch context {
         case .unusedDep(let dep), .unusedImport(let dep), .candidatePrivateDep(let dep):
             return dep.kind
-        case .missingDirectDep, .unresolvedModule, .mixedSourceTarget:
+        case .missingDirectDep, .unresolvedModule, .mixedSourceTarget, .testableImport:
             return nil
         }
     }
@@ -260,8 +294,17 @@ struct Issue {
         switch context {
         case .missingDirectDep(_, _, let reachableVia, _):
             return reachableVia
-        case .unusedDep, .unusedImport, .candidatePrivateDep, .unresolvedModule, .mixedSourceTarget:
+        case .unusedDep, .unusedImport, .candidatePrivateDep, .unresolvedModule, .mixedSourceTarget, .testableImport:
             return []
+        }
+    }
+
+    var sourceFile: String? {
+        switch context {
+        case .testableImport(_, let sourceFile):
+            return sourceFile
+        case .unusedDep, .unusedImport, .missingDirectDep, .candidatePrivateDep, .unresolvedModule, .mixedSourceTarget:
+            return nil
         }
     }
 }

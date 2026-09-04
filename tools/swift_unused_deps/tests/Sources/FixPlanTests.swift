@@ -114,6 +114,22 @@ final class FixPlanTests: XCTestCase {
         ])
     }
 
+    func testFixPlanNeverEditsTestableImportFindings() {
+        let result = AnalysisResult(
+            target: "//App:AppTests",
+            moduleName: "AppTests",
+            issues: [
+                .unusedTestableImport(moduleName: "App", sourceFile: "AppTests.swift"),
+                .unnecessaryTestableAttribute(moduleName: "Support", sourceFile: "AppTests.swift"),
+            ],
+            cleanDeps: [],
+            skippedModules: []
+        )
+
+        XCTAssertTrue(FixPlan.from(results: [result]).isEmpty)
+        XCTAssertTrue(FixPlan.from(results: [result], minConfidence: .low).isEmpty)
+    }
+
     func testFixPlanSkipsExternalTargetIssues() {
         let result = AnalysisResult(
             target: "@swiftpkg_package//:Package",
@@ -203,7 +219,7 @@ final class FixPlanTests: XCTestCase {
         XCTAssertTrue(updated.contains("import LibB"))
     }
 
-    func testApplierSkipsAlreadyAppliedFixPlan() throws {
+    func testApplierKeepsAlreadyAppliedBuildFixesIdempotent() throws {
         let workspace = try makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: workspace) }
 
@@ -249,13 +265,17 @@ final class FixPlanTests: XCTestCase {
             ]
         )
 
-        let result = try FixPlanApplier.apply(plan, workspaceDirectory: workspace)
+        _ = try FixPlanApplier.apply(plan, workspaceDirectory: workspace)
         let updatedSource = try String(contentsOf: sourceURL, encoding: .utf8)
+        let updatedBuild = try String(
+            contentsOf: appDirectory.appendingPathComponent("BUILD.bazel"),
+            encoding: .utf8
+        )
 
-        XCTAssertFalse(result.applied)
-        XCTAssertEqual(result.buildFixCount, 0)
-        XCTAssertEqual(result.sourceImportRemovalCount, 0)
         XCTAssertEqual(updatedSource, originalSource)
+        XCTAssertEqual(updatedBuild.components(separatedBy: "//Lib:Existing").count - 1, 1)
+        XCTAssertEqual(updatedBuild.components(separatedBy: "//Lib:Moved").count - 1, 1)
+        XCTAssertFalse(updatedBuild.contains("//Lib:AlreadyRemoved"))
     }
 
     func testApplierCountsOnlyPresentSourceImports() throws {
@@ -287,10 +307,53 @@ final class FixPlanTests: XCTestCase {
         XCTAssertTrue(updated.contains("import LibB"))
     }
 
+    func testApplierDelegatesTargetMatchingToBuildozer() throws {
+        let workspace = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: workspace) }
+
+        let buildFile = workspace.appendingPathComponent("BUILD.bazel")
+        try """
+        bundle_accessor(
+            name = "RentSmartHomeResources",
+            framework_name = "RentSmartHome",
+        )
+
+        swift_library(
+            name = "RentSmartHome",
+            deps = ["//Lib:Unused"],
+        )
+        """.write(to: buildFile, atomically: true, encoding: .utf8)
+
+        let plan = FixPlan(
+            sourceImportRemovals: [],
+            buildEdits: [
+                BuildEdit(
+                    operation: .remove,
+                    attribute: "deps",
+                    label: "//Lib:Unused",
+                    target: "//:RentSmartHome"
+                ),
+            ]
+        )
+
+        let result = try FixPlanApplier.apply(plan, workspaceDirectory: workspace)
+        let updated = try String(contentsOf: buildFile, encoding: .utf8)
+
+        XCTAssertTrue(result.applied)
+        XCTAssertEqual(result.buildFixCount, 1)
+        XCTAssertFalse(updated.contains("//Lib:Unused"))
+        XCTAssertTrue(updated.contains(#"framework_name = "RentSmartHome""#))
+    }
+
     private func makeTemporaryDirectory() throws -> URL {
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        try "module(name = \"fix_plan_test\")\n".write(
+            to: directory.appendingPathComponent("MODULE.bazel"),
+            atomically: true,
+            encoding: .utf8
+        )
         return directory
     }
 }

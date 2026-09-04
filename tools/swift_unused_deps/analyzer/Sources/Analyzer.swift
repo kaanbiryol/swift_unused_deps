@@ -128,7 +128,8 @@ enum Analyzer {
             return Issue.unusedDep(
                 group.representative,
                 targetLabel: buildEdit.target,
-                depsAttribute: buildEdit.depsAttribute
+                depsAttribute: buildEdit.depsAttribute,
+                isRemovable: buildEdit.canRemove(group.key.label)
             )
         }
     }

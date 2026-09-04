@@ -54,6 +54,9 @@ enum ConformanceImportPreserver {
                 systemModules: usage.systemModules,
                 directImports: usage.directImports,
                 reexportedImports: usage.reexportedImports,
+                testableImports: usage.testableImports,
+                requiredTestableImports: usage.requiredTestableImports,
+                unnecessaryTestableImports: usage.unnecessaryTestableImports,
                 conditionalImports: usage.conditionalImports
             )
         }

@@ -27,9 +27,9 @@ final class SourceImportEditorTests: XCTestCase {
         """)
     }
 
-    func testRemoveImportsDeletesTestableAndScopedImportLines() throws {
+    func testRemoveImportsDeletesAttributedAndScopedImportLines() throws {
         let source = """
-        @testable import LibA
+        @preconcurrency import LibA
         import struct LibB.Button
         import LibC
 
@@ -75,6 +75,19 @@ final class SourceImportEditorTests: XCTestCase {
         XCTAssertEqual(
             SourceImportEditor.reexportedImportModuleNames(in: source),
             ["AnotherExportedLib", "ExportedLib"]
+        )
+    }
+
+    func testTestableImportModuleNamesTracksTestableImports() {
+        let source = """
+        @testable import LibA
+        @preconcurrency @testable import LibB
+        import Foundation
+        """
+
+        XCTAssertEqual(
+            SourceImportEditor.testableImportModuleNames(in: source),
+            ["LibA", "LibB"]
         )
     }
 
@@ -221,6 +234,18 @@ final class SourceImportEditorTests: XCTestCase {
             )
         ) { error in
             XCTAssertTrue("\(error)".contains("Refusing to remove re-exported import"))
+        }
+    }
+
+    func testRemoveImportsRefusesTestableImport() {
+        XCTAssertThrowsError(
+            try SourceImportEditor.removeImports(
+                in: "@testable import LibA\n",
+                filePath: "/tmp/Demo.swift",
+                moduleNames: ["LibA"]
+            )
+        ) { error in
+            XCTAssertTrue("\(error)".contains("Refusing to remove @testable import"))
         }
     }
 

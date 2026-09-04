@@ -29,10 +29,14 @@ enum IndexStoreUsageLoader {
                 bazelBin: bazelBin
             )
         )
+        let sourceFiles = metadata.target.sourceFiles + directDependencySourceFiles(
+            for: metadata,
+            allMetadataByLabel: allMetadataByLabel
+        )
         let key = cacheKey(
             storePath: storePath,
             dependencyStorePaths: dependencyStorePaths,
-            sourceFiles: metadata.target.sourceFiles
+            sourceFiles: sourceFiles
         )
 
         let usageByModule: [String: [SourceFileModuleUsage]]
@@ -42,7 +46,7 @@ enum IndexStoreUsageLoader {
             usageByModule = loadUsageByModule(
                 storePath: storePath,
                 dependencyStorePaths: dependencyStorePaths,
-                sourceFiles: metadata.target.sourceFiles,
+                sourceFiles: sourceFiles,
                 warnings: &warnings
             )
             cache.usageByModuleByKey[key] = usageByModule
@@ -105,6 +109,15 @@ enum IndexStoreUsageLoader {
                 bazelBin: bazelBin,
                 overridePath: nil
             )
+        }
+    }
+
+    private static func directDependencySourceFiles(
+        for metadata: TargetMetadata,
+        allMetadataByLabel: [String: TargetMetadata]
+    ) -> [SourceFileMetadata] {
+        (metadata.declaredDeps + metadata.pluginDeps).flatMap { dep in
+            allMetadataByLabel[dep.label]?.target.sourceFiles ?? []
         }
     }
 

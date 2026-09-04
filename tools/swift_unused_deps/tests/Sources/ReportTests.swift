@@ -86,4 +86,33 @@ final class ReportTests: XCTestCase {
             "buildozer 'remove test_deps //Lib:B' //Pkg:Foo"
         )
     }
+
+    func testTestableImportFindingIncludesSourceAndNoFix() throws {
+        let result = AnalysisResult(
+            target: "//App:AppTests",
+            moduleName: "AppTests",
+            issues: [
+                .unnecessaryTestableAttribute(
+                    moduleName: "App",
+                    sourceFile: "App/AppTests.swift"
+                ),
+            ],
+            cleanDeps: [],
+            skippedModules: []
+        )
+
+        let json = Report.formatJSON(results: [result], minConfidence: .low)
+        let object = try XCTUnwrap(
+            try JSONSerialization.jsonObject(with: Data(json.utf8)) as? [String: Any]
+        )
+        let results = try XCTUnwrap(object["results"] as? [[String: Any]])
+        let issues = try XCTUnwrap(results.first?["issues"] as? [[String: Any]])
+        let issue = try XCTUnwrap(issues.first)
+
+        XCTAssertEqual(issue["kind"] as? String, "unnecessary_testable_attribute")
+        XCTAssertEqual(issue["confidence"] as? String, "low")
+        XCTAssertEqual(issue["source_file"] as? String, "App/AppTests.swift")
+        XCTAssertNil(issue["buildozer_command"])
+        XCTAssertNil(issue["source_import_removals"])
+    }
 }
